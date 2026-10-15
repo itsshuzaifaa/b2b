@@ -8,6 +8,7 @@ import { CsvImportModal } from '@/components/dashboard/CsvImportModal';
 import { WelcomeModal } from '@/components/modals/WelcomeModal';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
+import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
 import {
   Plus,
   ShieldAlert,
@@ -71,7 +72,6 @@ export default function OverviewPage() {
   React.useEffect(() => {
     let isMounted = true;
     if (isBuyer) {
-      const { getConversationsForUser, syncWithSupabase } = require('@/lib/messaging/messaging-store');
       const convs = getConversationsForUser(company);
       setBuyerInquiries(convs);
       void syncWithSupabase(role || undefined, company?.id, company?.email).then(() => {
@@ -123,7 +123,6 @@ export default function OverviewPage() {
 
       // 3. Inquiries count: load seller inquiries
       try {
-        const { getConversationsForUser, syncWithSupabase } = require('@/lib/messaging/messaging-store');
         const convs = getConversationsForUser(company);
         const buyerInqs = convs.filter((c: any) => c.type === 'buyer_seller' && c.sellerCompanyId === company.id);
         setSellerInquiriesCount(buyerInqs.length);

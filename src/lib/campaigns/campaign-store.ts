@@ -19,7 +19,7 @@ export interface CampaignLead {
 export function formatWhatsAppNumber(phone?: string | null): string {
   if (!phone) return '';
   // Remove all non-digit and non-+ characters
-  let cleaned = phone.trim().replace(/[^\d+]/g, '');
+  const cleaned = phone.trim().replace(/[^\d+]/g, '');
   if (!cleaned) return '';
   // If starts with +, keep it
   if (cleaned.startsWith('+')) return cleaned;
