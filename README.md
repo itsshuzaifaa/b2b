@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# B2B LINK - Global B2B Marketplace Platform
 
-## Getting Started
+**B2B LINK** is a full-featured, modern B2B wholesale marketplace platform built with **Next.js 16**, **React 19**, **Supabase**, and **Resend**. It seamlessly connects verified buyers and sellers worldwide with instant RFQs, custom quotations, real-time messaging, WTB (Want-To-Buy) broadcast matching, and a comprehensive site administration suite.
 
-First, run the development server:
+---
+
+## 🚀 Tech Stack
+
+- **Framework**: [Next.js 16 (App Router with Turbopack)](https://nextjs.org/)
+- **Frontend**: React 19, Tailwind CSS v4, Lucide React
+- **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL with Row Level Security)
+- **Transactional Email**: [Resend](https://resend.com/)
+- **Deployment**: [Vercel](https://vercel.com/)
+
+---
+
+## 📋 Features
+
+- 🏬 **Verified Marketplace**: Browse verified wholesale listings with tier pricing, MOQ, and detailed specs.
+- 💬 **Direct Inquiries & Messaging**: Buyers can inquiry directly about products and negotiate terms.
+- 📋 **WTB (Want-To-Buy) Broadcast Requests**: Buyers post purchase demands; verified sellers receive matches.
+- 📄 **Quotation Management**: Generate, review, accept, or decline formal B2B price quotations.
+- 🛡️ **Role-Based Portals**:
+  - **Buyer Portal**: Saved quotes, inquiries, and request tracking.
+  - **Seller Portal**: Product catalog management, quotes dispatcher, lead tracking.
+  - **Site Administration (`/site-admin`)**: User vetting, member tier management, broadcasts, and audit logs.
+- ✉️ **Email Dispatching**: Automated email notifications for verification codes, password resets, and quotations via Resend.
+
+---
+
+## 🛠️ Environment Variables Setup
+
+Copy `.env.example` to `.env.local`:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Configure the following variables in your `.env.local` (and in your **Vercel Project Settings > Environment Variables**):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL (`https://xyz.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase Project Public/Anon API Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase Project Service Role Key (for admin API actions) |
+| `RESEND_API_KEY` | Your API Key from [Resend](https://resend.com/) |
+| `RESEND_FROM_EMAIL` | Verified sender email address (e.g., `B2B LINK <notifications@yourdomain.com>`) |
+| `NEXT_PUBLIC_APP_URL` | Application root URL (`http://localhost:3000` for local, production domain on Vercel) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 💻 Local Development
 
-To learn more about Next.js, take a look at the following resources:
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2. **Run development server**:
+   ```bash
+   npm run dev
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3. **Production build check**:
+   ```bash
+   npm run build
+   ```
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🚢 Deploying to GitHub & Vercel
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Step 1: Push to GitHub
+1. Create a repository on GitHub (e.g. `https://github.com/<your-username>/b2b-link`).
+2. Push your code:
+   ```bash
+   git branch -M main
+   git push -u origin main
+   ```
+
+### Step 2: Deploy on Vercel
+1. Log in to [Vercel](https://vercel.com/).
+2. Click **"Add New"** > **"Project"**.
+3. Import your **`b2b-link`** repository from GitHub.
+4. In the **Environment Variables** section, add:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `RESEND_API_KEY`
+   - `RESEND_FROM_EMAIL`
+   - `NEXT_PUBLIC_APP_URL` (Set to `https://your-project.vercel.app`)
+5. Click **Deploy**. Vercel will build and deploy your application automatically on every git push!
