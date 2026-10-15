@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-manrope), system-ui, sans-serif;
+  --font-manrope: var(--font-manrope), system-ui, sans-serif;
+  --color-navy: #0B1F3A;
+  --color-brand-blue: #0A6CFF;
+  --color-brand-blue-hover: #0857cf;
+  --color-cyan: #00C2FF;
+  --color-soft-bg: #F3F6FB;
+  --color-hairline: #E3E9F2;
+  --color-hairline-light: #EAEFF6;
+  --color-body-text: #41536D;
+  --color-caption: #5B6B82;
+  --color-dark-text: #D3DEEE;
+  --color-dark-caption: #B7C4D8;
+  --color-footer-bg: #050F1F;
+}
+
+:root {
+  --background: #F3F6FB;
+  --foreground: #41536D;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Global Typography & Design Utility Classes */
+.b2b-card {
+  background-color: #ffffff;
+  border-radius: 32px;
+  border: 1px solid #EAEFF6;
+  box-shadow: 0 10px 30px rgba(11, 31, 58, 0.06);
+}
+
+.b2b-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 15px;
+  background-color: #ffffff;
+  border: 1px solid #E3E9F2;
+  border-radius: 16px;
+  color: #0B1F3A;
+  transition: all 0.15s ease-in-out;
+}
+
+.b2b-input::placeholder {
+  color: #94a3b8;
+}
+
+.b2b-input:focus {
+  outline: none;
+  border-color: #0A6CFF;
+  box-shadow: 0 0 0 3px rgba(10, 108, 255, 0.1);
+}
+
+.b2b-btn-primary {
+  min-height: 48px;
+  border-radius: 9999px;
+  background-color: #0A6CFF;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 2rem;
+  padding-right: 2rem;
+  transition: background-color 0.15s ease-in-out, transform 0.15s ease-in-out;
+}
+
+.b2b-btn-primary:hover {
+  background-color: #0857cf;
+}
+
+.b2b-eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #0A6CFF;
+}
+
+.b2b-eyebrow-dark {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #00C2FF;
+}
