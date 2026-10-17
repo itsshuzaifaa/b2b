@@ -30,6 +30,7 @@ export interface UserSubscription {
   interval: 'month' | 'year';
   currentPeriodStart: string;
   currentPeriodEnd: string;
+  currentPeriodEndTimestamp?: number;
   cancelAtPeriodEnd: boolean;
   canceledAt?: string | null;
   defaultCardId?: string | null;
@@ -78,21 +79,8 @@ export function getCompanyCards(companyId: string): PaymentCard[] {
       if (Array.isArray(parsed)) return parsed;
     }
 
-    // Default seeded test card for Nordic Electro / demo seller
-    const initialCards: PaymentCard[] = [
-      {
-        id: 'card-default-test',
-        brand: 'visa',
-        last4: '4242',
-        expMonth: '12',
-        expYear: '28',
-        cardholderName: 'Habib Rehman',
-        isDefault: true,
-        createdAt: '2026-01-15T10:00:00Z',
-      },
-    ];
-    localStorage.setItem(key, JSON.stringify(initialCards));
-    return initialCards;
+    // Return empty cards array for new companies (no test card seeded)
+    return [];
   } catch {
     return [];
   }
@@ -229,14 +217,15 @@ export function getCompanySubscription(companyId: string): UserSubscription {
 
   const defaultSub: UserSubscription = {
     companyId: companyId || 'default',
-    tier: 'gold',
-    status: 'active',
-    amountGbp: 179,
+    tier: 'bronze',
+    status: 'free',
+    amountGbp: 0,
     interval: 'month',
     currentPeriodStart: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     currentPeriodEnd: nextMonth.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    currentPeriodEndTimestamp: nextMonth.getTime(),
     cancelAtPeriodEnd: false,
-    defaultCardId: 'card-default-test',
+    defaultCardId: null,
   };
 
   if (typeof window === 'undefined') return defaultSub;
@@ -245,7 +234,27 @@ export function getCompanySubscription(companyId: string): UserSubscription {
     const key = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, companyId);
     const raw = localStorage.getItem(key);
     if (raw) {
-      return JSON.parse(raw);
+      const sub: UserSubscription = JSON.parse(raw);
+
+      // Check if a canceled subscription has reached its 30-day period end
+      if (sub.cancelAtPeriodEnd && sub.tier !== 'bronze') {
+        const periodEndMs =
+          sub.currentPeriodEndTimestamp ||
+          (sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).getTime() : 0);
+
+        if (periodEndMs && Date.now() > periodEndMs) {
+          // Grace period over: now demote quietly to Bronze with no further charges
+          sub.tier = 'bronze';
+          sub.status = 'free';
+          sub.amountGbp = 0;
+          sub.cancelAtPeriodEnd = false;
+          localStorage.setItem(key, JSON.stringify(sub));
+          updateAccountTier(companyId, 'bronze');
+          broadcastBillingUpdate();
+        }
+      }
+
+      return sub;
     }
     localStorage.setItem(key, JSON.stringify(defaultSub));
     return defaultSub;
@@ -266,11 +275,13 @@ export function saveCompanySubscription(companyId: string, sub: UserSubscription
 }
 
 /**
- * Cancels active subscription and demotes company to Bronze (Free) right away.
+ * Cancels active subscription renewal.
+ * By default, keeps plan benefits active until the 30-day period ends (cancelAtPeriodEnd = true).
+ * No recurring charges will occur.
  */
 export function cancelSubscription(
   companyId: string,
-  immediate: boolean = true
+  immediate: boolean = false
 ): { success: boolean; error?: string } {
   const sub = getCompanySubscription(companyId);
 
@@ -285,33 +296,58 @@ export function cancelSubscription(
     sub.canceledAt = nowStr;
 
     saveCompanySubscription(companyId, sub);
-
-    // Update in Admin Store to reflect Bronze demotion
     updateAccountTier(companyId, 'bronze');
 
-    // Record an audit / cancellation entry in admin payments notes
     recordManualPayment({
       company_id: companyId,
       company_name: 'Subscriber Cancellation',
       contact_email: 'billing@b2blink.eu',
-      plan_or_service: 'Subscription Canceled — Demoted to Bronze (Free)',
+      plan_or_service: 'Subscription Canceled — Immediate Demotion',
       amount_gbp: 0,
       payment_method: 'Corporate Card',
       wise_reference: `CANCEL-${Date.now()}`,
       transaction_id: `CAN-${Date.now()}`,
       status: 'Completed',
-      notes: `Subscription voluntarily canceled by customer on ${nowStr}. Immediately demoted to Bronze tier limits.`,
+      notes: `Subscription voluntarily canceled by customer on ${nowStr}. Immediately demoted to Bronze tier.`,
     });
 
-    return {
-      success: true,
-    };
+    return { success: true };
   } else {
+    // Keep active tier until 30 days are over, no auto-renewal
     sub.cancelAtPeriodEnd = true;
     sub.canceledAt = nowStr;
     saveCompanySubscription(companyId, sub);
+
+    recordManualPayment({
+      company_id: companyId,
+      company_name: 'Subscriber Auto-Renewal Canceled',
+      contact_email: 'billing@b2blink.eu',
+      plan_or_service: `Auto-Renewal Canceled — Retains ${sub.tier.toUpperCase()} until ${sub.currentPeriodEnd}`,
+      amount_gbp: 0,
+      payment_method: 'Corporate Card',
+      wise_reference: `SCHED-CANCEL-${Date.now()}`,
+      transaction_id: `CAN-${Date.now()}`,
+      status: 'Completed',
+      notes: `Subscription canceled on ${nowStr}. Perks remain active until ${sub.currentPeriodEnd}. Will not auto-renew or charge again.`,
+    });
+
     return { success: true };
   }
+}
+
+/**
+ * Reactivates auto-renewal for an active subscription marked for cancellation
+ */
+export function reactivateSubscription(companyId: string): { success: boolean; error?: string } {
+  const sub = getCompanySubscription(companyId);
+  if (sub.tier === 'bronze') {
+    return { success: false, error: 'No active paid subscription to reactivate.' };
+  }
+
+  sub.cancelAtPeriodEnd = false;
+  sub.canceledAt = null;
+  saveCompanySubscription(companyId, sub);
+  return { success: true };
 }
 
 /**
@@ -341,6 +377,7 @@ export function changePlan(
   sub.amountGbp = pricing.price;
   sub.currentPeriodStart = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   sub.currentPeriodEnd = nextMonth.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  sub.currentPeriodEndTimestamp = nextMonth.getTime();
   sub.cancelAtPeriodEnd = false;
   sub.canceledAt = null;
 
@@ -414,6 +451,7 @@ export function processRegistrationCardCheckout(params: {
     interval: 'month',
     currentPeriodStart: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     currentPeriodEnd: nextMonth.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    currentPeriodEndTimestamp: nextMonth.getTime(),
     cancelAtPeriodEnd: false,
     defaultCardId: cardRes.card.id,
   };

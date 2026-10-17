@@ -7,14 +7,24 @@ import { useRouter } from 'next/navigation';
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/lib/mock-data';
 import { useAuth } from '@/lib/auth/auth-context';
 import { InquiryModal } from '@/components/modals/InquiryModal';
+import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
-import type { Product } from '@/types/database';
+import {
+  isLeadUnlocked,
+  unlockLead,
+  getRemainingUnlocks,
+  getUnlockedLeadIds,
+} from '@/lib/leads/unlock-store';
+import type { Product, MembershipTier } from '@/types/database';
 import {
   Search,
   Flame,
   Package,
   Lock,
+  Unlock,
   MessageSquare,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 
 export default function MarketplacePage() {
@@ -27,8 +37,28 @@ export default function MarketplacePage() {
   const [showHotOnly, setShowHotOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'featured' | 'price_low' | 'price_high' | 'moq_low'>('featured');
 
-  // Modal states
+  // Modal and unlock states
   const [activeInquiryProduct, setActiveInquiryProduct] = useState<Product | null>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
+  const [unlockFeedback, setUnlockFeedback] = useState<string | null>(null);
+
+  const tier = (company?.membership_tier || company?.tier || 'bronze') as MembershipTier;
+  const remainingUnlocks = company ? getRemainingUnlocks(company.id, tier) : 2;
+
+  const refreshUnlocked = () => {
+    if (company?.id) {
+      setUnlockedIds(getUnlockedLeadIds(company.id));
+    } else {
+      setUnlockedIds([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshUnlocked();
+    window.addEventListener('b2b_lead_unlock_update', refreshUnlocked);
+    return () => window.removeEventListener('b2b_lead_unlock_update', refreshUnlocked);
+  }, [company]);
 
   // Load real products from API / Supabase
   useEffect(() => {
@@ -127,32 +157,46 @@ export default function MarketplacePage() {
     });
   }, [products, searchQuery, selectedCategory, showHotOnly, sortBy]);
 
-  // Requirement 01: Guest user clicking "Send inquiry" goes straight to account creation
   const handleInquiryClick = (product: Product) => {
-    if (!isLoggedIn) {
-      router.push(`/register?redirect=/marketplace&role=buyer`);
+    if (!isLoggedIn || !company) {
+      router.push(`/register?redirect=/marketplace`);
       return;
     }
-    setActiveInquiryProduct(product);
+
+    const isOwnProduct = product.company_id === company.id;
+    const isUnlocked =
+      isOwnProduct ||
+      unlockedIds.includes(product.id) ||
+      isLeadUnlocked(company.id, product.id);
+
+    if (isUnlocked) {
+      setActiveInquiryProduct(product);
+      return;
+    }
+
+    // Attempt to unlock lead
+    if (remainingUnlocks > 0 || tier === 'gold') {
+      const res = unlockLead(company.id, product.id, tier);
+      if (res.success) {
+        setUnlockFeedback(
+          `Supplier contact unlocked! (${
+            res.remaining === Infinity ? 'Unlimited' : `${res.remaining} unlocks remaining`
+          })`
+        );
+        setTimeout(() => setUnlockFeedback(null), 3500);
+        refreshUnlocked();
+        setActiveInquiryProduct(product);
+      } else {
+        setUpgradeModalOpen(true);
+      }
+    } else {
+      setUpgradeModalOpen(true);
+    }
   };
 
-  // Requirement 02: Guest goes to register; Logged in user sends simple question without filling fields
   const handleChatClick = (product: Product) => {
-    if (!isLoggedIn) {
-      router.push(`/register?redirect=/marketplace&role=buyer`);
-      return;
-    }
-
-    const defaultMsg = `Hi, I have a question regarding this product: ${product.title}.`;
-    const conv = startMarketplaceInquiry(
-      product,
-      company,
-      company?.contact_name || company?.name || 'Buyer',
-      company?.email || '',
-      company?.phone || '',
-      defaultMsg
-    );
-    router.push(`/dashboard/inquiries?id=${conv.id}`);
+    // Open the same direct supplier desk popup as WTB quote unlock, with email directly & live chat options
+    handleInquiryClick(product);
   };
 
   const getSellerInitials = (name?: string) => {
@@ -304,12 +348,30 @@ export default function MarketplacePage() {
           ))}
         </div>
 
+        {/* Unlock notification banner if recently unlocked */}
+        {unlockFeedback && (
+          <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center gap-2 animate-in fade-in duration-200">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{unlockFeedback}</span>
+          </div>
+        )}
+
         {/* Catalog Section Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF] block mb-1">
-              CURRENT STOCK
-            </span>
+            <div className="flex items-center gap-2.5 mb-1">
+              <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF]">
+                CURRENT STOCK
+              </span>
+              {isLoggedIn && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase bg-[#EBF3FF] text-[#0A6CFF] border border-[#D0E2FF]">
+                  <Sparkles className="w-3 h-3 text-[#0A6CFF]" />
+                  <span>
+                    {tier.toUpperCase()} TIER: {remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Unlocks Left`}
+                  </span>
+                </span>
+              )}
+            </div>
             <h2 className="text-[24px] lg:text-[28px] font-extrabold text-[#0B1F3A] tracking-[-0.025em]">
               Active Wholesale Lots ({filteredProducts.length})
             </h2>
@@ -348,6 +410,16 @@ export default function MarketplacePage() {
               const sellerInitials = getSellerInitials(sellerName);
               const productImage = product.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800';
 
+              const isOwnProduct = Boolean(company?.id && product.company_id === company.id);
+              const isUnlocked =
+                isOwnProduct ||
+                unlockedIds.includes(product.id) ||
+                (company?.id ? isLeadUnlocked(company.id, product.id) : false);
+
+              const displaySellerName = isUnlocked
+                ? sellerName
+                : 'Vetted Wholesaler (Locked)';
+
               // Clean badges exactly matching Image 2
               const badge =
                 index === 0
@@ -366,10 +438,10 @@ export default function MarketplacePage() {
 
               return (
                 <div key={product.id} className="flex flex-col gap-3">
-                  {/* Part 1: White Product Card (28px radius, soft shadow, photo with 20px radius inset 10px) */}
+                  {/* Part 1: White Product Card */}
                   <div className="bg-white rounded-[28px] border border-[#EAEFF6] shadow-[0_10px_30px_rgba(11,31,58,0.06)] p-[10px] flex flex-col justify-between flex-1">
                     <div>
-                      {/* Photo Container with 20px radius inset 10px & blue badge */}
+                      {/* Photo Container */}
                       <Link
                         href={`/marketplace/${product.id}`}
                         className="relative h-[200px] w-full rounded-[20px] overflow-hidden bg-[#F3F6FB] mb-4 block group"
@@ -381,14 +453,19 @@ export default function MarketplacePage() {
                           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                           className="object-cover transition-transform duration-300 group-hover:scale-105"
                         />
-                        <div className="absolute top-2.5 left-2.5">
+                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
                           <span className="bg-[#0A6CFF] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
                             {badge}
                           </span>
+                          {isUnlocked && (
+                            <span className="bg-emerald-600 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full shadow-xs">
+                              Unlocked
+                            </span>
+                          )}
                         </div>
                       </Link>
 
-                      {/* Card Content: Title (18px bold) & Description (14px grey) */}
+                      {/* Card Content: Title & Description */}
                       <div className="px-2">
                         <Link href={`/marketplace/${product.id}`} className="block group">
                           <h3 className="text-[18px] font-bold text-[#0B1F3A] leading-snug line-clamp-1 group-hover:text-[#0A6CFF] transition-colors">
@@ -403,7 +480,7 @@ export default function MarketplacePage() {
                       {/* Light Divider */}
                       <div className="border-t border-[#EAEFF6] my-4 mx-2" />
 
-                      {/* Price Row: Price (22px bold) + per piece on left, MOQ (17px bold blue) + MOQ on right */}
+                      {/* Price Row */}
                       <div className="flex items-end justify-between px-2 mb-4">
                         <div>
                           <span className="text-[22px] font-extrabold text-[#0B1F3A] leading-none block">
@@ -424,35 +501,62 @@ export default function MarketplacePage() {
                       </div>
                     </div>
 
-                    {/* Full-width blue "Send inquiry" pill */}
+                    {/* Action Button: Send inquiry or Unlock contact */}
                     <button
                       type="button"
                       onClick={() => handleInquiryClick(product)}
-                      className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs"
+                      className={`w-full min-h-[46px] rounded-full font-bold text-[14px] sm:text-[15px] flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99] ${
+                        isUnlocked
+                          ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/20'
+                          : remainingUnlocks > 0 || tier === 'gold'
+                          ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/25'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-105 text-white shadow-amber-500/20'
+                      }`}
                     >
-                      Send inquiry
+                      {isUnlocked ? (
+                        <span>Send Direct Inquiry</span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2">
+                          <Lock className="w-4 h-4 text-white shrink-0" />
+                          <span>Unlock Contact</span>
+                          {(remainingUnlocks > 0 || tier === 'gold') && (
+                            <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white/20 text-white tracking-wide">
+                              {remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Left`}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </button>
                   </div>
 
                   {/* Part 2: Slim White Seller Pill below the card */}
                   <div className="bg-white rounded-full border border-[#EAEFF6] px-3.5 py-2 flex items-center justify-between shadow-[0_4px_16px_rgba(11,31,58,0.04)]">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-[28px] h-[28px] rounded-full bg-[#0B1F3A] text-white text-[11px] font-bold flex items-center justify-center shrink-0">
-                        {sellerInitials}
+                      <div
+                        className={`w-[28px] h-[28px] rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${
+                          isUnlocked ? 'bg-[#0B1F3A]' : 'bg-slate-400'
+                        }`}
+                      >
+                        {isUnlocked ? sellerInitials : <Lock className="w-3.5 h-3.5" />}
                       </div>
                       <span className="text-[14px] font-semibold text-[#0B1F3A] truncate">
-                        {sellerName}
+                        {displaySellerName}
                       </span>
                     </div>
 
-                    {/* Round light-blue chat icon button */}
+                    {/* Contact & Chat popup trigger */}
                     <button
                       type="button"
-                      onClick={() => handleChatClick(product)}
-                      aria-label={`Chat with ${sellerName}`}
+                      onClick={() => handleInquiryClick(product)}
+                      aria-label={`Inquire or Chat with ${sellerName}`}
                       className="w-8 h-8 rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] flex items-center justify-center transition-colors shrink-0"
+                      title={isUnlocked ? 'Contact Supplier' : 'Unlock Supplier Contact'}
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      {isUnlocked ? (
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      ) : (
+                        <Lock className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -467,6 +571,14 @@ export default function MarketplacePage() {
         product={activeInquiryProduct}
         isOpen={!!activeInquiryProduct}
         onClose={() => setActiveInquiryProduct(null)}
+      />
+
+      {/* Upgrade Membership Modal for paywall unlocks */}
+      <UpgradeMembershipModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        title="Upgrade to Unlock Supplier Contacts"
+        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with verified European wholesale distributors."
       />
     </div>
   );

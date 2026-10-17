@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { sendAccountApprovalEmail, sendAccountSuspensionEmail } from '@/lib/email/dispatcher';
 
 export async function GET() {
   try {
@@ -52,3 +53,96 @@ export async function GET() {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const { action, companyId, email, contactName, companyName, reason } = body;
+
+    if (!companyId) {
+      return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
+    }
+
+    const supabase = await createClient();
+
+    if (action === 'verify' || action === 'approve' || action === 'unsuspend') {
+      try {
+        const admin = createAdminClient();
+        const { data: comp } = await admin
+          .from('companies')
+          .update({
+            approval_status: 'approved',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', companyId)
+          .select('user_id')
+          .maybeSingle();
+
+        if (comp?.user_id) {
+          await admin.auth.admin.updateUserById(comp.user_id, {
+            user_metadata: { approval_status: 'approved' },
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[ADMIN VERIFY DB WARNING]', dbErr);
+      }
+
+      if (email) {
+        try {
+          await sendAccountApprovalEmail(email, {
+            companyName: companyName || 'Wholesale Partner',
+            contactName: contactName || 'Valued Member',
+          });
+        } catch (mailErr) {
+          console.warn('[ADMIN APPROVAL EMAIL WARNING]', mailErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, status: 'approved' });
+    }
+
+    if (action === 'suspend' || action === 'reject') {
+      try {
+        const admin = createAdminClient();
+        const { data: comp } = await admin
+          .from('companies')
+          .update({
+            approval_status: 'suspended',
+            rejection_reason: reason || 'Account suspended by compliance officer.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', companyId)
+          .select('user_id')
+          .maybeSingle();
+
+        if (comp?.user_id) {
+          await admin.auth.admin.updateUserById(comp.user_id, {
+            user_metadata: { approval_status: 'suspended' },
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[ADMIN SUSPEND DB WARNING]', dbErr);
+      }
+
+      if (email) {
+        try {
+          await sendAccountSuspensionEmail(email, {
+            companyName: companyName || 'Wholesale Partner',
+            contactName: contactName || 'Valued Member',
+            reason: reason || 'Account suspended by compliance officer.',
+          });
+        } catch (mailErr) {
+          console.warn('[ADMIN SUSPENSION EMAIL WARNING]', mailErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, status: 'suspended' });
+    }
+
+    return NextResponse.json({ error: 'Invalid action specified' }, { status: 400 });
+  } catch (err: any) {
+    console.error('Error in /api/admin/accounts POST:', err);
+    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+  }
+}
+

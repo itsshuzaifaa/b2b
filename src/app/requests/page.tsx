@@ -8,14 +8,22 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { getSellerQuoteUsage } from '@/lib/actions/quotations';
 import { QuotationModal } from '@/components/modals/QuotationModal';
 import { AuthGateModal } from '@/components/modals/AuthGateModal';
+import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
 import { dispatchWtbLeadToBuyerDashboard } from '@/lib/messaging/messaging-store';
-import { TIER_LIMITS, type WtbRequest } from '@/types/database';
+import {
+  isLeadUnlocked,
+  unlockLead,
+  getRemainingUnlocks,
+  getUnlockedLeadIds,
+} from '@/lib/leads/unlock-store';
+import { TIER_LIMITS, type WtbRequest, type MembershipTier } from '@/types/database';
 import {
   Search,
   PlusCircle,
   Clock,
   Building2,
   Lock,
+  Unlock,
   Send,
   BarChart3,
   ArrowRight,
@@ -39,7 +47,7 @@ export default function RequestsPage() {
   const [wtbRequests, setWtbRequests] = useState<WtbRequest[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
 
-  // Unlocked WTBs tracking per seller
+  // Unlocked WTBs tracking
   const [unlockedWtbIds, setUnlockedWtbIds] = useState<string[]>([]);
 
   // Modal states
@@ -48,6 +56,10 @@ export default function RequestsPage() {
   const [authGateOpen, setAuthGateOpen] = useState(false);
   const [buyerGateOpen, setBuyerGateOpen] = useState(false);
   const [quotaExceededOpen, setQuotaExceededOpen] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+
+  const tier = (company?.membership_tier || company?.tier || 'bronze') as MembershipTier;
+  const remainingUnlocks = company ? getRemainingUnlocks(company.id, tier) : 2;
 
   const isSeller = isLoggedIn && role === 'seller';
   const isBuyer = isLoggedIn && role === 'buyer';
@@ -100,7 +112,6 @@ export default function RequestsPage() {
     }
   }, [company, role]);
 
-  const tier = (company?.membership_tier || company?.tier || 'silver').toLowerCase() as keyof typeof TIER_LIMITS;
   const tierLimits = TIER_LIMITS[tier] || TIER_LIMITS.silver;
   const maxQuotes = tierLimits.maxMonthlyQuotes || 25;
   const quotesRemaining = Math.max(0, maxQuotes - quoteUsage);
@@ -122,55 +133,44 @@ export default function RequestsPage() {
 
   // Handle clicking the primary action on a card
   const handleActionClick = (req: WtbRequest) => {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || !company) {
       setAuthGateOpen(true);
       return;
     }
 
-    if (role === 'buyer') {
-      setBuyerGateOpen(true);
+    const isOwnWtb = Boolean(req.buyer_company_id === company.id);
+    const isUnlocked =
+      isOwnWtb ||
+      unlockedWtbIds.includes(req.id) ||
+      isLeadUnlocked(company.id, req.id);
+
+    if (isUnlocked) {
+      setActiveQuotationWtb(req);
       return;
     }
 
-    if (role === 'seller') {
-      const isUnlocked = unlockedWtbIds.includes(req.id);
-      if (isUnlocked) {
-        setActiveQuotationWtb(req);
-        return;
-      }
-
-      if (quoteUsage >= maxQuotes) {
-        setQuotaExceededOpen(true);
-        return;
-      }
-
-      // Step 03 confirmation prompt to deduct 1 quote
+    if (remainingUnlocks > 0 || tier === 'gold') {
       setUnlockConfirmWtb(req);
+    } else {
+      setUpgradeModalOpen(true);
     }
   };
 
-  // Confirm Unlock & Deduct 1 Quote
+  // Confirm Unlock & Deduct 1 Credit
   const handleConfirmUnlock = () => {
     if (!unlockConfirmWtb || !company) return;
     const targetWtb = unlockConfirmWtb;
     setUnlockConfirmWtb(null);
 
-    // 1. Deduct 1 quote: Add to unlocked list
-    const unlockedKey = `b2b_unlocked_wtbs_${company.id}`;
+    const res = unlockLead(company.id, targetWtb.id, tier);
+    if (!res.success) {
+      setUpgradeModalOpen(true);
+      return;
+    }
+
     const newUnlocked = Array.from(new Set([...unlockedWtbIds, targetWtb.id]));
     setUnlockedWtbIds(newUnlocked);
-    try {
-      localStorage.setItem(unlockedKey, JSON.stringify(newUnlocked));
-    } catch {}
 
-    // 2. Increment quote usage
-    const newUsage = quoteUsage + 1;
-    setQuoteUsage(newUsage);
-    try {
-      localStorage.setItem(`b2b_quote_usage_count_${company.id}`, String(newUsage));
-    } catch {}
-
-    // 3. Save placeholder to seller's quotes table
     try {
       const quotesKey = `b2b_sent_quotes_${company.id}`;
       const raw = localStorage.getItem(quotesKey);
@@ -200,14 +200,14 @@ export default function RequestsPage() {
       window.dispatchEvent(new CustomEvent('b2b_quotes_updated'));
     } catch {}
 
-    // 4. Dispatch seller company info directly to Buyer Dashboard (Live Inquiries chat thread & received quotes list)
+    // Dispatch seller company info directly to Buyer Dashboard
     dispatchWtbLeadToBuyerDashboard({
       wtbRequest: targetWtb,
       sellerCompany: company,
       actionType: 'unlocked',
     });
 
-    // 5. Open QuotationModal with buyer details revealed
+    // Open QuotationModal with buyer details revealed
     setActiveQuotationWtb(targetWtb);
   };
 
@@ -563,10 +563,18 @@ export default function RequestsPage() {
                         ) : (
                           <button
                             onClick={() => handleActionClick(req)}
-                            className="inline-flex items-center gap-2 bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-4 sm:px-5 py-2.5 rounded-full shadow-md transition cursor-pointer"
+                            className={`inline-flex items-center gap-2 text-white text-[13px] font-bold px-4 sm:px-5 py-2.5 rounded-full shadow-md transition cursor-pointer ${
+                              remainingUnlocks > 0 || tier === 'gold'
+                                ? 'bg-[#0A6CFF] hover:bg-[#0857cf]'
+                                : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-105'
+                            }`}
                           >
                             <Lock className="w-3.5 h-3.5" />
-                            <span>Unlock Lead & Quote (-1 Quota)</span>
+                            <span>
+                              {remainingUnlocks > 0 || tier === 'gold'
+                                ? `Unlock Lead (${remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Left`})`
+                                : 'Upgrade to Unlock Lead'}
+                            </span>
                           </button>
                         )}
                       </div>
@@ -757,8 +765,16 @@ export default function RequestsPage() {
       <AuthGateModal
         isOpen={authGateOpen}
         onClose={() => setAuthGateOpen(false)}
-        title="Supplier Account Required to Quote"
-        subtitle="Only verified European wholesale suppliers can unlock buyer procurement details and submit competitive quotations. Create a Seller account or sign in to proceed."
+        title="Account Required to Unlock Leads"
+        subtitle="Only registered members can unlock buyer procurement details and submit competitive quotations. Create an account or sign in to proceed with 2 free unlocks."
+      />
+
+      {/* Upgrade Membership Modal */}
+      <UpgradeMembershipModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        title="Upgrade to Unlock Buyer Procurement Leads"
+        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with active wholesale procurement buyers."
       />
     </div>
   );

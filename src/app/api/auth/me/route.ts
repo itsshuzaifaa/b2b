@@ -38,8 +38,8 @@ export async function GET(request: NextRequest) {
     }
 
     const metadata = user.user_metadata || {};
-    const role: UserRole = (companyRow?.role || metadata.role || 'buyer') as UserRole;
-    const approvalStatus: ApprovalStatus = 'approved';
+    const role: UserRole = (companyRow?.role || metadata.role || 'seller') as UserRole;
+    const approvalStatus: ApprovalStatus = (companyRow?.approval_status || metadata.approval_status || (role === 'admin' ? 'approved' : 'pending')) as ApprovalStatus;
 
     if (!companyRow) {
       // Auto-create company row if missing
@@ -53,23 +53,24 @@ export async function GET(request: NextRequest) {
         contact_email: user.email,
         phone: metadata.phone || null,
         role,
-        approval_status: 'approved',
-        tier: role === 'seller' ? (metadata.membership_tier || 'silver') : 'bronze',
+        approval_status: approvalStatus,
+        tier: (metadata.membership_tier || 'bronze') as MembershipTier,
       }).select('*').maybeSingle();
 
       companyRow = newComp;
     }
 
-    const effectiveTier = (companyRow?.tier || companyRow?.membership_tier || metadata.membership_tier || (role === 'seller' ? 'silver' : 'bronze')) as MembershipTier;
+    const effectiveTier = (companyRow?.tier || companyRow?.membership_tier || metadata.membership_tier || 'bronze') as MembershipTier;
+    const effectiveApprovalStatus = (companyRow?.approval_status || metadata.approval_status || approvalStatus) as ApprovalStatus;
 
     const normalizedCompany: Company = {
       id: companyRow?.id || user.id,
       user_id: user.id,
       name: companyRow?.company_name || companyRow?.name || metadata.company_name || 'Member Account',
       company_name: companyRow?.company_name || companyRow?.name || metadata.company_name || 'Member Account',
-      company_number: companyRow?.company_number || null,
-      vat_number: companyRow?.vat_number || null,
-      address: companyRow?.address || null,
+      company_number: companyRow?.company_number || metadata.regNumber || null,
+      vat_number: companyRow?.vat_number || metadata.vatNumber || null,
+      address: companyRow?.address || metadata.address || null,
       website: companyRow?.website || null,
       contact_name: companyRow?.contact_name || metadata.contact_name || `${metadata.first_name || ''} ${metadata.last_name || ''}`.trim() || '',
       email: companyRow?.contact_email || user.email || '',
@@ -77,8 +78,8 @@ export async function GET(request: NextRequest) {
       role,
       tier: effectiveTier,
       membership_tier: effectiveTier,
-      approval_status: 'approved',
-      categories: companyRow?.niches || companyRow?.categories || [],
+      approval_status: effectiveApprovalStatus,
+      categories: companyRow?.niches || companyRow?.categories || metadata.selectedNiches || [],
       created_at: companyRow?.created_at || user.created_at || new Date().toISOString(),
     };
 

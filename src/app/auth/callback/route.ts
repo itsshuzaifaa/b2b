@@ -11,20 +11,40 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error, data } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      if (data?.user?.email) {
+        try {
+          const appUrl = origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          await fetch(`${appUrl}/api/auth/dispatch-kyc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: data.user.email }),
+          });
+        } catch {}
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
   if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({
+    const { error, data } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: type as 'signup' | 'recovery' | 'magiclink' | 'invite' | 'email_change',
     });
     if (!error) {
       if (type === 'recovery') {
         return NextResponse.redirect(`${origin}/reset-password`);
+      }
+      if (data?.user?.email) {
+        try {
+          const appUrl = origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          await fetch(`${appUrl}/api/auth/dispatch-kyc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: data.user.email }),
+          });
+        } catch {}
       }
       return NextResponse.redirect(`${origin}${next}`);
     }

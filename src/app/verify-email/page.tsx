@@ -73,6 +73,18 @@ function VerifyEmailContent() {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_demo_role');
       }
+
+      // Dispatch business verification documents email ONLY after email is verified
+      try {
+        await fetch('/api/auth/dispatch-kyc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+      } catch (kycErr) {
+        console.warn('[KYC DISPATCH NOTICE]', kycErr);
+      }
+
       if (verifyResult.data?.user) {
         setAuthenticatedUser(verifyResult.data.user);
       }

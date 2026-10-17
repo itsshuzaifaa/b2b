@@ -1,7 +1,8 @@
 export type UserRole = 'admin' | 'seller' | 'buyer';
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalStatus = 'pending' | 'pending_verification' | 'approved' | 'rejected' | 'suspended';
 export type MembershipTier = 'bronze' | 'silver' | 'gold';
 export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft';
+export type ProductCondition = 'new' | 'used' | 'refurbished' | 'worn_out';
 export type WtbStatus = 'open' | 'fulfilled' | 'closed' | 'expired';
 export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 export type NotificationType = 'niche_alert' | 'barcode_match';
@@ -12,6 +13,7 @@ export type TierConfig = {
   maxMonthlyQuotes: number;
   csvUpload: boolean;
   hotListings: boolean;
+  contactUnlocks: number;
 };
 
 export const TIER_LIMITS: Record<MembershipTier, TierConfig> = {
@@ -20,18 +22,21 @@ export const TIER_LIMITS: Record<MembershipTier, TierConfig> = {
     maxMonthlyQuotes: 10,
     csvUpload: false,
     hotListings: false,
+    contactUnlocks: 2,
   },
   silver: {
     maxActiveProducts: 50,
     maxMonthlyQuotes: 25,
     csvUpload: true,
     hotListings: false,
+    contactUnlocks: 20,
   },
   gold: {
     maxActiveProducts: Infinity,
     maxMonthlyQuotes: 50,
     csvUpload: true,
     hotListings: true,
+    contactUnlocks: Infinity,
   },
 };
 
@@ -55,6 +60,7 @@ export type Company = {
   niches?: string[];
   website?: string | null;
   address?: string | null;
+  unlocks_used?: number;
   created_at: string;
   updated_at?: string;
 };
@@ -73,6 +79,9 @@ export type Product = {
   category_id?: string | null;
   category_slug: string;
   title: string;
+  brand?: string | null;
+  condition?: ProductCondition | string | null;
+  ean_upc?: string | null;
   description?: string | null;
   barcode_or_sku?: string | null;
   unit_price: number;

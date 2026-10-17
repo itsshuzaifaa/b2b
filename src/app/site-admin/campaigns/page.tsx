@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   Mail,
   Phone,
-  MessageSquare,
   Users,
   Copy,
   Check,
@@ -13,12 +12,13 @@ import {
   Search,
   Filter,
   ShieldCheck,
-  Send,
   Building2,
-  ExternalLink,
-  Sparkles,
   RefreshCw,
   Share2,
+  X,
+  CheckSquare,
+  Square,
+  Sparkles,
 } from 'lucide-react';
 import type { CampaignLead } from '@/lib/campaigns/campaign-store';
 
@@ -26,10 +26,21 @@ export default function SiteAdminCampaignsPage() {
   const [leads, setLeads] = useState<CampaignLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer'>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'table' | 'emails' | 'whatsapp'>('table');
   const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  // Export CSV Modal State
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<Record<string, boolean>>({
+    name: true,
+    company: true,
+    email: true,
+    phone: true,
+    country: false,
+    tier: false,
+    created_at: false,
+  });
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -52,12 +63,9 @@ export default function SiteAdminCampaignsPage() {
     fetchLeads();
   }, []);
 
-  // Filtered Leads
+  // Filtered Leads (no buyer/seller segregation)
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
-      // Role filter
-      if (roleFilter !== 'all' && l.role !== roleFilter) return false;
-
       // Tier filter
       if (tierFilter !== 'all' && l.membership_tier.toLowerCase() !== tierFilter.toLowerCase()) {
         return false;
@@ -70,10 +78,11 @@ export default function SiteAdminCampaignsPage() {
         l.email.toLowerCase().includes(q) ||
         l.whatsapp.includes(q) ||
         l.contact_name.toLowerCase().includes(q) ||
-        l.company_name.toLowerCase().includes(q)
+        l.company_name.toLowerCase().includes(q) ||
+        (l.country && l.country.toLowerCase().includes(q))
       );
     });
-  }, [leads, roleFilter, tierFilter, searchQuery]);
+  }, [leads, tierFilter, searchQuery]);
 
   // Derived lists
   const filteredEmails = useMemo(() => {
@@ -93,63 +102,104 @@ export default function SiteAdminCampaignsPage() {
     }
   };
 
-  // Export full CSV
-  const handleExportCsv = () => {
-    const headers = [
-      'ID',
-      'Email',
-      'WhatsApp Number',
-      'Contact Name',
-      'Company Name',
-      'Role',
-      'Membership Tier',
-      'Country',
-      'Status',
-      'Created At',
-    ];
+  // Toggle field selection for CSV Export
+  const handleToggleField = (field: string) => {
+    setSelectedFields((prev) => ({
+      ...prev,
+      [field]: !prev[field],
+    }));
+  };
 
-    const rows = filteredLeads.map((l) => [
-      `"${l.id}"`,
-      `"${l.email}"`,
-      `"${l.whatsapp}"`,
-      `"${l.contact_name.replace(/"/g, '""')}"`,
-      `"${l.company_name.replace(/"/g, '""')}"`,
-      `"${l.role}"`,
-      `"${l.membership_tier}"`,
-      `"${l.country || 'EU'}"`,
-      `"${l.status}"`,
-      `"${l.created_at}"`,
-    ]);
+  const handleSelectAllFields = () => {
+    setSelectedFields({
+      name: true,
+      company: true,
+      email: true,
+      phone: true,
+      country: true,
+      tier: true,
+      created_at: true,
+    });
+  };
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const handleSelectDefaultFields = () => {
+    setSelectedFields({
+      name: true,
+      company: true,
+      email: true,
+      phone: true,
+      country: false,
+      tier: false,
+      created_at: false,
+    });
+  };
+
+  // Execute selected CSV export
+  const handleDownloadCustomCsv = () => {
+    const headers: string[] = [];
+    const fieldKeys: string[] = [];
+
+    if (selectedFields.name) {
+      headers.push('Contact Name');
+      fieldKeys.push('name');
+    }
+    if (selectedFields.company) {
+      headers.push('Company Name');
+      fieldKeys.push('company');
+    }
+    if (selectedFields.email) {
+      headers.push('Email Address');
+      fieldKeys.push('email');
+    }
+    if (selectedFields.phone) {
+      headers.push('Phone / WhatsApp');
+      fieldKeys.push('phone');
+    }
+    if (selectedFields.country) {
+      headers.push('Country');
+      fieldKeys.push('country');
+    }
+    if (selectedFields.tier) {
+      headers.push('Membership Tier');
+      fieldKeys.push('tier');
+    }
+    if (selectedFields.created_at) {
+      headers.push('Registration Date');
+      fieldKeys.push('created_at');
+    }
+
+    if (headers.length === 0) {
+      alert('Please select at least one field to export.');
+      return;
+    }
+
+    const rows = filteredLeads.map((l) => {
+      const rowValues: string[] = [];
+      if (selectedFields.name) rowValues.push(`"${(l.contact_name || '').replace(/"/g, '""')}"`);
+      if (selectedFields.company) rowValues.push(`"${(l.company_name || '').replace(/"/g, '""')}"`);
+      if (selectedFields.email) rowValues.push(`"${(l.email || '').replace(/"/g, '""')}"`);
+      if (selectedFields.phone) rowValues.push(`"${(l.whatsapp || '').replace(/"/g, '""')}"`);
+      if (selectedFields.country) rowValues.push(`"${(l.country || 'EU').replace(/"/g, '""')}"`);
+      if (selectedFields.tier) rowValues.push(`"${(l.membership_tier || 'bronze').replace(/"/g, '""')}"`);
+      if (selectedFields.created_at) rowValues.push(`"${(l.created_at || '').replace(/"/g, '""')}"`);
+      return rowValues.join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `b2b_link_campaign_leads_${roleFilter}_${Date.now()}.csv`);
+    link.setAttribute('download', `b2b_link_leads_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
 
-  // Export plain text list
-  const handleExportTextList = (list: string[], filename: string) => {
-    const content = list.join('\n');
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setShowExportModal(false);
   };
-
-  const sellerCount = leads.filter((l) => l.role === 'seller').length;
-  const buyerCount = leads.filter((l) => l.role === 'buyer').length;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 w-full max-w-full">
       {/* Toast Notification */}
       {copiedType && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#0B1528] text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -161,22 +211,22 @@ export default function SiteAdminCampaignsPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#EAEFF6]">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-              Admin Exclusive
+            <span className="bg-[#EBF3FF] text-[#0A6CFF] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+              Outreach Database
             </span>
             <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Auto-Synced on Registration
+              Auto-Synced on Account Creation
             </span>
           </div>
-          <h1 className="text-[26px] sm:text-[30px] font-extrabold text-[#0B1F3A] tracking-tight">
+          <h1 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] tracking-tight">
             Campaign Leads &amp; Outreach Lists
           </h1>
           <p className="text-[14px] text-[#5B6B82] mt-1 font-normal">
-            Direct database of verified emails and WhatsApp phone numbers captured when accounts are created, reserved for admin marketing campaigns.
+            Direct database of verified corporate emails and WhatsApp numbers captured across all wholesale accounts.
           </p>
         </div>
 
@@ -194,8 +244,8 @@ export default function SiteAdminCampaignsPage() {
 
           <button
             type="button"
-            onClick={handleExportCsv}
-            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-xs px-4 py-2.5 rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            onClick={() => setShowExportModal(true)}
+            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-xs px-5 py-2.5 rounded-full transition flex items-center gap-2 cursor-pointer shadow-xs"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -203,27 +253,26 @@ export default function SiteAdminCampaignsPage() {
         </div>
       </div>
 
-      {/* Metric Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Metric Cards Row: 3 Wide Cards (Broadcast Hub Removed to maximize width) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
         {/* Card 1: Total Leads */}
-        <div className="bg-white rounded-2xl p-4.5 border border-[#EAEFF6] shadow-xs">
+        <div className="bg-[#F8FAFC] rounded-[24px] p-5 border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Total Campaign Contacts
             </span>
             <Users className="w-4 h-4 text-[#0A6CFF]" />
           </div>
-          <div className="text-[28px] font-black text-[#0B1F3A] leading-tight">
+          <div className="text-[30px] font-black text-[#0B1F3A] leading-tight">
             {leads.length}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1 font-medium">
-            <strong className="text-emerald-700 font-bold">{sellerCount}</strong> Sellers ·{' '}
-            <strong className="text-blue-700 font-bold">{buyerCount}</strong> Buyers
+          <div className="text-[12px] text-slate-500 mt-1 font-medium">
+            Registered European trading counterparties
           </div>
         </div>
 
         {/* Card 2: Email List */}
-        <div className="bg-white rounded-2xl p-4.5 border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
+        <div className="bg-[#F8FAFC] rounded-[24px] p-5 border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -231,17 +280,17 @@ export default function SiteAdminCampaignsPage() {
               </span>
               <Mail className="w-4 h-4 text-blue-500" />
             </div>
-            <div className="text-[28px] font-black text-[#0A6CFF] leading-tight">
+            <div className="text-[30px] font-black text-[#0A6CFF] leading-tight">
               {filteredEmails.length}
             </div>
-            <div className="text-[11px] text-slate-400 mt-1">
-              Active corporate inboxes
+            <div className="text-[12px] text-slate-500 mt-1 font-medium">
+              Active corporate inboxes on file
             </div>
           </div>
           <button
             type="button"
             onClick={() => handleCopy(filteredEmails.join(', '), `Copied ${filteredEmails.length} emails to clipboard!`)}
-            className="mt-3 w-full bg-[#EBF3FF] hover:bg-[#DCE9FF] text-[#0A6CFF] text-xs font-bold py-1.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+            className="mt-3 w-full bg-white hover:bg-[#EBF3FF] border border-[#EAEFF6] text-[#0A6CFF] text-xs font-bold py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Copy className="w-3.5 h-3.5" />
             <span>Copy All Emails</span>
@@ -249,7 +298,7 @@ export default function SiteAdminCampaignsPage() {
         </div>
 
         {/* Card 3: WhatsApp List */}
-        <div className="bg-white rounded-2xl p-4.5 border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
+        <div className="bg-[#F8FAFC] rounded-[24px] p-5 border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -257,44 +306,21 @@ export default function SiteAdminCampaignsPage() {
               </span>
               <Phone className="w-4 h-4 text-emerald-600" />
             </div>
-            <div className="text-[28px] font-black text-emerald-600 leading-tight">
+            <div className="text-[30px] font-black text-emerald-600 leading-tight">
               {filteredWhatsApp.length}
             </div>
-            <div className="text-[11px] text-slate-400 mt-1">
-              International formatted numbers
+            <div className="text-[12px] text-slate-500 mt-1 font-medium">
+              Direct international phone numbers
             </div>
           </div>
           <button
             type="button"
             onClick={() => handleCopy(filteredWhatsApp.join(', '), `Copied ${filteredWhatsApp.length} WhatsApp numbers!`)}
-            className="mt-3 w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold py-1.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+            className="mt-3 w-full bg-white hover:bg-emerald-50 border border-[#EAEFF6] text-emerald-700 text-xs font-bold py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Copy className="w-3.5 h-3.5" />
             <span>Copy All WhatsApp</span>
           </button>
-        </div>
-
-        {/* Card 4: Broadcast Quick Tool */}
-        <div className="bg-gradient-to-br from-[#0B1528] to-[#12223F] rounded-2xl p-4.5 text-white shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-1.5 text-[#00E5FF] text-[11px] font-bold uppercase tracking-wider mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Broadcast Hub</span>
-            </div>
-            <div className="text-sm font-bold leading-snug">
-              Launch Campaign Blast
-            </div>
-            <p className="text-[11px] text-slate-300 mt-1">
-              Send announcements straight to sellers or export numbers into bulk WhatsApp platforms.
-            </p>
-          </div>
-          <Link
-            href="/site-admin/messages"
-            className="mt-3 w-full bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold py-1.5 rounded-xl transition flex items-center justify-center gap-1.5 text-center"
-          >
-            <Send className="w-3 h-3 text-[#00E5FF]" />
-            <span>Open In-App Desk</span>
-          </Link>
         </div>
       </div>
 
@@ -340,9 +366,9 @@ export default function SiteAdminCampaignsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Search bar */}
-          <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+          <div className="relative min-w-[220px]">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -351,24 +377,6 @@ export default function SiteAdminCampaignsPage() {
               placeholder="Search leads..."
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-full text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0A6CFF] font-medium"
             />
-          </div>
-
-          {/* Role Filter */}
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-full p-0.5 text-xs">
-            {(['all', 'seller', 'buyer'] as const).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRoleFilter(r)}
-                className={`px-3 py-1 rounded-full font-bold capitalize transition cursor-pointer ${
-                  roleFilter === r
-                    ? 'bg-[#0B1528] text-white'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {r === 'all' ? 'All Roles' : `${r}s`}
-              </button>
-            ))}
           </div>
 
           {/* Tier Filter */}
@@ -385,23 +393,23 @@ export default function SiteAdminCampaignsPage() {
         </div>
       </div>
 
-      {/* TAB 1: ALL LEADS TABLE */}
+      {/* TAB 1: ALL LEADS TABLE (Alternating white and grey bg, utilizes full width) */}
       {activeTab === 'table' && (
-        <div className="bg-white rounded-2xl border border-[#EAEFF6] overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-[24px] border border-[#EAEFF6] overflow-hidden shadow-xs w-full">
+          <div className="overflow-x-auto w-full">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-[#F8FAFC] border-b border-slate-200/80 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="py-3 px-4">Contact / Enterprise</th>
-                  <th className="py-3 px-4">Role &amp; Tier</th>
-                  <th className="py-3 px-4">Corporate Email</th>
-                  <th className="py-3 px-4">WhatsApp Number</th>
-                  <th className="py-3 px-4">Country</th>
-                  <th className="py-3 px-4">Registered Date</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className="bg-[#F8FAFC] border-b border-[#EAEFF6] text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <th className="py-3.5 px-5">Contact / Enterprise</th>
+                  <th className="py-3.5 px-4">Membership Tier</th>
+                  <th className="py-3.5 px-5">Corporate Email</th>
+                  <th className="py-3.5 px-5">WhatsApp Number</th>
+                  <th className="py-3.5 px-4">Country</th>
+                  <th className="py-3.5 px-4">Registered Date</th>
+                  <th className="py-3.5 px-5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
+              <tbody className="text-xs">
                 {filteredLeads.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-slate-400">
@@ -409,51 +417,53 @@ export default function SiteAdminCampaignsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredLeads.map((lead) => {
-                    const isSeller = lead.role === 'seller';
+                  filteredLeads.map((lead, idx) => {
+                    const isEven = idx % 2 === 1;
                     const cleanPhone = lead.whatsapp.replace(/[^\d]/g, '');
 
                     return (
-                      <tr key={lead.id} className="hover:bg-slate-50/70 transition">
+                      <tr
+                        key={lead.id}
+                        className={`border-b border-[#F1F5F9] transition ${
+                          isEven ? 'bg-[#F9FAFC]' : 'bg-white'
+                        } hover:bg-[#F0F6FF]`}
+                      >
                         {/* Name & Company */}
-                        <td className="py-3.5 px-4 font-bold text-slate-900">
-                          <div>{lead.contact_name}</div>
+                        <td className="py-3.5 px-5 font-bold text-slate-900">
+                          <div className="text-[13px]">{lead.contact_name}</div>
                           <div className="text-[11px] text-slate-500 font-normal">
                             {lead.company_name}
                           </div>
                         </td>
 
-                        {/* Role & Tier */}
+                        {/* Tier */}
                         <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                                isSeller
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}
-                            >
-                              {lead.role}
-                            </span>
-                            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                              {lead.membership_tier}
-                            </span>
-                          </div>
+                          <span
+                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                              lead.membership_tier.toLowerCase() === 'gold'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : lead.membership_tier.toLowerCase() === 'silver'
+                                ? 'bg-[#EBF3FF] text-[#0A6CFF] border border-blue-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}
+                          >
+                            {lead.membership_tier} Member
+                          </span>
                         </td>
 
                         {/* Email */}
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-5">
                           <div className="flex items-center gap-1.5">
                             <a
                               href={`mailto:${lead.email}`}
-                              className="font-medium text-blue-600 hover:underline truncate max-w-[190px]"
+                              className="font-medium text-blue-600 hover:underline truncate max-w-[200px]"
                             >
                               {lead.email}
                             </a>
                             <button
                               type="button"
-                              onClick={() => handleCopy(lead.email, `Copied email ${lead.email}`)}
-                              className="p-1 text-slate-400 hover:text-slate-600 transition"
+                              onClick={() => handleCopy(lead.email, `Copied email for ${lead.contact_name}`)}
+                              className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
                               title="Copy email"
                             >
                               <Copy className="w-3 h-3" />
@@ -461,54 +471,48 @@ export default function SiteAdminCampaignsPage() {
                           </div>
                         </td>
 
-                        {/* WhatsApp Number */}
-                        <td className="py-3.5 px-4">
-                          {lead.whatsapp ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-medium text-slate-700">
-                                {lead.whatsapp}
-                              </span>
+                        {/* WhatsApp */}
+                        <td className="py-3.5 px-5 font-mono text-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            <span>{lead.whatsapp || '—'}</span>
+                            {lead.whatsapp && (
                               <button
                                 type="button"
-                                onClick={() => handleCopy(lead.whatsapp, `Copied WhatsApp ${lead.whatsapp}`)}
-                                className="p-1 text-slate-400 hover:text-slate-600 transition"
-                                title="Copy WhatsApp number"
+                                onClick={() => handleCopy(lead.whatsapp, `Copied phone for ${lead.contact_name}`)}
+                                className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                title="Copy number"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
+                            )}
+                          </div>
                         </td>
 
                         {/* Country */}
-                        <td className="py-3.5 px-4 text-slate-600 font-medium">
-                          {lead.country || 'EU'}
+                        <td className="py-3.5 px-4 text-slate-600">
+                          {lead.country || 'European Union'}
                         </td>
 
                         {/* Date */}
-                        <td className="py-3.5 px-4 text-slate-400 text-[11px]">
-                          {new Date(lead.created_at).toLocaleDateString()}
+                        <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
+                          {lead.created_at}
                         </td>
 
-                        {/* Direct Actions */}
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="inline-flex items-center gap-1.5">
+                        {/* Action buttons */}
+                        <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
                             <a
-                              href={`mailto:${lead.email}?subject=B2B%20LINK%20Wholesale%20Campaign`}
-                              className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-full transition"
+                              href={`mailto:${lead.email}`}
+                              className="bg-[#F8FAFC] hover:bg-[#EAEFF6] border border-[#EAEFF6] text-[#0A6CFF] text-[11px] font-bold px-2.5 py-1 rounded-full transition"
                             >
                               Email
                             </a>
-                            {lead.whatsapp && (
+                            {cleanPhone && (
                               <a
-                                href={`https://wa.me/${cleanPhone}?text=Hello%20${encodeURIComponent(
-                                  lead.contact_name
-                                )},%20this%20is%20Jeff%20from%20B2B%20LINK.`}
+                                href={`https://wa.me/${cleanPhone}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold px-2.5 py-1 rounded-full transition"
+                                className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-full transition"
                               >
                                 WhatsApp
                               </a>
@@ -525,99 +529,145 @@ export default function SiteAdminCampaignsPage() {
         </div>
       )}
 
-      {/* TAB 2: QUICK EMAIL BLAST VIEW */}
+      {/* TAB 2: EMAILS LIST VIEW */}
       {activeTab === 'emails' && (
-        <div className="bg-white rounded-2xl border border-[#EAEFF6] p-6 space-y-4 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Mail className="w-4 h-4 text-blue-600" />
-                <span>Formatted Email Outreach List ({filteredEmails.length} recipients)</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Comma-separated list ready to paste directly into your email service provider (Resend, Mailchimp, SendGrid, Gmail BCC).
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleCopy(filteredEmails.join(', '), `Copied ${filteredEmails.length} emails to clipboard!`)}
-                className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy All ({filteredEmails.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportTextList(filteredEmails, `b2b_link_emails_${roleFilter}.txt`)}
-                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download .txt</span>
-              </button>
-            </div>
+        <div className="bg-white rounded-[24px] border border-[#EAEFF6] p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-extrabold text-[16px] text-slate-900">
+              Bulk Email Pastebox ({filteredEmails.length} Total)
+            </h3>
+            <button
+              type="button"
+              onClick={() => handleCopy(filteredEmails.join(', '), 'Copied all emails to clipboard!')}
+              className="bg-[#0A6CFF] text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-[#0857CF] transition flex items-center gap-1.5"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy All ({filteredEmails.length})</span>
+            </button>
           </div>
-
           <textarea
             readOnly
-            rows={8}
+            rows={10}
             value={filteredEmails.join(', ')}
-            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:outline-none resize-none leading-relaxed"
+            className="w-full p-4 bg-[#F8FAFC] border border-[#EAEFF6] rounded-2xl text-xs font-mono text-slate-700 focus:outline-none select-all"
           />
-
-          <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div>
-              <strong className="font-bold">Campaign Delivery Notice:</strong> All registered business emails are pre-filtered for valid European corporate domains.
-            </div>
-          </div>
         </div>
       )}
 
-      {/* TAB 3: QUICK WHATSAPP NUMBERS VIEW */}
+      {/* TAB 3: WHATSAPP LIST VIEW */}
       {activeTab === 'whatsapp' && (
-        <div className="bg-white rounded-2xl border border-[#EAEFF6] p-6 space-y-4 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Phone className="w-4 h-4 text-emerald-600" />
-                <span>WhatsApp Broadcast Numbers ({filteredWhatsApp.length} active numbers)</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Formatted in international E.164 standard (+CountryCode) ready for bulk WhatsApp broadcast tools, CRM import, or Meta Business Cloud API.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleCopy(filteredWhatsApp.join(', '), `Copied ${filteredWhatsApp.length} WhatsApp numbers!`)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy All ({filteredWhatsApp.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportTextList(filteredWhatsApp, `b2b_link_whatsapp_${roleFilter}.txt`)}
-                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-2 rounded-full transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download .txt</span>
-              </button>
-            </div>
+        <div className="bg-white rounded-[24px] border border-[#EAEFF6] p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-extrabold text-[16px] text-slate-900">
+              WhatsApp Numbers List ({filteredWhatsApp.length} Total)
+            </h3>
+            <button
+              type="button"
+              onClick={() => handleCopy(filteredWhatsApp.join('\n'), 'Copied all WhatsApp numbers!')}
+              className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-emerald-700 transition flex items-center gap-1.5"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy All ({filteredWhatsApp.length})</span>
+            </button>
           </div>
-
           <textarea
             readOnly
-            rows={8}
+            rows={10}
             value={filteredWhatsApp.join('\n')}
-            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:outline-none resize-none leading-relaxed"
+            className="w-full p-4 bg-[#F8FAFC] border border-[#EAEFF6] rounded-2xl text-xs font-mono text-slate-700 focus:outline-none select-all"
           />
+        </div>
+      )}
 
-          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex items-start gap-2.5">
-            <Share2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <strong className="font-bold">WhatsApp Campaign Readiness:</strong> Numbers are automatically formatted with national dial codes captured during the account onboarding flow.
+      {/* MODAL: EXPORT CSV FIELD PICKER POPUP */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] max-w-md w-full p-6 sm:p-7 text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#F0F4FA] mb-4">
+              <div>
+                <h3 className="text-[18px] font-black text-[#0B1F3A]">
+                  Export Campaign Leads CSV
+                </h3>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Select which fields to include in your CSV export ({filteredLeads.length} records).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Toggle Buttons */}
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={handleSelectDefaultFields}
+                className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#EBF3FF] text-[#0A6CFF] hover:bg-[#DCEBFF] transition cursor-pointer"
+              >
+                Default (Name, Email, Phone, Company)
+              </button>
+              <button
+                type="button"
+                onClick={handleSelectAllFields}
+                className="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Select All
+              </button>
+            </div>
+
+            {/* Field Checkboxes */}
+            <div className="space-y-2.5 bg-[#F8FAFC] p-4 rounded-2xl border border-[#EAEFF6]">
+              {[
+                { key: 'name', label: 'Contact Person Name' },
+                { key: 'company', label: 'Company / Enterprise Name' },
+                { key: 'email', label: 'Corporate Email Address' },
+                { key: 'phone', label: 'WhatsApp / Phone Number' },
+                { key: 'country', label: 'Country / Territory' },
+                { key: 'tier', label: 'Membership Tier' },
+                { key: 'created_at', label: 'Account Registration Date' },
+              ].map(({ key, label }) => {
+                const checked = selectedFields[key];
+
+                return (
+                  <label
+                    key={key}
+                    onClick={() => handleToggleField(key)}
+                    className="flex items-center gap-2.5 cursor-pointer text-[13px] font-medium text-[#0B1F3A] hover:text-[#0A6CFF] select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}}
+                      className="rounded border-[#CBD5E1] text-[#0A6CFF] focus:ring-[#0A6CFF] cursor-pointer"
+                    />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#F0F4FA] mt-5">
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="px-5 py-2.5 rounded-full border border-[#E3E9F2] text-[#5B6B82] font-bold text-[13px] hover:bg-[#F3F6FB] transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadCustomCsv}
+                className="px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] transition cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download CSV</span>
+              </button>
             </div>
           </div>
         </div>

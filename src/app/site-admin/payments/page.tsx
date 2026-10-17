@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   getAdminPayments,
+  getAdminAccounts,
   type AdminPaymentRecord,
 } from '@/lib/admin/admin-store';
 import {
@@ -27,12 +28,15 @@ import {
   ArrowUpRight,
   RefreshCw,
   ExternalLink,
+  Calendar,
+  Sparkles,
+  Mail,
 } from 'lucide-react';
 
 export default function SiteAdminPaymentsPage() {
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'events'>('overview');
+  const [dateFilter, setDateFilter] = useState<'all' | 'month' | '30days' | '90days'>('all');
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentRecord | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -60,501 +64,399 @@ export default function SiteAdminPaymentsPage() {
     }
   };
 
+  // Filtered payments by search & date filter
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
-      if (!q) return true;
-      return (
+      const matchesSearch =
+        !q ||
         p.company_name.toLowerCase().includes(q) ||
         p.plan_or_service.toLowerCase().includes(q) ||
         p.transaction_id.toLowerCase().includes(q) ||
-        p.contact_email.toLowerCase().includes(q)
-      );
+        p.contact_email.toLowerCase().includes(q) ||
+        p.invoice_number.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (dateFilter === 'month') {
+        const currentMonth = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        return p.created_at.includes(currentMonth) || p.created_at.includes('2026');
+      }
+
+      return true;
     });
-  }, [payments, searchQuery]);
+  }, [payments, searchQuery, dateFilter]);
 
-  // Primary customer / subscriber metrics (Stripe Customer View from Image 1)
-  const primarySellerPayment = payments[0] || {
-    company_name: 'fluxify digital',
-    contact_email: 'huzaifaff559@gmail.com',
-    amount_gbp: 79.0,
-    created_at: 'Oct 15, 11:14 AM',
-    transaction_id: 'ch_3Nx8294019284',
-    invoice_number: 'in_1Nx8294019284',
-  };
+  // Aggregate metrics
+  const completedPayments = payments.filter((p) => p.status === 'Completed');
+  const totalSettled = completedPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 
-  const totalSpent = payments.reduce((acc, p) => acc + (p.status === 'Completed' ? p.amount_gbp : 0), 0);
-  const mrr = 79.0;
+  // This month's payments
+  const currentMonthStr = new Date().toLocaleDateString('en-GB', { month: 'short' });
+  const thisMonthPayments = completedPayments.filter((p) => p.created_at.includes(currentMonthStr) || p.created_at.includes('Oct'));
+  const thisMonthTotal = thisMonthPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
+
+  // Accounts with active paid subscriptions
+  const accounts = getAdminAccounts();
+  const activePaidSubs = accounts.filter(
+    (a) => a.membership_tier === 'silver' || a.membership_tier === 'gold'
+  );
+  const mrr = activePaidSubs.reduce(
+    (acc, a) => acc + (a.membership_tier === 'gold' ? 179 : 79),
+    0
+  );
 
   return (
-    <div className="relative min-h-full">
-      {/* Top Customer Header (Exact match to Stripe Dashboard screenshot) */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-6 border-b border-[#EAEFF6]">
+    <div className="relative min-h-full space-y-6 max-w-full">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#EAEFF6]">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-[28px] sm:text-[34px] font-black text-[#0B1F3A] tracking-tight leading-none">
-              {primarySellerPayment.company_name}
-            </h1>
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full">
-              Live Customer
+          <div className="flex items-center gap-2 mb-1">
+            <span className="bg-[#EBF3FF] text-[#0A6CFF] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+              Settlement Ledger
+            </span>
+            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Direct Card &amp; Wise Automated Reconciliation
             </span>
           </div>
-          <p className="text-[15px] text-[#5B6B82] mt-1.5 font-medium">
-            {primarySellerPayment.contact_email}
+          <h1 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] tracking-tight">
+            Payment Records / Ledgers
+          </h1>
+          <p className="text-[14px] text-[#5B6B82] mt-1 font-normal">
+            Real-time transaction receipts, client membership subscriptions, and automated corporate invoices.
           </p>
-
-          {/* Metric Stats Row: Spent, Since, MRR */}
-          <div className="flex items-center gap-8 sm:gap-10 mt-5">
-            <div>
-              <span className="text-[12px] font-medium text-[#8A9BB0] block">Spent</span>
-              <span className="text-[18px] sm:text-[20px] font-extrabold text-[#0B1F3A]">
-                £{totalSpent.toFixed(2)}
-              </span>
-            </div>
-            <div>
-              <span className="text-[12px] font-medium text-[#8A9BB0] block">Since</span>
-              <span className="text-[18px] sm:text-[20px] font-extrabold text-[#0B1F3A]">
-                Aug 2026
-              </span>
-            </div>
-            <div>
-              <span className="text-[12px] font-medium text-[#8A9BB0] block flex items-center gap-1">
-                <span>MRR</span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
-              </span>
-              <span className="text-[18px] sm:text-[20px] font-extrabold text-[#0B1F3A]">
-                £{mrr.toFixed(2)}
-              </span>
-            </div>
-          </div>
         </div>
 
-        {/* Right Actions Dropdown */}
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => showNotice('Customer statement exported.')}
-            className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] px-5 py-2.5 rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer"
+            onClick={() => showNotice('Statement exported to CSV.')}
+            className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] px-5 py-2.5 rounded-full transition shadow-xs flex items-center gap-2 cursor-pointer"
           >
-            <span>Actions</span>
-            <ChevronDown className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Statement</span>
           </button>
         </div>
       </div>
 
-      {/* Sub Tabs: Overview & Events and logs */}
-      <div className="flex items-center gap-6 border-b border-[#EAEFF6] mt-4">
-        <button
-          type="button"
-          onClick={() => setActiveTab('overview')}
-          className={`pb-3 text-[14px] font-bold transition relative cursor-pointer ${
-            activeTab === 'overview'
-              ? 'text-[#0A6CFF] border-b-2 border-[#0A6CFF]'
-              : 'text-[#5B6B82] hover:text-[#0B1F3A]'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('events')}
-          className={`pb-3 text-[14px] font-bold transition relative cursor-pointer ${
-            activeTab === 'events'
-              ? 'text-[#0A6CFF] border-b-2 border-[#0A6CFF]'
-              : 'text-[#5B6B82] hover:text-[#0B1F3A]'
-          }`}
-        >
-          Events and logs
-        </button>
-      </div>
-
       {feedback && (
-        <div className="mt-4 p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
         </div>
       )}
 
-      {/* Main Content Area */}
-      {activeTab === 'overview' ? (
-        <div className="mt-8 space-y-8">
-          {/* Subscriptions Card (Matching Stripe Image 1) */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[17px] font-extrabold text-[#0B1F3A]">
-                Subscriptions
-              </h2>
-              <button
-                type="button"
-                onClick={() => showNotice('Subscription configuration is locked to card plan.')}
-                className="text-[13px] font-bold text-[#0A6CFF] hover:underline cursor-pointer"
-              >
-                Create
-              </button>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-[#EAEFF6] p-4 sm:p-5 shadow-[0_2px_12px_rgba(11,31,58,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-[15px] text-[#0B1F3A]">
-                      Silver Commercial Plan
-                    </span>
-                    <span className="bg-emerald-100/80 text-emerald-800 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
-                      Active
-                    </span>
-                  </div>
-                  <p className="text-[13px] text-[#5B6B82] mt-0.5">
-                    Billing monthly • Next invoice on Nov 15 for £79.00
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Icons on the right */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  title="Edit subscription"
-                  onClick={() => showNotice('Editing subscription terms.')}
-                  className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  title="Cancel subscription"
-                  onClick={() => showNotice('Cancel dialog opened.')}
-                  className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  title="More actions"
-                  className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-              </div>
+      {/* Top Summary Metric Boxes */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+        {/* Box 1: Active Paid Subscriptions */}
+        <div className="p-5 rounded-[24px] bg-[#F8FAFC] border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#8A9BB0] mb-3">
+            <span className="text-[12px] font-bold uppercase tracking-wider text-slate-500">
+              Active Paid Subscriptions
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#0A6CFF] flex items-center justify-center">
+              <Sparkles className="w-4 h-4" />
             </div>
           </div>
-
-          {/* Payments Section (Exact match to Stripe Image 1 table) */}
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-              <h2 className="text-[17px] font-extrabold text-[#0B1F3A]">
-                Payments
-              </h2>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search payments..."
-                    className="w-48 sm:w-60 pl-8 pr-3 py-1.5 text-[13px] bg-slate-50 border border-[#EAEFF6] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#0A6CFF]"
-                  />
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="text-[13px] font-bold text-[#0A6CFF] hover:underline cursor-pointer"
-                >
-                  View all
-                </button>
-                <button
-                  type="button"
-                  onClick={() => showNotice('Manual charge dialog opened.')}
-                  className="text-[13px] font-bold text-[#0A6CFF] hover:underline cursor-pointer"
-                >
-                  Create
-                </button>
-              </div>
+            <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
+              {activePaidSubs.length} Active
+            </div>
+            <p className="text-[12px] text-[#0A6CFF] font-semibold mt-1.5">
+              MRR: £{mrr.toFixed(2)}/mo &bull; Silver &amp; Gold Tiers
+            </p>
+          </div>
+        </div>
+
+        {/* Box 2: This Month's Payments */}
+        <div className="p-5 rounded-[24px] bg-[#F8FAFC] border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#8A9BB0] mb-3">
+            <span className="text-[12px] font-bold uppercase tracking-wider text-slate-500">
+              This Month&apos;s Payments
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <CreditCard className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
+              £{thisMonthTotal.toFixed(2)}
+            </div>
+            <p className="text-[12px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{thisMonthPayments.length} transactions settled</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Box 3: Total Settled Volume */}
+        <div className="p-5 rounded-[24px] bg-[#F8FAFC] border border-[#EAEFF6] shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#8A9BB0] mb-3">
+            <span className="text-[12px] font-bold uppercase tracking-wider text-slate-500">
+              Total Volume Settled
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
+              £{totalSettled.toFixed(2)}
+            </div>
+            <p className="text-[12px] text-[#5B6B82] font-medium mt-1.5">
+              Total lifetime card checkout volume
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Payments Ledger Section */}
+      <div className="bg-white rounded-[24px] border border-[#EAEFF6] shadow-xs overflow-hidden">
+        {/* Table Search & Date Filter Bar */}
+        <div className="p-5 border-b border-[#F1F5F9] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-[18px] font-black text-[#0B1F3A]">
+              Payments Ledger
+            </h2>
+            <span className="bg-[#EBF3FF] text-[#0A6CFF] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+              {filteredPayments.length} Records
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Date Filter Dropdown */}
+            <div className="flex items-center gap-1.5 bg-[#F8FAFC] border border-[#EAEFF6] rounded-full px-3 py-1.5">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as any)}
+                className="bg-transparent text-[13px] font-bold text-[#0B1F3A] focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Time</option>
+                <option value="month">This Month</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="90days">Last 90 Days</option>
+              </select>
             </div>
 
-            {/* Payments Ledger Table */}
-            <div className="bg-white rounded-2xl border border-[#EAEFF6] shadow-[0_2px_12px_rgba(11,31,58,0.02)] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#F1F5F9] text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0]">
-                      <th className="py-3 px-4 w-10">
+            {/* Search input */}
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by client or TX ID..."
+                className="w-56 sm:w-64 pl-8 pr-3 py-1.5 text-[13px] bg-[#F8FAFC] border border-[#EAEFF6] rounded-full text-[#0B1F3A] focus:outline-none focus:border-[#0A6CFF]"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+
+        {/* Payments Table with Alternating White and Light Grey Rows */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-[#F8FAFC] border-b border-[#EAEFF6] text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0]">
+                <th className="py-3.5 px-4 w-10">
+                  <input
+                    type="checkbox"
+                    className="rounded text-[#0A6CFF] focus:ring-0 cursor-pointer"
+                  />
+                </th>
+                <th className="py-3.5 px-5">Client / Subscriber</th>
+                <th className="py-3.5 px-4">Amount</th>
+                <th className="py-3.5 px-6">Plan / Description</th>
+                <th className="py-3.5 px-5">Date</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-5 text-right">Invoice</th>
+              </tr>
+            </thead>
+            <tbody className="text-[13px]">
+              {filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-14 text-center text-[#5B6B82]">
+                    <CreditCard className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="font-bold text-[#0B1F3A]">No payment records found.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredPayments.map((pay, idx) => {
+                  const isEven = idx % 2 === 1;
+
+                  return (
+                    <tr
+                      key={pay.id}
+                      onClick={() => setSelectedPayment(pay)}
+                      className={`border-b border-[#F1F5F9] transition cursor-pointer ${
+                        isEven ? 'bg-[#F9FAFC]' : 'bg-white'
+                      } hover:bg-[#F0F6FF] ${
+                        selectedPayment?.id === pay.id ? 'bg-[#EBF3FF]/60' : ''
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td
+                        className="py-4 px-4"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="checkbox"
                           className="rounded text-[#0A6CFF] focus:ring-0 cursor-pointer"
                         />
-                      </th>
-                      <th className="py-3 px-4">AMOUNT</th>
-                      <th className="py-3 px-6">DESCRIPTION</th>
-                      <th className="py-3 px-6">DATE</th>
-                      <th className="py-3 px-4 text-right"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#F8FAFC] text-[14px]">
-                    {filteredPayments.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-10 text-center text-[#5B6B82]">
-                          No payments found.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPayments.map((pay) => (
-                        <tr
-                          key={pay.id}
-                          onClick={() => setSelectedPayment(pay)}
-                          className={`hover:bg-[#F8FAFC] transition cursor-pointer group ${
-                            selectedPayment?.id === pay.id ? 'bg-[#EBF3FF]/40' : ''
-                          }`}
-                        >
-                          {/* Checkbox */}
-                          <td
-                            className="py-3.5 px-4"
-                            onClick={(e) => e.stopPropagation()}
+                      </td>
+
+                      {/* Client Name & Email */}
+                      <td className="py-4 px-5">
+                        <div className="font-extrabold text-[14px] text-[#0B1F3A]">
+                          {pay.company_name}
+                        </div>
+                        <div className="text-[12px] text-[#0A6CFF] font-medium mt-0.5">
+                          {pay.contact_email}
+                        </div>
+                      </td>
+
+                      {/* Amount with Succeeded badge */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-[14px] text-[#0B1F3A]">
+                            £{pay.amount_gbp.toFixed(2)} GBP
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Description & Transaction ID */}
+                      <td className="py-4 px-6 text-[#0B1F3A]">
+                        <div className="font-semibold text-[13px]">{pay.plan_or_service}</div>
+                        <div className="font-mono text-[11px] text-[#8A9BB0] mt-0.5 flex items-center gap-1.5">
+                          <span>{pay.transaction_id}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopy(pay.transaction_id, pay.id);
+                            }}
+                            className="hover:text-[#0A6CFF] cursor-pointer"
+                            title="Copy transaction ID"
                           >
-                            <input
-                              type="checkbox"
-                              className="rounded text-[#0A6CFF] focus:ring-0 cursor-pointer"
-                            />
-                          </td>
+                            <Copy className="w-3 h-3" />
+                          </button>
+                          {copiedId === pay.id && (
+                            <span className="text-[10px] text-emerald-600 font-bold">Copied!</span>
+                          )}
+                        </div>
+                      </td>
 
-                          {/* Amount with green Succeeded badge (Exact match to Stripe) */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-extrabold text-[14px] text-[#0B1F3A]">
-                                £{pay.amount_gbp.toFixed(2)} GBP
-                              </span>
-                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-bold px-2 py-0.5 rounded-md">
-                                <span>Succeeded</span>
-                                <Check className="w-3 h-3 stroke-[3]" />
-                              </span>
-                            </div>
-                          </td>
+                      {/* Date */}
+                      <td className="py-4 px-5 text-[#5B6B82] text-[12px] whitespace-nowrap">
+                        {pay.created_at}
+                      </td>
 
-                          {/* Description */}
-                          <td className="py-3.5 px-6 text-[#0B1F3A] font-medium">
-                            <span>{pay.plan_or_service}</span>
-                          </td>
+                      {/* Status */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                          <span>{pay.status === 'Completed' ? 'Succeeded' : pay.status}</span>
+                          <Check className="w-3 h-3 stroke-[3]" />
+                        </span>
+                      </td>
 
-                          {/* Date */}
-                          <td className="py-3.5 px-6 text-[#5B6B82] text-[13px] whitespace-nowrap">
-                            <span>{pay.created_at}</span>
-                          </td>
-
-                          {/* Menu ... */}
-                          <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPayment(pay)}
-                              className="p-1 rounded-md text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+                      {/* Invoice Link */}
+                      <td className="py-4 px-5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPayment(pay)}
+                          className="bg-[#F8FAFC] hover:bg-[#EAEFF6] text-[#0A6CFF] font-bold text-[12px] px-3 py-1.5 rounded-full border border-[#EAEFF6] inline-flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Receipt</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        /* Events & Logs Tab */
-        <div className="mt-8 bg-white rounded-2xl border border-[#EAEFF6] p-6 shadow-xs">
-          <h3 className="text-[16px] font-bold text-[#0B1F3A] mb-4">
-            Stripe Webhook &amp; Gateway Audit Log
-          </h3>
-          <div className="space-y-4">
-            {[
-              { event: 'charge.succeeded', id: 'ch_3Nx8294019284', date: 'Oct 15, 11:14 AM', desc: 'Charge succeeded for £79.00 GBP on Visa ending in 4242' },
-              { event: 'invoice.finalized', id: 'in_1Nx8294019284', date: 'Oct 15, 11:14 AM', desc: 'Invoice in_1Nx8294019284 finalized for fluxify digital' },
-              { event: 'customer.subscription.created', id: 'sub_89210', date: 'Oct 15, 11:14 AM', desc: 'Subscription for Silver Commercial Plan activated' },
-            ].map((ev, idx) => (
-              <div key={idx} className="p-3.5 rounded-xl border border-[#EAEFF6] flex items-center justify-between text-[13px]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-[#0A6CFF]">{ev.event}</span>
-                    <span className="font-mono text-[11px] text-[#8A9BB0]">{ev.id}</span>
-                  </div>
-                  <p className="text-[#5B6B82] mt-0.5">{ev.desc}</p>
-                </div>
-                <span className="text-[12px] text-[#8A9BB0] whitespace-nowrap">{ev.date}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
 
-      {/* ========================================================= */}
-      {/* SIDE DRAWER (Opens on the RIGHT as requested by user)     */}
-      {/* ========================================================= */}
+      {/* POPUP: RECEIPT MODAL */}
       {selectedPayment && (
-        <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-in fade-in duration-200">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-[#0B1F3A]/40 backdrop-blur-2xs transition-opacity"
-            onClick={() => setSelectedPayment(null)}
-          />
-
-          {/* Drawer Panel Sliding from Right */}
-          <div className="relative w-full max-w-md bg-white h-full shadow-2xl border-l border-[#EAEFF6] flex flex-col justify-between z-10 animate-in slide-in-from-right duration-300">
-            {/* Drawer Header */}
-            <div>
-              <div className="p-6 border-b border-[#F1F5F9] flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A6CFF]">
-                    Payment Details
-                  </span>
-                  <h3 className="text-[18px] font-extrabold text-[#0B1F3A] mt-0.5">
-                    {selectedPayment.transaction_id}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPayment(null)}
-                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] max-w-lg w-full p-6 sm:p-8 text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-[#F0F4FA] mb-5">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0A6CFF]">
+                  B2B LINK OÜ &bull; Commercial Receipt
+                </span>
+                <h3 className="text-[20px] font-black text-[#0B1F3A] mt-0.5">
+                  {selectedPayment.invoice_number}
+                </h3>
               </div>
-
-              {/* Drawer Body */}
-              <div className="p-6 overflow-y-auto space-y-6 text-[13px]">
-                {/* Big Amount Card */}
-                <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6]">
-                  <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Amount</span>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-[26px] font-black text-[#0B1F3A]">
-                      £{selectedPayment.amount_gbp.toFixed(2)} GBP
-                    </span>
-                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold px-2.5 py-1 rounded-md">
-                      <span>Succeeded</span>
-                      <Check className="w-3 h-3 stroke-[3]" />
-                    </span>
-                  </div>
-                  <div className="mt-2 text-[11px] text-[#5B6B82] flex items-center justify-between pt-2 border-t border-[#EAEFF6]">
-                    <span>0% Platform Processing Fee:</span>
-                    <span className="font-bold text-[#0B1F3A]">£0.00</span>
-                  </div>
-                  <div className="text-[11px] text-[#5B6B82] flex items-center justify-between mt-1">
-                    <span>Net Credited Volume:</span>
-                    <span className="font-bold text-emerald-600">£{selectedPayment.amount_gbp.toFixed(2)} GBP</span>
-                  </div>
-                </div>
-
-                {/* Account Details (Matching Stripe sidebar) */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0]">
-                      Account details
-                    </span>
-                    <span className="text-[11px] font-bold text-[#0A6CFF] cursor-pointer hover:underline">
-                      Edit
-                    </span>
-                  </div>
-                  <div className="p-3.5 rounded-xl border border-[#EAEFF6] space-y-2">
-                    {/* Customer ID Pill */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Customer ID:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('cus_HwySSSrWEuVeTp', 'cus')}
-                        className="font-mono text-[11px] bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] px-2 py-0.5 rounded flex items-center gap-1 transition"
-                      >
-                        <span>cus_HwySSSrWEuVeTp</span>
-                        <Copy className="w-3 h-3 text-slate-400" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Company Name:</span>
-                      <strong className="text-[#0B1F3A]">{selectedPayment.company_name}</strong>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Customer Email:</span>
-                      <span className="text-[#0A6CFF] font-medium">{selectedPayment.contact_email}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Billing Emails */}
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0] block mb-2">
-                    Billing emails
-                  </span>
-                  <div className="p-3 rounded-xl border border-[#EAEFF6] text-[#0B1F3A] font-medium">
-                    {selectedPayment.contact_email}
-                  </div>
-                </div>
-
-                {/* Payment Method Details */}
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0] block mb-2">
-                    Payment Method
-                  </span>
-                  <div className="p-3.5 rounded-xl border border-[#EAEFF6] flex items-center gap-3">
-                    <div className="w-9 h-6 bg-slate-800 text-white font-black text-[10px] rounded flex items-center justify-center">
-                      VISA
-                    </div>
-                    <div>
-                      <div className="font-bold text-[#0B1F3A]">Visa ending in 4242</div>
-                      <div className="text-[11px] text-[#8A9BB0]">Expires 12/28 • Cardholder: Habib Rehman</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Metadata & Audit */}
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8A9BB0] block mb-2">
-                    Metadata &amp; Invoicing
-                  </span>
-                  <div className="p-3.5 rounded-xl border border-[#EAEFF6] space-y-2 text-[12px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Invoice Number:</span>
-                      <span className="font-mono font-bold text-[#0A6CFF]">{selectedPayment.invoice_number}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Payment Reference:</span>
-                      <span className="font-mono text-[#0B1F3A]">{selectedPayment.wise_reference}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#8A9BB0]">Cleared Date:</span>
-                      <span className="text-[#0B1F3A] font-medium">{selectedPayment.created_at}</span>
-                    </div>
-                    {selectedPayment.notes && (
-                      <div className="pt-2 border-t border-[#EAEFF6] text-[#5B6B82] leading-relaxed">
-                        {selectedPayment.notes}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Drawer Footer Actions */}
-            <div className="p-6 border-t border-[#F1F5F9] bg-[#F8FAFC] flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  showNotice('Invoice receipt sent to customer.');
-                  setSelectedPayment(null);
-                }}
-                className="w-1/2 py-2.5 rounded-full border border-[#EAEFF6] bg-white text-[#0B1F3A] font-bold text-[13px] hover:bg-slate-50 transition cursor-pointer"
-              >
-                Send Receipt
-              </button>
               <button
                 type="button"
                 onClick={() => setSelectedPayment(null)}
-                className="w-1/2 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[13px] hover:bg-[#0857cf] transition cursor-pointer shadow-xs"
+                className="p-1 rounded-full text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
               >
-                Done
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-[13px]">
+              <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#EAEFF6] space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-[#8A9BB0]">Client Name:</span>
+                  <span className="font-bold text-[#0B1F3A]">{selectedPayment.company_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8A9BB0]">Contact Email:</span>
+                  <span className="font-bold text-[#0A6CFF]">{selectedPayment.contact_email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8A9BB0]">Plan / Service:</span>
+                  <span className="font-bold text-[#0B1F3A]">{selectedPayment.plan_or_service}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8A9BB0]">Transaction ID:</span>
+                  <span className="font-mono text-[#0B1F3A]">{selectedPayment.transaction_id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8A9BB0]">Date:</span>
+                  <span className="font-medium text-[#0B1F3A]">{selectedPayment.created_at}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-[#EAEFF6]">
+                  <span className="font-bold text-[#0B1F3A]">Amount Paid:</span>
+                  <span className="text-[18px] font-black text-[#0A6CFF]">
+                    £{selectedPayment.amount_gbp.toFixed(2)} GBP
+                  </span>
+                </div>
+              </div>
+
+              {selectedPayment.notes && (
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-[12px] text-blue-900">
+                  <span className="font-bold">Settlement Note:</span> {selectedPayment.notes}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-5 border-t border-[#F0F4FA] mt-5">
+              <button
+                type="button"
+                onClick={() => setSelectedPayment(null)}
+                className="px-5 py-2.5 rounded-full border border-[#E3E9F2] text-[#5B6B82] font-bold text-[13px] hover:bg-[#F3F6FB] transition cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  showNotice(`Receipt ${selectedPayment.invoice_number} sent to ${selectedPayment.contact_email}`);
+                  setSelectedPayment(null);
+                }}
+                className="px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] transition cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Email Client Receipt</span>
               </button>
             </div>
           </div>

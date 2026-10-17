@@ -8,6 +8,10 @@ import {
   vettingDecisionEmail,
   passwordResetEmail,
   verificationEmail,
+  kycVerificationRequestEmail,
+  adminNewCustomerAlertEmail,
+  accountApprovalEmail,
+  accountSuspendedEmail,
   type NewInquiryEmailProps,
   type NicheWtbAlertEmailProps,
   type ExactBarcodeMatchEmailProps,
@@ -15,12 +19,17 @@ import {
   type VettingDecisionEmailProps,
   type PasswordResetEmailProps,
   type VerificationEmailProps,
+  type KycVerificationRequestEmailProps,
+  type AccountApprovalEmailProps,
+  type AccountSuspendedEmailProps,
+  customerQueryReplyEmail,
+  type CustomerQueryReplyEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'B2B LINK <notifications@b2blink.com>';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'BrandNova / B2B LINK <notifications@brandnova.info>';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface SendEmailResult {
@@ -37,13 +46,17 @@ export async function sendEmail({
   to,
   subject,
   html,
+  replyTo,
 }: {
   to: string;
   subject: string;
   html: string;
+  replyTo?: string;
 }): Promise<SendEmailResult> {
+  const effectiveReplyTo = replyTo || 'newcustomers@brandnova.info';
+
   if (!resend) {
-    console.warn(`[EMAIL DISPATCHER (DEV MOCK)] To: ${to} | Subject: ${subject}`);
+    console.warn(`[EMAIL DISPATCHER (DEV MOCK)] To: ${to} | ReplyTo: ${effectiveReplyTo} | Subject: ${subject}`);
     return {
       success: true,
       messageId: `mock_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -66,7 +79,7 @@ export async function sendEmail({
       subject,
       html,
       text: plainText,
-      replyTo: 'support@b2blink.eu',
+      replyTo: effectiveReplyTo,
     });
 
     if (error) {
@@ -162,6 +175,72 @@ export async function sendVerificationEmail(
 ): Promise<SendEmailResult> {
   const { subject, html } = verificationEmail(props);
   return sendEmail({ to: toEmail, subject, html });
+}
+
+/**
+ * Dispatches KYC Document Checklist Request Email to new wholesale customer
+ * Also alerts Jeff / newcustomers@brandnova.info
+ */
+export async function sendKycVerificationRequestEmail(
+  toEmail: string,
+  props: Omit<KycVerificationRequestEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const actionUrl = `${APP_URL}/dashboard`;
+  const { subject, html } = kycVerificationRequestEmail({ ...props, actionUrl });
+
+  // 1. Send onboarding KYC email to customer (replyTo: newcustomers@brandnova.info)
+  const result = await sendEmail({
+    to: toEmail,
+    subject,
+    html,
+    replyTo: 'newcustomers@brandnova.info',
+  });
+
+  // 2. Alert Jeff / Admin desk at newcustomers@brandnova.info
+  try {
+    const adminAlert = adminNewCustomerAlertEmail({
+      companyName: props.companyName,
+      contactName: props.contactName,
+      email: toEmail,
+      phone: props.phone,
+      role: 'wholesale_member',
+      actionUrl: `${APP_URL}/site-admin/users`,
+    });
+    void sendEmail({
+      to: 'newcustomers@brandnova.info',
+      subject: adminAlert.subject,
+      html: adminAlert.html,
+      replyTo: toEmail,
+    });
+  } catch (adminErr) {
+    console.warn('[ADMIN KYC ALERT NOTICE]', adminErr);
+  }
+
+  return result;
+}
+
+/**
+ * Dispatches Account Approval Email when Jeff verifies the account
+ */
+export async function sendAccountApprovalEmail(
+  toEmail: string,
+  props: Omit<AccountApprovalEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const actionUrl = `${APP_URL}/dashboard`;
+  const { subject, html } = accountApprovalEmail({ ...props, actionUrl });
+  return sendEmail({ to: toEmail, subject, html, replyTo: 'newcustomers@brandnova.info' });
+}
+
+/**
+ * Dispatches Account Suspension Email
+ */
+export async function sendAccountSuspensionEmail(
+  toEmail: string,
+  props: Omit<AccountSuspendedEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const actionUrl = `${APP_URL}/contact`;
+  const { subject, html } = accountSuspendedEmail({ ...props, actionUrl });
+  return sendEmail({ to: toEmail, subject, html, replyTo: 'newcustomers@brandnova.info' });
 }
 
 type QueueItemWithRelations = WtbNotificationQueue & {
@@ -293,3 +372,20 @@ export async function processWtbNotificationQueue(limit = 25): Promise<{
     errors,
   };
 }
+
+/**
+ * Dispatches an official support desk response directly to a customer's email.
+ */
+export async function sendCustomerQueryReplyEmail(
+  to: string,
+  props: CustomerQueryReplyEmailProps
+): Promise<SendEmailResult> {
+  const { subject, html } = customerQueryReplyEmail(props);
+  return sendEmail({
+    to,
+    subject: props.subject || subject,
+    html,
+    replyTo: 'admin@b2blink.co.uk',
+  });
+}
+

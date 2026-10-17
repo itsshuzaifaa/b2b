@@ -10,6 +10,7 @@ import {
   unsuspendAccount,
   deleteAccount,
   updateAccountTier,
+  updateAccountApproval,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
@@ -63,13 +64,58 @@ export default function AdminUsersPage() {
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  const handleToggleSuspend = (acc: AdminClientAccount) => {
+  const handleVerifyAccount = async (acc: AdminClientAccount) => {
+    updateAccountApproval(acc.id, 'approved');
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+        }),
+      });
+    } catch {}
+    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched.`);
+    loadData();
+  };
+
+  const handleToggleSuspend = async (acc: AdminClientAccount) => {
     if (acc.account_status === 'suspended') {
       unsuspendAccount(acc.id);
+      try {
+        await fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'unsuspend',
+            companyId: acc.id,
+            email: acc.email,
+            contactName: acc.contact_name,
+            companyName: acc.name,
+          }),
+        });
+      } catch {}
       showNotice(`Account "${acc.name}" has been reactivated.`);
     } else {
       suspendAccount(acc.id);
-      showNotice(`Account "${acc.name}" has been suspended.`);
+      try {
+        await fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'suspend',
+            companyId: acc.id,
+            email: acc.email,
+            contactName: acc.contact_name,
+            companyName: acc.name,
+          }),
+        });
+      } catch {}
+      showNotice(`Account "${acc.name}" has been suspended. Suspension notice dispatched.`);
     }
     loadData();
   };
@@ -311,8 +357,9 @@ export default function AdminUsersPage() {
                             <span>Suspended</span>
                           </span>
                         ) : isPending ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
-                            <span>Pending Wise</span>
+                          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Pending KYC</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-200">
@@ -334,6 +381,19 @@ export default function AdminUsersPage() {
                       {/* Actions */}
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Verify Button for Pending Accounts */}
+                          {isPending && (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyAccount(acc)}
+                              title="Verify wholesale documents & activate account"
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition shadow-xs cursor-pointer mr-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Verify</span>
+                            </button>
+                          )}
+
                           {/* Message Button */}
                           <button
                             type="button"

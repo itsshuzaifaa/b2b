@@ -12,9 +12,12 @@ import {
   ChevronDown,
   Clock,
 } from 'lucide-react';
+import { addCustomerQuery } from '@/lib/admin/admin-store';
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [formData, setFormData] = useState({
     name: '',
@@ -24,8 +27,42 @@ export default function ContactPage() {
     message: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const payload = {
+      name: formData.name.trim(),
+      company: formData.company.trim(),
+      email: formData.email.trim(),
+      topic: formData.topic,
+      message: formData.message.trim(),
+    };
+
+    try {
+      // 1. Send to server API endpoint for cross-session/database persistence & email alerts
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        console.warn('Server contact API returned non-200, falling back to local store');
+      }
+    } catch (err) {
+      console.warn('Network error posting to /api/contact, using local store', err);
+    }
+
+    // 2. Also register in local admin store for instant client reflection
+    try {
+      addCustomerQuery(payload);
+    } catch (storeErr) {
+      console.warn('Error saving to local admin store', storeErr);
+    }
+
+    setIsSubmitting(false);
     setSubmitted(true);
   };
 
@@ -314,9 +351,17 @@ export default function ContactPage() {
                     {/* Submit Pill Button */}
                     <button
                       type="submit"
-                      className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs"
+                      disabled={isSubmitting}
+                      className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] disabled:opacity-60 text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs cursor-pointer"
                     >
-                      Transmit to Compliance Desk
+                      {isSubmitting ? (
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Transmitting to Desk...</span>
+                        </div>
+                      ) : (
+                        <span>Transmit to Compliance Desk</span>
+                      )}
                     </button>
                   </form>
                 )}

@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
     const companyName = (body.companyName || '').trim();
     const regNumber = (body.regNumber || '').trim();
     const vatNumber = (body.vatNumber || '').trim();
-    const role = body.role === 'seller' ? 'seller' : 'buyer';
-    const membershipTier = body.membershipTier || (role === 'seller' ? 'silver' : 'bronze');
+    const role = 'seller'; // Unified trading role for both buying and selling
+    const membershipTier = body.membershipTier || 'bronze';
     const selectedNiches: string[] = Array.isArray(body.selectedNiches) ? body.selectedNiches : [];
 
     if (!email || !email.includes('@')) {
@@ -66,7 +66,9 @@ export async function POST(request: NextRequest) {
         phone,
         address,
         company_name: companyName || contactName || `${firstName} ${lastName}`.trim(),
-        role,
+        role: 'seller',
+        membership_tier: membershipTier || 'bronze',
+        approval_status: 'pending',
       },
     });
 
@@ -97,22 +99,24 @@ export async function POST(request: NextRequest) {
       .map((n) => categoryUuidMap[n] || (n.length === 36 ? n : null))
       .filter((id): id is string => Boolean(id));
 
-    // Both sellers and buyers are approved immediately without gating
-    const approvalStatus = 'approved';
+    // Accounts start as pending until KYC documents are received and verified by Jeff
+    const approvalStatus = 'pending';
     const effectiveCompanyName = companyName || contactName || `${firstName} ${lastName}`.trim() || 'Wholesale Member';
+    const effectiveTier = membershipTier || 'bronze';
 
     const { data: compInsert } = await admin.from('companies').insert({
       user_id: userId,
       company_name: effectiveCompanyName,
-      company_number: role === 'seller' ? (regNumber || null) : null,
-      vat_number: role === 'seller' ? (vatNumber || null) : null,
+      company_number: regNumber || null,
+      vat_number: vatNumber || null,
+      address: address || null,
       contact_name: contactName,
       contact_email: email,
       phone: phone || null,
-      role,
+      role: 'seller',
       approval_status: approvalStatus,
-      tier: role === 'seller' ? membershipTier : 'bronze',
-      niches: validCategoryUuids,
+      tier: effectiveTier,
+      niches: selectedNiches,
     }).select('id').single();
 
     const companyId = compInsert?.id || userId;
@@ -124,9 +128,7 @@ export async function POST(request: NextRequest) {
       const deskProductId = '00000000-0000-4000-a000-000000000001';
 
       const userDisplayName = firstName || contactName || 'there';
-      const welcomeText = role === 'buyer'
-        ? `Hello ${userDisplayName}! Welcome to B2B LINK.\n\nI'm Jeff, Platform Director. As a verified buyer, here is what you can do on your board:\n\n• Browse verified European wholesale inventory lots with 0% buyer commission\n• Send direct inquiries and chat directly with verified suppliers\n• Post Want-To-Buy (WTB) requests on our public sourcing board for any specific stock lots you need\n\nIf you have any questions or need sourcing assistance, reply directly to this message!`
-        : `Hello ${userDisplayName}! Welcome to B2B LINK.\n\nI'm Jeff, Platform Director. Welcome to our European supplier network. You can upload wholesale inventory, respond to direct buyer inquiries, and quote on active Want-To-Buy (WTB) requests.\n\nOur desk is on standby if you need any assistance!`;
+      const welcomeText = `Hello ${userDisplayName}! Welcome to B2B LINK.\n\nI'm Jeff, Platform Director. Welcome to our European wholesale trading network. Your unified account gives you full capabilities to browse verified European inventory, upload wholesale stock lots, quote on active Want-To-Buy (WTB) requests, and connect directly with verified trading partners.\n\nOur desk is on standby if you need any assistance!`;
 
       const welcomeThread = [
         {

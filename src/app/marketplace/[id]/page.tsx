@@ -7,8 +7,15 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { InquiryModal } from '@/components/modals/InquiryModal';
 import { AuthGateModal } from '@/components/modals/AuthGateModal';
+import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
-import type { Product } from '@/types/database';
+import {
+  isLeadUnlocked,
+  unlockLead,
+  getRemainingUnlocks,
+  getUnlockedLeadIds,
+} from '@/lib/leads/unlock-store';
+import type { Product, MembershipTier } from '@/types/database';
 import {
   ArrowLeft,
   ShieldCheck,
@@ -19,6 +26,8 @@ import {
   Building2,
   MessageSquare,
   AlertCircle,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 
 function ProductDetailContent() {
@@ -33,6 +42,26 @@ function ProductDetailContent() {
 
   const [inquiryOpen, setInquiryOpen] = useState(false);
   const [authGateOpen, setAuthGateOpen] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
+  const [unlockFeedback, setUnlockFeedback] = useState<string | null>(null);
+
+  const tier = (company?.membership_tier || company?.tier || 'bronze') as MembershipTier;
+  const remainingUnlocks = company ? getRemainingUnlocks(company.id, tier) : 2;
+
+  const refreshUnlocked = () => {
+    if (company?.id) {
+      setUnlockedIds(getUnlockedLeadIds(company.id));
+    } else {
+      setUnlockedIds([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshUnlocked();
+    window.addEventListener('b2b_lead_unlock_update', refreshUnlocked);
+    return () => window.removeEventListener('b2b_lead_unlock_update', refreshUnlocked);
+  }, [company]);
 
   useEffect(() => {
     let isMounted = true;
@@ -62,31 +91,49 @@ function ProductDetailContent() {
     };
   }, [productId]);
 
+  const isOwnProduct = Boolean(company?.id && product?.company_id === company.id);
+  const isUnlocked = Boolean(
+    isOwnProduct ||
+      (product &&
+        (unlockedIds.includes(product.id) ||
+          (company?.id ? isLeadUnlocked(company.id, product.id) : false)))
+  );
+
   const handleInquire = () => {
-    if (!isLoggedIn) {
-      router.push(`/register?redirect=/marketplace/${productId}&role=buyer`);
+    if (!product) return;
+    if (!isLoggedIn || !company) {
+      router.push(`/register?redirect=/marketplace/${productId}`);
       return;
     }
-    setInquiryOpen(true);
+
+    if (isUnlocked) {
+      setInquiryOpen(true);
+      return;
+    }
+
+    // Attempt to unlock lead
+    if (remainingUnlocks > 0 || tier === 'gold') {
+      const res = unlockLead(company.id, product.id, tier);
+      if (res.success) {
+        setUnlockFeedback(
+          `Supplier contact unlocked! (${
+            res.remaining === Infinity ? 'Unlimited' : `${res.remaining} remaining`
+          })`
+        );
+        setTimeout(() => setUnlockFeedback(null), 3500);
+        refreshUnlocked();
+        setInquiryOpen(true);
+      } else {
+        setUpgradeModalOpen(true);
+      }
+    } else {
+      setUpgradeModalOpen(true);
+    }
   };
 
   const handleDirectChat = () => {
-    if (!product) return;
-    if (!isLoggedIn) {
-      router.push(`/register?redirect=/marketplace/${productId}&role=buyer`);
-      return;
-    }
-
-    const defaultMsg = `Hi, I have a question regarding wholesale lot: ${product.title}.`;
-    const conv = startMarketplaceInquiry(
-      product,
-      company,
-      company?.contact_name || company?.name || 'Buyer',
-      company?.email || '',
-      company?.phone || '',
-      defaultMsg
-    );
-    router.push(`/dashboard/inquiries?id=${conv.id}`);
+    // Open the same direct supplier desk popup as WTB quote unlock, with email directly & live chat options
+    handleInquire();
   };
 
   if (isLoading) {
@@ -246,18 +293,36 @@ function ProductDetailContent() {
                 <button
                   type="button"
                   onClick={handleInquire}
-                  className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs"
+                  className={`w-full min-h-[48px] rounded-full font-bold text-[15px] flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99] ${
+                    isUnlocked
+                      ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/20'
+                      : remainingUnlocks > 0 || tier === 'gold'
+                      ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/25'
+                      : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-105 text-white shadow-amber-500/20'
+                  }`}
                 >
-                  Send Direct Inquiry to Seller
+                  {isUnlocked ? (
+                    <span>Send Direct Inquiry to Seller</span>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <Lock className="w-4 h-4 text-white shrink-0" />
+                      <span>Unlock Contact</span>
+                      {(remainingUnlocks > 0 || tier === 'gold') && (
+                        <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white/20 text-white tracking-wide">
+                          {remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Left`}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleDirectChat}
-                  className="w-full min-h-[44px] rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] font-bold text-[14px] flex items-center justify-center gap-2 transition-colors border border-[#0A6CFF]/20"
+                  className="w-full min-h-[46px] rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] font-bold text-[14px] flex items-center justify-center gap-2 transition-colors border border-[#0A6CFF]/20"
                 >
                   <MessageSquare className="w-4 h-4" />
-                  <span>Chat with Verified Seller</span>
+                  <span>{isUnlocked ? 'Contact & Chat with Seller' : 'Unlock & Contact Seller'}</span>
                 </button>
               </div>
 
@@ -266,18 +331,22 @@ function ProductDetailContent() {
                 <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#5B6B82] block mb-3">
                   VERIFIED SUPPLIER
                 </span>
-                <div className="flex items-center gap-3 p-3.5 bg-[#F3F6FB] rounded-2xl border border-[#E3E9F2]">
-                  <div className="w-[36px] h-[36px] rounded-full bg-[#0B1F3A] text-white text-[12px] font-bold flex items-center justify-center shrink-0">
-                    {sellerInitials}
+                <div className="flex items-center gap-3.5 p-4 bg-[#F3F6FB] rounded-2xl border border-[#E3E9F2]">
+                  <div
+                    className={`w-10 h-10 rounded-full text-white text-[12px] font-bold flex items-center justify-center shrink-0 ${
+                      isUnlocked ? 'bg-[#0B1F3A]' : 'bg-slate-400'
+                    }`}
+                  >
+                    {isUnlocked ? sellerInitials : <Lock className="w-4 h-4" />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-[15px] font-bold text-[#0B1F3A] truncate flex items-center gap-1.5">
-                      <span>{sellerName}</span>
-                      <ShieldCheck className="w-4 h-4 text-[#0A6CFF] shrink-0" />
+                      <span>{isUnlocked ? sellerName : 'Vetted Wholesaler (Locked)'}</span>
+                      {isUnlocked && <ShieldCheck className="w-4 h-4 text-[#0A6CFF] shrink-0" />}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-[11px]">
                       <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        Vetted & Active
+                        Vetted &amp; Active
                       </span>
                       <span className="uppercase text-[#0B1F3A] font-bold bg-white px-2 py-0.5 rounded-full border border-[#E3E9F2]">
                         {product.company?.membership_tier || 'Gold'} Member
@@ -311,6 +380,14 @@ function ProductDetailContent() {
           onClose={() => setInquiryOpen(false)}
         />
       )}
+
+      {/* Upgrade Membership Modal */}
+      <UpgradeMembershipModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        title="Upgrade to Unlock Supplier Contacts"
+        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with verified European wholesale distributors."
+      />
 
       {/* Auth Gate Modal */}
       <AuthGateModal

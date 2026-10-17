@@ -24,6 +24,8 @@ import {
 export interface ListingItem {
   id: string;
   title: string;
+  brand?: string;
+  condition?: 'new' | 'used' | 'refurbished' | 'worn_out';
   description: string;
   ean: string;
   category: string;
@@ -33,6 +35,39 @@ export interface ListingItem {
   status: 'Hot' | 'Active' | 'Draft';
   images: string[];
 }
+
+export const POPULAR_BRANDS = [
+  'Apple',
+  'Samsung',
+  'Sony',
+  'Dell',
+  'HP',
+  'Lenovo',
+  'LG',
+  'Microsoft',
+  'Xiaomi',
+  'Asus',
+  'Acer',
+  'Google',
+  'Huawei',
+  'Bose',
+  'JBL',
+  'Canon',
+  'Nikon',
+  'Philips',
+  'Braun',
+  'Logitech',
+  'Dyson',
+  'Nintendo',
+  'PlayStation',
+  'Anker',
+  'SanDisk',
+  'Bosch',
+  'DeWalt',
+  'Chanel',
+  'Dior',
+  'Other / Generic',
+];
 
 const STORAGE_KEY = 'b2b_seller_listings_real_v2';
 
@@ -55,6 +90,10 @@ export default function DashboardListingsPage() {
 
   // Form states
   const [formTitle, setFormTitle] = useState('');
+  const [formBrand, setFormBrand] = useState('Apple');
+  const [brandSearch, setBrandSearch] = useState('');
+  const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
+  const [formCondition, setFormCondition] = useState<'new' | 'used' | 'refurbished' | 'worn_out'>('new');
   const [formCategory, setFormCategory] = useState('Consumer Electronics');
   const [formEan, setFormEan] = useState('');
   const [formDescription, setFormDescription] = useState('');
@@ -118,6 +157,10 @@ export default function DashboardListingsPage() {
     setEditingId(null);
     setCurrentStep(1);
     setFormTitle('');
+    setFormBrand('Apple');
+    setBrandSearch('');
+    setIsBrandDropdownOpen(false);
+    setFormCondition('new');
     setFormCategory('Consumer Electronics');
     setFormEan('');
     setFormDescription('');
@@ -136,6 +179,10 @@ export default function DashboardListingsPage() {
     setEditingId(item.id);
     setCurrentStep(1);
     setFormTitle(item.title);
+    setFormBrand(item.brand || 'Apple');
+    setBrandSearch('');
+    setIsBrandDropdownOpen(false);
+    setFormCondition(item.condition || 'new');
     setFormCategory(item.category);
     setFormEan(item.ean);
     setFormDescription(item.description);
@@ -214,6 +261,8 @@ export default function DashboardListingsPage() {
           return {
             ...l,
             title: formTitle.trim(),
+            brand: formBrand,
+            condition: formCondition,
             category: formCategory,
             ean: finalSku,
             description: formDescription.trim(),
@@ -231,6 +280,8 @@ export default function DashboardListingsPage() {
       const newItem: ListingItem = {
         id: `lst-${Date.now()}`,
         title: formTitle.trim(),
+        brand: formBrand,
+        condition: formCondition,
         category: formCategory,
         ean: finalSku,
         description: formDescription.trim(),
@@ -249,6 +300,8 @@ export default function DashboardListingsPage() {
           body: JSON.stringify({
             companyId: company.id,
             title: formTitle.trim(),
+            brand: formBrand,
+            condition: formCondition,
             description: formDescription.trim(),
             barcodeOrSku: finalSku,
             categorySlug: formCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
@@ -400,10 +453,36 @@ export default function DashboardListingsPage() {
                         <div className="font-bold text-[#0B1F3A] leading-snug truncate">
                           {item.title}
                         </div>
-                        <div className="text-[11px] text-[#8A9BB0] font-mono mt-0.5">
-                          EAN {item.ean}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          {item.brand && (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-50 text-[#0A6CFF] border border-blue-100">
+                              {item.brand}
+                            </span>
+                          )}
+                          <span
+                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                              item.condition === 'new'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : item.condition === 'refurbished'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : item.condition === 'worn_out'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            {item.condition === 'new'
+                              ? 'Brand New'
+                              : item.condition === 'refurbished'
+                              ? 'Refurbished'
+                              : item.condition === 'worn_out'
+                              ? 'Worn Out'
+                              : 'Used'}
+                          </span>
+                          <span className="text-[11px] text-[#8A9BB0] font-mono">
+                            EAN/UPC: {item.ean}
+                          </span>
                         </div>
-                        <p className="text-[12px] text-[#5B6B82] line-clamp-1 mt-0.5">
+                        <p className="text-[12px] text-[#5B6B82] line-clamp-1 mt-1">
                           {item.description}
                         </p>
                       </div>
@@ -528,26 +607,106 @@ export default function DashboardListingsPage() {
                   />
                 </div>
 
+                {/* Company / Brand with Searchable Dropdown */}
+                <div className="relative">
+                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                    Brand / Manufacturer Name *
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
+                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl text-left bg-white font-semibold text-[#0B1F3A] flex items-center justify-between focus:outline-none focus:border-[#0A6CFF]"
+                    >
+                      <span>{formBrand || 'Select a Brand / Company'}</span>
+                      <Search className="w-4 h-4 text-slate-400" />
+                    </button>
+
+                    {isBrandDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white border border-[#EAEFF6] rounded-2xl shadow-xl p-2.5 max-h-56 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+                        {/* Live Search inside dropdown */}
+                        <div className="relative mb-2">
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Type to filter brands (Apple, Samsung, Sony...)"
+                            value={brandSearch}
+                            onChange={(e) => setBrandSearch(e.target.value)}
+                            className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#EAEFF6] rounded-xl focus:outline-none focus:border-[#0A6CFF] font-medium"
+                          />
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        </div>
+
+                        <div className="space-y-1">
+                          {POPULAR_BRANDS.filter((b) =>
+                            b.toLowerCase().includes(brandSearch.toLowerCase().trim())
+                          ).map((brand) => (
+                            <button
+                              key={brand}
+                              type="button"
+                              onClick={() => {
+                                setFormBrand(brand);
+                                setIsBrandDropdownOpen(false);
+                                setBrandSearch('');
+                              }}
+                              className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-between ${
+                                formBrand === brand
+                                  ? 'bg-[#0A6CFF] text-white'
+                                  : 'text-[#0B1F3A] hover:bg-slate-100'
+                              }`}
+                            >
+                              <span>{brand}</span>
+                              {formBrand === brand && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                            </button>
+                          ))}
+
+                          {/* Custom brand entry option */}
+                          {brandSearch.trim() &&
+                            !POPULAR_BRANDS.some(
+                              (b) => b.toLowerCase() === brandSearch.toLowerCase().trim()
+                            ) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormBrand(brandSearch.trim());
+                                  setIsBrandDropdownOpen(false);
+                                  setBrandSearch('');
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-[#0A6CFF] bg-blue-50 hover:bg-blue-100 transition"
+                              >
+                                + Use custom brand &quot;{brandSearch.trim()}&quot;
+                              </button>
+                            )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Condition & Product Code (EAN/UPC) */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Category *
+                      Condition *
                     </label>
                     <select
-                      value={formCategory}
-                      onChange={(e) => setFormCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white"
+                      value={formCondition}
+                      onChange={(e) =>
+                        setFormCondition(
+                          e.target.value as 'new' | 'used' | 'refurbished' | 'worn_out'
+                        )
+                      }
+                      className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white text-[#0B1F3A]"
                     >
-                      <option value="Consumer Electronics">Consumer Electronics</option>
-                      <option value="Beauty & Cosmetics">Beauty & Cosmetics</option>
-                      <option value="Home & Kitchen">Home & Kitchen</option>
-                      <option value="Health & FMCG">Health & FMCG</option>
-                      <option value="Tools & Hardware">Tools & Hardware</option>
+                      <option value="new">Brand New (Factory Sealed)</option>
+                      <option value="refurbished">Refurbished (Grade A/B)</option>
+                      <option value="used">Used (Functional)</option>
+                      <option value="worn_out">Worn Out (For Parts)</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Barcode / EAN / SKU
+                      Product Code (EAN / UPC) *
                     </label>
                     <input
                       type="text"
@@ -559,12 +718,30 @@ export default function DashboardListingsPage() {
                   </div>
                 </div>
 
+                {/* Category */}
+                <div>
+                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                    Category *
+                  </label>
+                  <select
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white"
+                  >
+                    <option value="Consumer Electronics">Consumer Electronics</option>
+                    <option value="Beauty & Cosmetics">Beauty & Cosmetics</option>
+                    <option value="Home & Kitchen">Home & Kitchen</option>
+                    <option value="Health & FMCG">Health & FMCG</option>
+                    <option value="Tools & Hardware">Tools & Hardware</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
                     Lot Description &amp; Specifications *
                   </label>
                   <textarea
-                    rows={4}
+                    rows={3}
                     required
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}

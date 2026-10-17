@@ -194,55 +194,49 @@ export async function GET(req: NextRequest) {
 
     let conversations = (rows as unknown as RawInquiryRow[]).map(rowToConversation);
 
-    // Filter strictly by role to preserve commercial confidentiality:
+    // Filter strictly to preserve commercial confidentiality:
     if (role === 'admin') {
       // Admin only sees:
       // 1) Messages sent to or by admin (seller_admin desk)
       // 2) Platform broadcasts sent by admin
-      // Admin NEVER sees private buyer <-> seller trade inquiries!
       conversations = conversations.filter(
         (c) => c.type === 'seller_admin' || c.type === 'broadcast'
       );
-    } else if (role === 'buyer') {
+    } else {
       const cleanEmail = email?.trim().toLowerCase();
+      // If no identity provided for non-admin, never return private threads
+      if (!cleanEmail && !companyId) {
+        return NextResponse.json({
+          success: true,
+          conversations: [],
+        });
+      }
+
       conversations = conversations.filter((c) => {
-        if (c.type === 'broadcast' && (c.targetAudience === 'buyer' || c.targetAudience === 'all')) {
-          return true;
-        }
-        if (cleanEmail && c.buyerEmail?.trim().toLowerCase() === cleanEmail) {
-          return true;
-        }
-        if (companyId && c.buyerCompanyId === companyId) {
-          return true;
-        }
-        if (!cleanEmail && !companyId) {
-          return true;
-        }
-        return false;
-      });
-    } else if (role === 'seller') {
-      // Sellers see:
-      // 1) Seller broadcasts
-      // 2) Admin desk thread for their company or email
-      // 3) Trade inquiries where they are the seller OR where they sent an inquiry as a buyer to another supplier
-      conversations = conversations.filter((c) => {
+        // 1. Broadcasts
         if (c.type === 'broadcast') {
-          return c.targetAudience === 'seller' || !c.targetAudience || c.targetAudience === 'all';
+          return c.targetAudience === 'all' || !c.targetAudience || (role ? c.targetAudience === role : true);
         }
-        if (c.type === 'seller_admin') {
-          const isSeller = !companyId || c.sellerCompanyId === companyId;
-          const isDeskUser = Boolean(email && c.buyerEmail?.toLowerCase().trim() === email);
-          return isSeller || isDeskUser;
-        }
-        if (c.type === 'buyer_seller' || !c.type) {
-          const isSeller = Boolean(companyId && c.sellerCompanyId === companyId);
-          const isBuyer = Boolean(
-            (companyId && c.buyerCompanyId === companyId) ||
-            (email && c.buyerEmail?.toLowerCase().trim() === email)
+
+        // 2. Admin desk threads (e.g. personal welcome messages or support from Jeff)
+        // Must STRICTLY match the specific recipient user's email or company ID
+        if (c.type === 'seller_admin' || c.status === 'admin_desk') {
+          const isMyDeskThread = Boolean(
+            (cleanEmail && c.buyerEmail?.toLowerCase().trim() === cleanEmail) ||
+            (companyId && c.buyerCompanyId === companyId)
           );
-          return isSeller || isBuyer;
+          return isMyDeskThread;
         }
-        return false;
+
+        // 3. Trade Inquiries (Buyer <-> Seller)
+        // Must strictly involve this company as either the seller or the buyer
+        const isMySellerInquiry = Boolean(companyId && c.sellerCompanyId === companyId);
+        const isMyBuyerInquiry = Boolean(
+          (companyId && c.buyerCompanyId === companyId) ||
+          (cleanEmail && c.buyerEmail?.toLowerCase().trim() === cleanEmail)
+        );
+
+        return isMySellerInquiry || isMyBuyerInquiry;
       });
     }
 

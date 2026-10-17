@@ -273,6 +273,42 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
       : acc
   );
   saveAdminAccounts(updated);
+
+  if (typeof window !== 'undefined') {
+    try {
+      // Sync cached user company if this is the currently authenticated member
+      const target = updated.find((acc) => acc.id === companyId);
+      const cachedRaw = localStorage.getItem('b2b_cached_company');
+      if (cachedRaw && target) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached && (cached.id === companyId || (cached.email && target.email && cached.email.toLowerCase() === target.email.toLowerCase()))) {
+          cached.approval_status = status;
+          localStorage.setItem('b2b_cached_company', JSON.stringify(cached));
+        }
+      }
+
+      // Notify any active components
+      window.dispatchEvent(new CustomEvent('b2b_account_status_change', { detail: { companyId, status } }));
+
+      // Persist to backend and update Supabase auth metadata
+      if (target) {
+        fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: status === 'approved' ? 'approve' : 'suspend',
+            companyId,
+            email: target.email,
+            contactName: target.contact_name,
+            companyName: target.name,
+          }),
+        }).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return true;
 }
 
@@ -522,4 +558,189 @@ export function broadcastMessageToAllSellers(broadcastText: string): number {
 
   saveStoredConversations(allConversations);
   return count;
+}
+
+// ==========================================
+// 6. CUSTOMER QUERIES (CONTACT US DESK)
+// ==========================================
+
+export interface CustomerQuery {
+  id: string;
+  name: string;
+  company: string;
+  email: string;
+  phone?: string;
+  topic: string;
+  message: string;
+  created_at: string;
+  status: 'new' | 'replied';
+  reply_text?: string;
+  replied_at?: string;
+}
+
+const QUERIES_STORAGE_KEY = 'b2b_customer_queries_v1';
+
+const INITIAL_QUERIES: CustomerQuery[] = [
+  {
+    id: 'query-101',
+    name: 'Markus Weber',
+    company: 'Bavaria Global Trade GmbH',
+    email: 'm.weber@bavariatrade.de',
+    phone: '+49 89 2345 6789',
+    topic: 'verification',
+    message: 'Hello Support Desk,\n\nWe recently created our account and would like to confirm whether our Munich Commercial Registry excerpt and DE VAT ID are sufficient for instant verified status, or if you need a utility bill for our warehouse.\n\nThank you,\nMarkus Weber',
+    created_at: '17 Oct 2026, 01:25 AM',
+    status: 'new',
+  },
+  {
+    id: 'query-102',
+    name: "Sarah O'Connor",
+    company: 'Emerald Logistics Ireland',
+    email: 's.oconnor@emeraldwholesalegoods.ie',
+    phone: '+353 1 496 0123',
+    topic: 'technical',
+    message: 'Hi team,\n\nCould you please provide the CSV bulk ingestion column template for consumer electronics inventory? We have approximately 1,200 SKUs we want to import into the wholesale catalog.\n\nBest regards,\nSarah',
+    created_at: '16 Oct 2026, 04:18 PM',
+    status: 'new',
+  },
+  {
+    id: 'query-103',
+    name: 'Marco Bellini',
+    company: 'Milano Distribuzione Srl',
+    email: 'm.bellini@milanowholesale.it',
+    phone: '+39 02 8765 4321',
+    topic: 'billing',
+    message: 'Greetings,\n\nWe wish to subscribe to the Gold Tier package via corporate Wise wire transfer in EUR. Please send us the official proforma invoice with your Tallinn IBAN.\n\nCordiali saluti,\nMarco Bellini',
+    created_at: '15 Oct 2026, 11:40 AM',
+    status: 'replied',
+    reply_text: 'Dear Marco,\n\nThank you for reaching out. We have generated proforma invoice B2B-PRO-2026-8849 with our dedicated Wise EUR IBAN for Milano Distribuzione Srl. Your Gold membership will be activated immediately upon wire reference receipt.\n\nBest regards,\nB2B LINK Support',
+    replied_at: '15 Oct 2026, 01:10 PM',
+  },
+];
+
+export function getCustomerQueries(): CustomerQuery[] {
+  if (typeof window === 'undefined') return INITIAL_QUERIES;
+  try {
+    const raw = localStorage.getItem(QUERIES_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+    localStorage.setItem(QUERIES_STORAGE_KEY, JSON.stringify(INITIAL_QUERIES));
+    return INITIAL_QUERIES;
+  } catch {
+    return INITIAL_QUERIES;
+  }
+}
+
+export function saveCustomerQueries(queries: CustomerQuery[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(QUERIES_STORAGE_KEY, JSON.stringify(queries));
+    window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+    window.dispatchEvent(new CustomEvent('b2b_queries_update'));
+  } catch {}
+}
+
+export function addCustomerQuery(data: {
+  name: string;
+  company: string;
+  email: string;
+  phone?: string;
+  topic?: string;
+  message: string;
+}): CustomerQuery {
+  const queries = getCustomerQueries();
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const newQuery: CustomerQuery = {
+    id: `query-${Date.now()}`,
+    name: data.name.trim() || 'Wholesale Trader',
+    company: data.company.trim() || 'Direct Inquiry',
+    email: data.email.trim(),
+    phone: data.phone?.trim() || '',
+    topic: data.topic || 'general',
+    message: data.message.trim(),
+    created_at: dateStr,
+    status: 'new',
+  };
+
+  queries.unshift(newQuery);
+  saveCustomerQueries(queries);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newQuery.name,
+        company: newQuery.company,
+        email: newQuery.email,
+        phone: newQuery.phone,
+        topic: newQuery.topic,
+        message: newQuery.message,
+      }),
+    }).catch(() => {});
+  }
+
+  return newQuery;
+}
+
+export function replyCustomerQuery(id: string, replyText: string): CustomerQuery | null {
+  const queries = getCustomerQueries();
+  const target = queries.find((q) => q.id === id);
+  if (!target) return null;
+
+  const now = new Date();
+  target.status = 'replied';
+  target.reply_text = replyText.trim();
+  target.replied_at = now.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  saveCustomerQueries(queries);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/admin/queries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reply',
+        id,
+        replyText,
+        replySubject: `Re: B2B LINK Support Desk - ${target.topic.toUpperCase()} Inquiry`,
+      }),
+    }).catch(() => {});
+  }
+
+  return target;
+}
+
+export function deleteCustomerQuery(id: string): boolean {
+  const queries = getCustomerQueries();
+  const filtered = queries.filter((q) => q.id !== id);
+  if (filtered.length !== queries.length) {
+    saveCustomerQueries(filtered);
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/admin/queries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id }),
+      }).catch(() => {});
+    }
+
+    return true;
+  }
+  return false;
 }

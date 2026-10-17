@@ -59,6 +59,28 @@ export interface VerificationEmailProps {
   actionUrl: string;
 }
 
+export interface KycVerificationRequestEmailProps {
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone?: string | null;
+  address?: string | null;
+  actionUrl: string;
+}
+
+export interface AccountApprovalEmailProps {
+  companyName: string;
+  contactName: string;
+  actionUrl: string;
+}
+
+export interface AccountSuspendedEmailProps {
+  companyName: string;
+  contactName?: string;
+  reason?: string;
+  actionUrl: string;
+}
+
 function emailWrapper(title: string, badge: string, content: string, ctaUrl: string, ctaText: string): string {
   const logoUrl = 'https://qmosgopkjqrqogsdgwuy.supabase.co/storage/v1/object/public/public-assets/b2b-link-logo-tight.png';
 
@@ -509,6 +531,287 @@ export function verificationEmail(props: VerificationEmailProps): { subject: str
       content,
       props.actionUrl,
       'Verify Email Address'
+    ),
+  };
+}
+
+/**
+ * 8. KYC Document Submission Request Email sent to newly registered wholesale businesses.
+ * Directs them to reply with documents to newcustomers@brandnova.info
+ */
+export function kycVerificationRequestEmail(
+  props: KycVerificationRequestEmailProps
+): { subject: string; html: string } {
+  const subject = `Action Required: Submit verification documents to activate your account - BrandNova / B2B LINK`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.025em; margin: 0 0 14px 0; line-height: 1.25;">
+      Welcome to BrandNova Wholesale Trading
+    </h1>
+
+    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 16px 0;">
+      ${nameGreeting} thank you for creating your wholesale account for <strong>${props.companyName}</strong>.
+    </p>
+
+    <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 16px; padding: 18px 20px; margin: 20px 0;">
+      <div style="font-size: 13px; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">
+        Account Status: Pending Document Verification
+      </div>
+      <p style="font-size: 14px; line-height: 1.5; color: #92400E; margin: 0;">
+        To protect all members of our European wholesale network, your trading dashboard is currently locked. To activate full access to inventory lots, Want-To-Buy leads, and direct supplier contacts, please provide your business verification documents.
+      </p>
+    </div>
+
+    <h3 style="font-size: 16px; font-weight: 800; color: #0B1F3A; margin: 24px 0 12px 0;">
+      Required Wholesale Documents Checklist:
+    </h3>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
+      <tr>
+        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">1. Certificate of Incorporation / Company Registration</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Official government proof of registered business entity</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">2. VAT / Tax Registration Certificate</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Valid European VAT number or domestic tax authority certificate</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">3. Proof of Registered Trading Address</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Recent utility bill or official corporate bank statement (dated within 90 days)</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">4. Wholesale Trade Licenses or Invoices (Optional)</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Relevant trading licenses or commercial invoices from authorized distributors</div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 16px; padding: 20px; margin: 24px 0; text-align: left;">
+      <div style="font-size: 13px; font-weight: 800; color: #1E40AF; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">
+        How to Submit Your Documents:
+      </div>
+      <p style="font-size: 14px; line-height: 1.6; color: #1E3A8A; margin: 0 0 10px 0;">
+        Simply <strong>reply directly to this email with your PDF or scanned document files attached</strong>.
+      </p>
+      <p style="font-size: 13px; line-height: 1.5; color: #3B82F6; margin: 0;">
+        Alternatively, email your documents directly to <strong>newcustomers@brandnova.info</strong> with your company name in the subject line.
+      </p>
+    </div>
+
+    <p style="font-size: 13px; line-height: 1.6; color: #64748B; margin: 16px 0 0 0;">
+      Our Platform Director <strong>Jeff</strong> and the compliance team review applications promptly. You will receive an automated notification as soon as your account is approved.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Verification Documents Required',
+      'ACTION REQUIRED',
+      content,
+      props.actionUrl,
+      'View Verification Status in Dashboard'
+    ),
+  };
+}
+
+/**
+ * 9. Admin alert email to Jeff / newcustomers@brandnova.info when a new user signs up
+ */
+export function adminNewCustomerAlertEmail(props: {
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone?: string | null;
+  role: string;
+  actionUrl: string;
+}): { subject: string; html: string } {
+  const subject = `[New Customer] Verification Required for ${props.companyName}`;
+
+  const content = `
+    <h1 style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      New Customer Registration Awaiting KYC
+    </h1>
+    <p style="font-size: 14px; color: #475569; margin: 0 0 20px 0;">
+      A new business has registered on the platform. The onboarding document checklist email was automatically dispatched to them.
+    </p>
+
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 18px; margin-bottom: 24px; font-size: 14px;">
+      <div style="margin-bottom: 8px;"><strong>Company Name:</strong> ${props.companyName}</div>
+      <div style="margin-bottom: 8px;"><strong>Contact Person:</strong> ${props.contactName}</div>
+      <div style="margin-bottom: 8px;"><strong>Corporate Email:</strong> <a href="mailto:${props.email}">${props.email}</a></div>
+      <div style="margin-bottom: 8px;"><strong>Phone:</strong> ${props.phone || 'Not provided'}</div>
+      <div><strong>Registered Role:</strong> ${props.role.toUpperCase()}</div>
+    </div>
+
+    <p style="font-size: 13px; color: #64748B;">
+      When the customer replies with their documents, it will land in this inbox (<strong>newcustomers@brandnova.info</strong>). You can then log into the Site Admin portal to Verify or Suspend their account.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'New Customer Alert',
+      'COMPLIANCE DESK',
+      content,
+      props.actionUrl,
+      'Open Admin Vetting Portal'
+    ),
+  };
+}
+
+/**
+ * 10. Sent to user when Jeff approves their account in the admin portal
+ */
+export function accountApprovalEmail(props: AccountApprovalEmailProps): { subject: string; html: string } {
+  const subject = 'Your BrandNova wholesale account has been verified & approved!';
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 26px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Your Account is Verified & Active!
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
+      ${nameGreeting} our compliance director Jeff has verified your business documents. Your <strong>${props.companyName}</strong> wholesale account is now fully active with unlocked dashboard access.
+    </p>
+
+    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 14px; font-weight: 800; color: #065F46; margin-bottom: 6px;">
+        WHAT YOU CAN DO NOW:
+      </div>
+      <ul style="font-size: 13px; color: #047857; margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li>Browse live wholesale inventory and unlock direct supplier contact details</li>
+        <li>Post and manage Want-To-Buy (WTB) procurement requests</li>
+        <li>Upload and manage your own product inventory lots</li>
+        <li>Send and receive verified wholesale quotations</li>
+      </ul>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Approved',
+      'APPROVED & ACTIVE',
+      content,
+      props.actionUrl,
+      'Log In to Your Dashboard'
+    ),
+  };
+}
+
+/**
+ * 11. Sent to user if their account is suspended or documents need attention
+ */
+export function accountSuspendedEmail(props: AccountSuspendedEmailProps): { subject: string; html: string } {
+  const subject = 'Notice: Update regarding your BrandNova Wholesale Account';
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Account Status Notice
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
+      ${nameGreeting} we are writing regarding your <strong>${props.companyName}</strong> wholesale account.
+    </p>
+
+    <div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 14px; font-weight: 800; color: #991B1B; margin-bottom: 6px;">
+        STATUS: ACCOUNT ACCESS SUSPENDED
+      </div>
+      <p style="font-size: 13px; color: #B91C1C; margin: 0;">
+        ${props.reason || 'Your account access has been paused pending further review or missing compliance documentation.'}
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+      If you have questions or wish to submit updated documentation, please contact our compliance desk directly at <strong>newcustomers@brandnova.info</strong>.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Status Notice',
+      'ACCOUNT SUSPENDED',
+      content,
+      props.actionUrl,
+      'Contact Compliance Desk'
+    ),
+  };
+}
+
+export interface CustomerQueryReplyEmailProps {
+  customerName: string;
+  companyName: string;
+  subject: string;
+  replyMessage: string;
+  originalMessage?: string;
+  actionUrl?: string;
+}
+
+export function customerQueryReplyEmail(props: CustomerQueryReplyEmailProps): {
+  subject: string;
+  html: string;
+} {
+  const subject = props.subject || 'Response from B2B LINK Support Desk';
+  const nameGreeting = props.customerName ? `Hello ${props.customerName},` : 'Hello,';
+  const formattedReply = props.replyMessage.replace(/\n/g, '<br />');
+  const formattedOriginal = props.originalMessage ? props.originalMessage.replace(/\n/g, '<br />') : null;
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Response from B2B LINK Support Desk
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
+      ${nameGreeting} thank you for contacting the B2B LINK European Wholesale & Compliance Desk. Our administration team has reviewed your inquiry for <strong>${props.companyName}</strong>:
+    </p>
+
+    <!-- Support Reply Body -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 20px; margin-bottom: 24px; font-size: 14px; line-height: 1.7; color: #1E293B;">
+      ${formattedReply}
+    </div>
+
+    ${
+      formattedOriginal
+        ? `
+      <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid #E2E8F0;">
+        <div style="font-size: 12px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+          Your Original Message
+        </div>
+        <div style="font-size: 13px; line-height: 1.6; color: #64748B; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 14px;">
+          ${formattedOriginal}
+        </div>
+      </div>
+    `
+        : ''
+    }
+
+    <p style="font-size: 13px; color: #64748B; margin-top: 24px; line-height: 1.5;">
+      You can reply directly to this email to continue the conversation with our support and compliance desk.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Support Desk Reply',
+      'CUSTOMER INQUIRY RESPONSE',
+      content,
+      props.actionUrl || 'http://localhost:3000/contact',
+      'Visit Support Desk'
     ),
   };
 }

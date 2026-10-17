@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -11,6 +11,13 @@ export function Navbar() {
   const pathname = usePathname();
   const { role, isLoggedIn } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const showAuthenticatedNav = mounted && isLoggedIn;
 
   if (pathname.startsWith('/dashboard') || pathname.startsWith('/site-admin') || pathname.startsWith('/admin')) {
     return null;
@@ -66,7 +73,7 @@ export function Navbar() {
 
         {/* Right Action: Sign in & Create account -> Post a WTB request & Dashboard */}
         <div className="hidden sm:flex items-center gap-6">
-          {isLoggedIn ? (
+          {showAuthenticatedNav ? (
             <>
               <Link
                 href="/requests/new"
@@ -128,7 +135,7 @@ export function Navbar() {
           </nav>
 
           <div className="pt-4 border-t border-[#EAEFF6] flex flex-col gap-2.5">
-            {isLoggedIn ? (
+            {showAuthenticatedNav ? (
               <>
                 <Link
                   href="/requests/new"

@@ -17,6 +17,12 @@ import {
   ExternalLink,
   Share2,
   UserCheck,
+  HelpCircle,
+  Lock,
+  Mail,
+  ArrowRight,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 
 export default function SiteAdminLayout({
@@ -28,20 +34,54 @@ export default function SiteAdminLayout({
   const router = useRouter();
   const { signOut, switchDemoRole } = useAuth();
 
+  // Authentication State for Site Admin (admin@b2blink.co.uk / 12345)
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean | null>(null);
+  const [adminEmail, setAdminEmail] = useState('admin@b2blink.co.uk');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
 
-  // Restore collapse preference from localStorage
+  // Restore session & collapse preference from localStorage
   useEffect(() => {
     try {
+      const auth =
+        sessionStorage.getItem('b2b_site_admin_auth') ||
+        localStorage.getItem('b2b_site_admin_auth');
+      setIsAdminAuthenticated(auth === 'true');
+
       const saved = localStorage.getItem('b2b_site_admin_sidebar_collapsed');
       if (saved !== null) {
         setIsCollapsed(saved === 'true');
       }
     } catch {
-      // ignore
+      setIsAdminAuthenticated(false);
     }
   }, []);
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      adminEmail.trim().toLowerCase() === 'admin@b2blink.co.uk' &&
+      adminPassword === '12345'
+    ) {
+      try {
+        sessionStorage.setItem('b2b_site_admin_auth', 'true');
+        localStorage.setItem('b2b_site_admin_auth', 'true');
+      } catch {}
+      setIsAdminAuthenticated(true);
+      setLoginError(null);
+    } else {
+      setLoginError('Invalid credentials. Use admin@b2blink.co.uk with password 12345.');
+    }
+  };
+
+  const handleFillDemoAdmin = () => {
+    setAdminEmail('admin@b2blink.co.uk');
+    setAdminPassword('12345');
+    setLoginError(null);
+  };
 
   const toggleSidebar = () => {
     setIsCollapsed((prev) => {
@@ -62,24 +102,153 @@ export default function SiteAdminLayout({
     return pathname.startsWith(href);
   };
 
-  // Requirement 03 & 09: NO badges in screen titles, NO vetting queue
-  // Requirement 06: Include 'Edit profile' (personal account only)
   const navItems = [
     { label: 'Overview', href: '/site-admin', icon: LayoutGrid },
     { label: 'Accounts (Buyers & Sellers)', href: '/site-admin/users', icon: Users },
     { label: 'Payment records', href: '/site-admin/payments', icon: CreditCard },
     { label: 'Campaign leads (Email & WA)', href: '/site-admin/campaigns', icon: Share2 },
+    { label: 'Customer Queries', href: '/site-admin/queries', icon: HelpCircle },
     { label: 'Listing moderation', href: '/site-admin/listings', icon: ShieldAlert },
     { label: 'Seller messaging', href: '/site-admin/messages', icon: MessageSquare },
     { label: 'Edit profile', href: '/site-admin/profile', icon: UserCheck },
   ];
 
   const handleExitAdmin = async () => {
+    try {
+      sessionStorage.removeItem('b2b_site_admin_auth');
+      localStorage.removeItem('b2b_site_admin_auth');
+    } catch {}
+    setIsAdminAuthenticated(false);
     switchDemoRole('guest');
     await signOut();
-    router.push('/');
   };
 
+  // 1. Loading state while checking localStorage session
+  if (isAdminAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-[#050E1D] flex items-center justify-center">
+        <div className="w-8 h-8 border-3 border-[#0A6CFF] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // 2. Login Screen Gate for Site Admin
+  if (!isAdminAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#050E1D] text-white flex flex-col justify-center items-center p-4 font-sans relative overflow-hidden">
+        {/* Subtle background glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#0A6CFF]/15 rounded-full blur-[130px] pointer-events-none" />
+
+        <div className="w-full max-w-[440px] relative z-10">
+          {/* Logo Card */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center bg-white rounded-2xl py-3 px-6 shadow-xl mb-4">
+              <Image
+                src="/b2b-link-logo-tight.png"
+                alt="B2B LINK"
+                width={130}
+                height={40}
+                priority
+                className="h-8 w-auto object-contain"
+                style={{ width: 'auto' }}
+              />
+            </div>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <span className="bg-[#0A6CFF]/20 text-[#00E5FF] text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full border border-[#0A6CFF]/30 tracking-wider">
+                ROOT EXECUTIVE DESK
+              </span>
+            </div>
+            <h1 className="text-[26px] font-black text-white mt-3 tracking-tight">
+              Site Administration Login
+            </h1>
+            <p className="text-[13px] text-slate-400 mt-1 max-w-sm mx-auto">
+              Compliance oversight, user account management, and financial settlements.
+            </p>
+          </div>
+
+          {/* Login Card */}
+          <div className="bg-[#0B1A30] border border-white/10 rounded-[28px] p-7 sm:p-8 shadow-2xl backdrop-blur-md">
+            {loginError && (
+              <div className="mb-5 p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-[12px] font-semibold flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div>
+                <label className="block text-[12px] font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Admin Email
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="admin@b2blink.co.uk"
+                    className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-white/[0.06] border border-white/10 rounded-xl text-white placeholder:text-slate-500 focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Master Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="password"
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-white/[0.06] border border-white/10 rounded-xl text-white placeholder:text-slate-500 focus:outline-none focus:border-[#0A6CFF] transition font-mono tracking-widest"
+                  />
+                </div>
+              </div>
+
+              {/* Demo Quick Fill Button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleFillDemoAdmin}
+                  className="text-[12px] font-bold text-[#00E5FF] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Autofill credentials (admin@b2blink.co.uk / 12345)</span>
+                </button>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] transition cursor-pointer shadow-lg shadow-[#0A6CFF]/25 flex items-center justify-center gap-2"
+                >
+                  <span>Sign In to Site-Admin Desk</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6 pt-5 border-t border-white/10 text-center">
+              <Link
+                href="/"
+                className="text-[12px] font-bold text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Return to Public Marketplace</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Authenticated Full Site Admin Canvas
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-3 sm:p-4 lg:p-5 gap-4 sm:gap-6 font-sans">
       {/* ========================================================= */}
@@ -157,7 +326,7 @@ export default function SiteAdminLayout({
             <div className="w-6 h-[1px] bg-slate-800 mx-auto my-3" />
           )}
 
-          {/* Navigation Links - Clean, NO Badges */}
+          {/* Navigation Links */}
           <nav className="space-y-1">
             {navItems.map((item) => {
               const active = isActive(item.href);
@@ -194,8 +363,6 @@ export default function SiteAdminLayout({
 
         {/* Bottom of Sidebar */}
         <div className="pt-5 border-t border-slate-800/60 mt-4">
-          {/* Requirement 07: Removed "Platform Engine etc." text */}
-
           {/* Admin User Profile Info */}
           {!isCollapsed ? (
             <div>
@@ -208,12 +375,11 @@ export default function SiteAdminLayout({
                     Platform Administrator
                   </div>
                   <div className="text-[11px] text-[#00E5FF] font-semibold leading-tight truncate mt-0.5">
-                    admin@b2blink.eu
+                    admin@b2blink.co.uk
                   </div>
                 </div>
               </div>
 
-              {/* Requirement 08: Fullwidth button for public site above red signout button */}
               <div className="mt-4 space-y-2">
                 <Link
                   href="/"
@@ -238,7 +404,7 @@ export default function SiteAdminLayout({
             <div className="flex flex-col items-center gap-2">
               <div
                 className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[13px] flex items-center justify-center shrink-0"
-                title="Platform Administrator (admin@b2blink.eu)"
+                title="Platform Administrator (admin@b2blink.co.uk)"
               >
                 JD
               </div>

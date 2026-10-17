@@ -16,6 +16,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
+  ShieldAlert,
+  Mail,
+  Lock,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -82,25 +86,99 @@ export default function DashboardLayout({
     return pathname.startsWith(href);
   };
 
-  const sellerNavItems = [
+  const navItems = [
     { label: 'Overview', href: '/dashboard', icon: LayoutGrid },
-    { label: 'Marketplace', href: '/dashboard/marketplace', icon: Store },
-    { label: 'Quotes', href: '/dashboard/quotes', icon: FileText },
-    { label: 'Buyer inquiries', href: '/dashboard/inquiries', icon: Inbox },
+    { label: 'Marketplace', href: '/marketplace', icon: Store },
     { label: 'Product listings', href: '/dashboard/listings', icon: Package },
+    { label: 'WTB Requests', href: '/requests', icon: FileText },
+    { label: 'Inquiries & Quotes', href: '/dashboard/inquiries', icon: Inbox },
     { label: 'Billing & Plans', href: '/dashboard/billing', icon: CreditCard },
     { label: 'Edit profile', href: '/dashboard/profile', icon: User },
   ];
 
-  const buyerNavItems = [
-    { label: 'Overview', href: '/dashboard', icon: LayoutGrid },
-    { label: 'Marketplace', href: '/marketplace', icon: Store },
-    { label: 'Inquiries', href: '/dashboard/inquiries', icon: Inbox },
-    { label: 'My WTB requests', href: '/dashboard/requests', icon: FileText },
-    { label: 'Edit profile', href: '/dashboard/profile', icon: User },
-  ];
+  // Check verification & suspension states
+  // Crucial: A verified account must NEVER see the restriction popup even for a split second.
+  // 1. If auth is still loading or company is not loaded yet, never assume pending verification.
+  // 2. Check local admin accounts store to see if this user was approved by admin.
+  // 3. If approval_status is 'approved' or user is verified in admin store, never lock.
+  const isVerifiedInAdminStore = React.useMemo(() => {
+    if (typeof window === 'undefined' || !company) return false;
+    try {
+      const raw = localStorage.getItem('b2b_admin_accounts');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const match = list.find((a: any) =>
+            (a.id && a.id === company.id) ||
+            (a.email && company.email && a.email.toLowerCase() === company.email.toLowerCase())
+          );
+          if (match && match.approval_status === 'approved') return true;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }, [company]);
 
-  const navItems = isBuyer ? buyerNavItems : sellerNavItems;
+  const effectiveApprovalStatus = (
+    isVerifiedInAdminStore
+      ? 'approved'
+      : (company?.approval_status || (role === 'admin' ? 'approved' : isLoading ? 'loading' : 'pending'))
+  );
+
+  const isPendingVerification = (
+    !isLoading &&
+    !!company &&
+    role !== 'admin' &&
+    !isVerifiedInAdminStore &&
+    effectiveApprovalStatus !== 'approved' &&
+    (effectiveApprovalStatus === 'pending' || effectiveApprovalStatus === 'pending_verification')
+  );
+
+  const isSuspended = (
+    !isLoading &&
+    !!company &&
+    (effectiveApprovalStatus === 'suspended' || effectiveApprovalStatus === 'rejected')
+  );
+
+  // Lead unlock stats for unified counter
+  const [remainingUnlocks, setRemainingUnlocks] = useState<number>(2);
+  const [unlockedCount, setUnlockedCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!company) return;
+    const updateStats = () => {
+      try {
+        const raw = localStorage.getItem(`b2b_unlocked_leads_${company.id || 'guest'}`);
+        const list = raw ? JSON.parse(raw) : [];
+        const count = Array.isArray(list) ? list.length : 0;
+        setUnlockedCount(count);
+
+        const currentTier = ((company.membership_tier || company.tier || 'bronze') as string).toLowerCase();
+        if (currentTier === 'gold') {
+          setRemainingUnlocks(Infinity);
+        } else if (currentTier === 'silver') {
+          setRemainingUnlocks(Math.max(0, 20 - count));
+        } else {
+          setRemainingUnlocks(Math.max(0, 2 - count));
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    updateStats();
+    window.addEventListener('b2b_lead_unlock_update', updateStats);
+    return () => window.removeEventListener('b2b_lead_unlock_update', updateStats);
+  }, [company]);
+
+  const maxUnlocks =
+    (company?.membership_tier || company?.tier || 'bronze').toLowerCase() === 'gold'
+      ? Infinity
+      : (company?.membership_tier || company?.tier || 'bronze').toLowerCase() === 'silver'
+      ? 20
+      : 2;
 
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-3 sm:p-4 lg:p-5 gap-4 sm:gap-6 font-sans">
@@ -167,8 +245,13 @@ export default function DashboardLayout({
 
           {/* Section Header */}
           {!isCollapsed ? (
-            <div className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase px-3 mb-2.5 select-none">
-              {isBuyer ? 'BUYER MENU' : 'SELLER MENU'}
+            <div className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase px-3 mb-2.5 select-none flex items-center justify-between">
+              <span>TRADING PLATFORM</span>
+              {isPendingVerification && (
+                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
+                  LOCKED
+                </span>
+              )}
             </div>
           ) : (
             <div className="w-6 h-[1px] bg-slate-800 mx-auto my-3" />
@@ -179,41 +262,39 @@ export default function DashboardLayout({
             {navItems.map((item) => {
               const active = isActive(item.href);
               const Icon = item.icon;
+              const isLockedItem = isPendingVerification && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
 
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={isLockedItem ? '/dashboard' : item.href}
                   className={`w-full flex items-center transition cursor-pointer ${
                     isCollapsed
                       ? 'justify-center w-12 h-12 mx-auto rounded-2xl relative ' +
                         (active
                           ? 'bg-[#0A6CFF] text-white shadow-sm'
+                          : isLockedItem
+                          ? 'text-slate-600 hover:text-slate-400'
                           : 'text-slate-300 hover:text-white hover:bg-white/5')
                       : 'gap-3 px-4 py-3 rounded-2xl font-bold text-[14px] ' +
                         (active
                           ? 'bg-[#0A6CFF] text-white shadow-sm'
+                          : isLockedItem
+                          ? 'text-slate-500 hover:text-slate-400 font-medium'
                           : 'text-slate-300 hover:text-white hover:bg-white/5 font-semibold')
                   }`}
-                  title={item.label}
+                  title={isLockedItem ? `${item.label} (Verification Required)` : item.label}
                 >
                   <div className="relative shrink-0 flex items-center justify-center">
                     <Icon className="w-5 h-5" />
-                    {isCollapsed && 'badge' in item && (item as any).badge && (
-                      <span className="absolute -top-1.5 -right-2 bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
-                        {(item as any).badge}
-                      </span>
-                    )}
                   </div>
                   {!isCollapsed && (
-                    <>
+                    <div className="flex-1 flex items-center justify-between">
                       <span>{item.label}</span>
-                      {'badge' in item && (item as any).badge && (
-                        <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[11px] font-extrabold px-2 py-0.5 rounded-full">
-                          {(item as any).badge}
-                        </span>
+                      {isLockedItem && (
+                        <span className="text-[10px] text-amber-400/80 font-normal">KYC</span>
                       )}
-                    </>
+                    </div>
                   )}
                 </Link>
               );
@@ -223,33 +304,46 @@ export default function DashboardLayout({
 
         {/* Bottom of Sidebar */}
         <div className="pt-6 border-t border-slate-800/60 mt-6">
-          {/* Quote Quota Card (Hidden for buyers) */}
-          {!isBuyer && (
-            !isCollapsed ? (
-              <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[13px] font-bold text-white">Quote quota</span>
-                  <span className="bg-[#D97706] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide">
-                    {membershipTier}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 mb-2 font-medium">
-                  2 of 50 used this month
-                </p>
-                {/* Progress bar */}
-                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-[#0A6CFF] rounded-full w-[4%]" />
-                </div>
+          {/* Contact Unlocks Quota Card */}
+          {!isCollapsed ? (
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 mb-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[13px] font-bold text-white">Contact unlocks</span>
+                <span className="bg-[#0A6CFF] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide">
+                  {membershipTier}
+                </span>
               </div>
-            ) : (
-              <div
-                className="w-12 h-12 mx-auto rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-3 text-amber-400 relative"
-                title="Quote quota: 2 of 50 used (GOLD)"
-              >
-                <span className="text-[10px] font-extrabold">{membershipTier[0]}</span>
-                <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#0A6CFF]" />
+              <p className="text-[11px] text-slate-400 mb-2 font-medium">
+                {maxUnlocks === Infinity
+                  ? 'Unlimited unlocks active'
+                  : `${unlockedCount} of ${maxUnlocks} used (${remainingUnlocks} remaining)`}
+              </p>
+              {/* Progress bar */}
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#00E5FF] rounded-full transition-all"
+                  style={{
+                    width: maxUnlocks === Infinity ? '100%' : `${Math.min(100, (unlockedCount / maxUnlocks) * 100)}%`,
+                  }}
+                />
               </div>
-            )
+              {maxUnlocks !== Infinity && remainingUnlocks <= 1 && (
+                <Link
+                  href="/dashboard/billing"
+                  className="block mt-2.5 text-center py-1 text-[11px] font-bold text-[#00E5FF] hover:underline"
+                >
+                  Upgrade to unlock more &rarr;
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div
+              className="w-12 h-12 mx-auto rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-3 text-cyan-400 relative"
+              title={`Contact unlocks: ${unlockedCount} used (${membershipTier})`}
+            >
+              <span className="text-[10px] font-extrabold">{membershipTier[0]}</span>
+              <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
+            </div>
           )}
 
           {/* User Profile Info */}
@@ -322,7 +416,159 @@ export default function DashboardLayout({
       {/* MAIN WHITE CANVAS CONTENT                                */}
       {/* ========================================================= */}
       <main className="flex-1 h-full max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[32px] sm:rounded-[36px] p-6 sm:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden">
-        {children}
+        {/* If account is suspended, show suspension banner */}
+        {isSuspended ? (
+          <div className="py-12 max-w-2xl mx-auto text-center space-y-6">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+              <LogOut className="w-8 h-8" />
+            </div>
+            <div>
+              <span className="text-[11px] font-extrabold uppercase tracking-widest text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">
+                Account Suspended
+              </span>
+              <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] mt-3">
+                Platform Access Temporarily Suspended
+              </h2>
+              <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed">
+                Your account ({companyName}) has been suspended by compliance administration. To review your account status or file an appeal, please contact our verification desk.
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-left text-[13px] text-slate-700 space-y-2">
+              <div><strong>Account Email:</strong> {company?.email}</div>
+              <div><strong>Support Desk:</strong> <a href="mailto:newcustomers@brandnova.info" className="text-[#0A6CFF] font-semibold hover:underline">newcustomers@brandnova.info</a></div>
+              <div><strong>Admin Officer:</strong> Jeff (Chief Verification Officer)</div>
+            </div>
+            <div className="flex justify-center gap-3 pt-2">
+              <a
+                href="mailto:newcustomers@brandnova.info?subject=Account%20Reactivation%20Appeal%20-%20"
+                className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition"
+              >
+                Contact Verification Officer
+              </a>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[13px] px-6 py-3 rounded-full transition"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
+        ) : (
+          children
+        )}
+
+        {/* ========================================================= */}
+        {/* NON-CANCELLABLE BLOCKING VERIFICATION MODAL POPUP         */}
+        {/* ========================================================= */}
+        {isPendingVerification && (
+          <div className="fixed inset-0 z-[100] bg-[#050E1D]/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
+            {/* Modal Card - Uncancellable: No X button, no backdrop click-away */}
+            <div
+              className="w-full max-w-2xl bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_25px_70px_rgba(11,31,58,0.25)] p-6 sm:p-9 text-[#0B1F3A] my-auto relative space-y-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Status Header */}
+              <div className="text-center space-y-3">
+                <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
+                  <Lock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Account Restricted · Verification In Progress</span>
+                </div>
+                <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight leading-tight">
+                  Verify Your Account to Unlock Dashboard
+                </h2>
+                <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
+                  We have dispatched an onboarding checklist to <strong className="text-[#0B1F3A]">{company?.email || 'your email'}</strong>. Your dashboard is temporarily locked until your wholesale documents are verified.
+                </p>
+              </div>
+
+              {/* Email Notice Card */}
+              <div className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-[#1E3A8A]">
+                <div className="w-10 h-10 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div className="text-[13px] leading-relaxed">
+                  <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5">
+                    Check your email and reply with your documents
+                  </div>
+                  <p className="text-[#3B5278]">
+                    Reply directly to the email sent to <strong className="text-[#0B1F3A]">{company?.email}</strong> with your business verification documents attached. Our verification officer, Jeff, will review and verify your account.
+                  </p>
+                </div>
+              </div>
+
+              {/* Required Documents 2x2 Grid */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
+                <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
+                  <span>Required Wholesale Trading Documents</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
+                    <div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
+                      <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or registry extract</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
+                    <div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Certificate</div>
+                      <div className="text-[11px] text-[#5B6B82]">National VAT certificate or European VIES document</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
+                    <div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">Proof of Operating Address</div>
+                      <div className="text-[11px] text-[#5B6B82]">Recent utility bill or corporate bank statement (&lt;90 days)</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
+                    <div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">Director ID / References</div>
+                      <div className="text-[11px] text-[#5B6B82]">Director photo ID or 2 supplier trade references</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <a
+                  href={`mailto:newcustomers@brandnova.info?subject=KYC%20Verification%20Documents%20-%20${encodeURIComponent(company?.name || companyName)}`}
+                  className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Email Documents to Jeff</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Refresh Status</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

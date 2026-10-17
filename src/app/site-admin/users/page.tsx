@@ -10,6 +10,7 @@ import {
   unsuspendAccount,
   deleteAccount,
   updateAccountTier,
+  updateAccountApproval,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
@@ -39,7 +40,7 @@ export default function SiteAdminUsersPage() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer' | 'suspended'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer' | 'suspended' | 'pending'>('all');
 
   // Modals
   const [selectedDossier, setSelectedDossier] = useState<AdminClientAccount | null>(null);
@@ -76,13 +77,58 @@ export default function SiteAdminUsersPage() {
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  const handleToggleSuspend = (acc: AdminClientAccount) => {
+  const handleVerifyAccount = async (acc: AdminClientAccount) => {
+    updateAccountApproval(acc.id, 'approved');
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+        }),
+      });
+    } catch {}
+    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
+    loadData();
+  };
+
+  const handleToggleSuspend = async (acc: AdminClientAccount) => {
     if (acc.account_status === 'suspended') {
       unsuspendAccount(acc.id);
-      showNotice(`Account "${acc.name}" has been reactivated.`);
+      try {
+        await fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'unsuspend',
+            companyId: acc.id,
+            email: acc.email,
+            contactName: acc.contact_name,
+            companyName: acc.name,
+          }),
+        });
+      } catch {}
+      showNotice(`Account "${acc.name}" reactivated. Welcome notice dispatched.`);
     } else {
       suspendAccount(acc.id);
-      showNotice(`Account "${acc.name}" has been suspended.`);
+      try {
+        await fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'suspend',
+            companyId: acc.id,
+            email: acc.email,
+            contactName: acc.contact_name,
+            companyName: acc.name,
+          }),
+        });
+      } catch {}
+      showNotice(`Account "${acc.name}" suspended. Suspension notice dispatched to ${acc.email}.`);
     }
     loadData();
   };
@@ -119,6 +165,7 @@ export default function SiteAdminUsersPage() {
       if (roleFilter === 'seller') return acc.role === 'seller';
       if (roleFilter === 'buyer') return acc.role === 'buyer';
       if (roleFilter === 'suspended') return acc.account_status === 'suspended';
+      if (roleFilter === 'pending') return acc.approval_status === 'pending' || acc.approval_status === 'pending_verification';
 
       return true;
     });
@@ -127,6 +174,7 @@ export default function SiteAdminUsersPage() {
   const sellerCount = accounts.filter((a) => a.role === 'seller').length;
   const buyerCount = accounts.filter((a) => a.role === 'buyer').length;
   const suspendedCount = accounts.filter((a) => a.account_status === 'suspended').length;
+  const pendingCount = accounts.filter((a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification').length;
 
   return (
     <>
@@ -137,7 +185,7 @@ export default function SiteAdminUsersPage() {
             Accounts Directory
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            Real registered platform accounts. Audit client dossiers, update membership quotas, or suspend access.
+            Real registered platform accounts. Audit client dossiers, verify wholesale documents, or manage access.
           </p>
         </div>
 
@@ -155,9 +203,9 @@ export default function SiteAdminUsersPage() {
         </div>
       )}
 
-      {/* Filter Tabs & Search Controls - Requirement 03: NO Pending KYC */}
+      {/* Filter Tabs & Search Controls */}
       <div className="mt-6 space-y-4">
-        {/* Pills */}
+        {/* Pills: Keep only All, Pending, and Suspended with shortened names */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           <button
             type="button"
@@ -168,40 +216,30 @@ export default function SiteAdminUsersPage() {
                 : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
             }`}
           >
-            All Accounts ({accounts.length})
+            All ({accounts.length})
           </button>
           <button
             type="button"
-            onClick={() => setRoleFilter('seller')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              roleFilter === 'seller'
-                ? 'bg-[#0B1F3A] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
+            onClick={() => setRoleFilter('pending')}
+            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+              roleFilter === 'pending'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50'
             }`}
           >
-            Wholesale Sellers ({sellerCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('buyer')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              roleFilter === 'buyer'
-                ? 'bg-[#0B1F3A] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
-            }`}
-          >
-            Verified Buyers ({buyerCount})
+            <span>Pending ({pendingCount})</span>
           </button>
           <button
             type="button"
             onClick={() => setRoleFilter('suspended')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
               roleFilter === 'suspended'
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
             }`}
           >
-            Suspended ({suspendedCount})
+            <Ban className="w-3.5 h-3.5" />
+            <span>Suspended ({suspendedCount})</span>
           </button>
         </div>
 
@@ -309,6 +347,11 @@ export default function SiteAdminUsersPage() {
                             <Ban className="w-3 h-3" />
                             <span>Suspended</span>
                           </span>
+                        ) : acc.approval_status === 'pending' || acc.approval_status === 'pending_verification' ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Pending KYC</span>
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-200">
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -329,6 +372,19 @@ export default function SiteAdminUsersPage() {
                       {/* Actions */}
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Verify Button for Pending Accounts */}
+                          {(acc.approval_status === 'pending' || acc.approval_status === 'pending_verification') && (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyAccount(acc)}
+                              title="Verify wholesale documents & activate account"
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition shadow-xs cursor-pointer mr-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Verify</span>
+                            </button>
+                          )}
+
                           {/* Message Button */}
                           <button
                             type="button"

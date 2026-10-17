@@ -70,12 +70,33 @@ function SiteAdminMessagesContent() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const hasInitializedRef = useRef(false);
 
+  // Requirement 07: Hide automated onboarding welcome messages sent by Jeff to reduce clutter
+  const isAutomatedWelcomeThread = (c: InquiryConversation) => {
+    const isWelcomeTitleOrText =
+      c.id.startsWith('welcome-') ||
+      c.id.startsWith('inq-welcome-') ||
+      c.productTitle?.toLowerCase().includes('welcome') ||
+      c.lastMessageText?.includes('Welcome to B2B LINK') ||
+      c.lastMessageText?.includes("I'm Jeff, Platform Director") ||
+      c.messages?.some(
+        (m) =>
+          m.id.startsWith('welcome-') ||
+          m.text?.includes("I'm Jeff, Platform Director") ||
+          (m.senderName?.includes('Jeff') && m.text?.includes('Welcome to B2B LINK'))
+      );
+
+    // Only hide if the user hasn't sent a reply back (i.e., only automated admin welcome message)
+    const hasUserReplied = c.messages?.some((m) => m.senderRole !== 'admin');
+    return isWelcomeTitleOrText && !hasUserReplied;
+  };
+
   const loadData = () => {
     const all = getStoredConversations();
     setConversations(all);
-    if (!hasInitializedRef.current && all.length > 0) {
+    const valid = all.filter((c) => !isAutomatedWelcomeThread(c));
+    if (!hasInitializedRef.current && valid.length > 0) {
       hasInitializedRef.current = true;
-      setActiveConversationId(targetId || all[0].id);
+      setActiveConversationId(targetId || valid[0].id);
     }
   };
 
@@ -100,13 +121,17 @@ function SiteAdminMessagesContent() {
     return c.type !== 'seller_admin' && c.type !== 'broadcast' && c.status !== 'broadcast_seller' && c.status !== 'broadcast_buyer';
   };
 
-  const adminConversations = useMemo(() => {
-    return conversations.filter((c) => !isTradeChat(c));
+  const cleanConversations = useMemo(() => {
+    return conversations.filter((c) => !isAutomatedWelcomeThread(c));
   }, [conversations]);
 
+  const adminConversations = useMemo(() => {
+    return cleanConversations.filter((c) => !isTradeChat(c));
+  }, [cleanConversations]);
+
   const tradeConversations = useMemo(() => {
-    return conversations.filter((c) => isTradeChat(c));
-  }, [conversations]);
+    return cleanConversations.filter((c) => isTradeChat(c));
+  }, [cleanConversations]);
 
   const currentList = mainTab === 'admin_desk' ? adminConversations : tradeConversations;
 

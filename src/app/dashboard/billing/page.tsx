@@ -10,6 +10,7 @@ import {
   removePaymentCard,
   setDefaultCard,
   cancelSubscription,
+  reactivateSubscription,
   changePlan,
   DEMO_TEST_CARD,
   TIER_PRICING,
@@ -37,9 +38,9 @@ import {
 
 export default function DashboardBillingPage() {
   const { company, updateProfile } = useAuth();
-  const companyId = company?.id || 'comp-nordic-tech';
-  const companyName = company?.name || 'Nordic Electro Wholesale Ltd';
-  const contactEmail = company?.email || 'lars@nordicelectro.se';
+  const companyId = company?.id || '';
+  const companyName = company?.name || company?.company_name || 'Wholesale Member';
+  const contactEmail = company?.email || '';
 
   const [cards, setCards] = useState<PaymentCard[]>([]);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -55,6 +56,7 @@ export default function DashboardBillingPage() {
   const [selectedReceipt, setSelectedReceipt] = useState<AdminPaymentRecord | null>(null);
 
   // Add Card Form State
+  const [pendingPlanTier, setPendingPlanTier] = useState<MembershipTier | null>(null);
   const [newCardNumber, setNewCardNumber] = useState('');
   const [newCardholderName, setNewCardholderName] = useState('');
   const [newCardExpMonth, setNewCardExpMonth] = useState('12');
@@ -64,9 +66,26 @@ export default function DashboardBillingPage() {
   const [newCardSetDefault, setNewCardSetDefault] = useState(true);
 
   // Change Plan State
-  const [selectedTier, setSelectedTier] = useState<MembershipTier>('gold');
+  const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
 
   const loadData = () => {
+    if (!companyId) {
+      setCards([]);
+      setSubscription({
+        companyId: 'default',
+        tier: (company?.tier || company?.membership_tier || 'bronze') as MembershipTier,
+        status: 'free',
+        amountGbp: 0,
+        interval: 'month',
+        currentPeriodStart: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        currentPeriodEnd: new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+        cancelAtPeriodEnd: false,
+        defaultCardId: null,
+      });
+      setPayments([]);
+      return;
+    }
+
     const cList = getCompanyCards(companyId);
     const sub = getCompanySubscription(companyId);
     setCards(cList);
@@ -77,8 +96,7 @@ export default function DashboardBillingPage() {
     const myPay = allPay.filter(
       (p) =>
         p.company_id === companyId ||
-        p.company_name.toLowerCase().includes(companyName.toLowerCase().slice(0, 8)) ||
-        p.contact_email.toLowerCase() === contactEmail.toLowerCase()
+        (contactEmail && p.contact_email.toLowerCase() === contactEmail.toLowerCase())
     );
     setPayments(myPay);
   };
@@ -129,7 +147,21 @@ export default function DashboardBillingPage() {
     });
 
     if (res.success) {
-      showNotification('success', `Payment card ending in ${res.card?.last4} added successfully.`);
+      if (pendingPlanTier && pendingPlanTier !== 'bronze') {
+        const planRes = changePlan(companyId, pendingPlanTier, companyName, contactEmail);
+        if (planRes.success) {
+          updateProfile({ membership_tier: pendingPlanTier });
+          showNotification(
+            'success',
+            `Card saved and ${TIER_PRICING[pendingPlanTier].name} activated! Perks are now unlocked.`
+          );
+        } else {
+          showNotification('success', `Payment card ending in ${res.card?.last4} added successfully.`);
+        }
+        setPendingPlanTier(null);
+      } else {
+        showNotification('success', `Payment card ending in ${res.card?.last4} added successfully.`);
+      }
       setShowAddCardModal(false);
       setNewCardNumber('');
       setNewCardholderName('');
@@ -159,13 +191,12 @@ export default function DashboardBillingPage() {
   };
 
   const handleConfirmCancelSubscription = async () => {
-    const res = cancelSubscription(companyId, true);
+    // End subscription once the 30 days are over; do NOT demote immediately
+    const res = cancelSubscription(companyId, false);
     if (res.success) {
-      // Sync auth profile tier to bronze
-      await updateProfile({ membership_tier: 'bronze' });
       showNotification(
         'success',
-        'Subscription canceled. Your account has been demoted to the Bronze (Free) package right away.'
+        `Auto-renewal canceled. Your ${TIER_PRICING[currentTier].name} benefits remain fully active until ${subscription?.currentPeriodEnd}. You will not be charged again.`
       );
       setShowCancelModal(false);
       loadData();
@@ -174,7 +205,28 @@ export default function DashboardBillingPage() {
     }
   };
 
+  const handleReactivateRenewal = () => {
+    const res = reactivateSubscription(companyId);
+    if (res.success) {
+      showNotification(
+        'success',
+        `Auto-renewal reactivated! Your ${TIER_PRICING[currentTier].name} will renew automatically each month.`
+      );
+      loadData();
+    } else {
+      showNotification('error', res.error || 'Failed to reactivate renewal.');
+    }
+  };
+
   const handleConfirmPlanChange = async () => {
+    if (selectedTier !== 'bronze' && cards.length === 0) {
+      // Open card entry popup directly instead of confusing the customer
+      setPendingPlanTier(selectedTier);
+      setShowPlanModal(false);
+      setShowAddCardModal(true);
+      return;
+    }
+
     const res = changePlan(companyId, selectedTier, companyName, contactEmail);
     if (res.success) {
       await updateProfile({ membership_tier: selectedTier });
@@ -190,7 +242,8 @@ export default function DashboardBillingPage() {
   };
 
   const currentTier = subscription?.tier || 'bronze';
-  const isPaidActive = currentTier !== 'bronze' && subscription?.status === 'active';
+  const isPaidActive = currentTier !== 'bronze' && (subscription?.status === 'active' || subscription?.cancelAtPeriodEnd);
+  const isCancelingAtPeriodEnd = Boolean(subscription?.cancelAtPeriodEnd && currentTier !== 'bronze');
 
   return (
     <div className="h-full overflow-y-auto max-w-[1200px] mx-auto pb-16 font-sans">
@@ -247,14 +300,18 @@ export default function DashboardBillingPage() {
               </span>
               <span
                 className={`text-[12px] font-bold px-3 py-1 rounded-full capitalize ${
-                  subscription?.status === 'active'
+                  isCancelingAtPeriodEnd
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                    : subscription?.status === 'active'
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     : subscription?.status === 'canceled'
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                    ? 'bg-slate-100 text-slate-700 border border-slate-200'
                     : 'bg-blue-50 text-[#0A6CFF] border border-blue-200'
                 }`}
               >
-                {subscription?.status === 'active'
+                {isCancelingAtPeriodEnd
+                  ? `Active until ${subscription?.currentPeriodEnd} (Auto-Renew Off)`
+                  : subscription?.status === 'active'
                   ? '● Subscription Active'
                   : subscription?.status === 'canceled'
                   ? 'Canceled (Demoted to Bronze)'
@@ -288,7 +345,11 @@ export default function DashboardBillingPage() {
               <div>
                 <div className="text-[#8A9BB0] font-medium">Next Billing Date</div>
                 <div className="text-[#0B1F3A] font-bold mt-0.5">
-                  {isPaidActive ? subscription?.currentPeriodEnd || 'In 30 days' : 'None (Free Package)'}
+                  {isCancelingAtPeriodEnd
+                    ? `None (Expires ${subscription?.currentPeriodEnd})`
+                    : isPaidActive
+                    ? subscription?.currentPeriodEnd || 'In 30 days'
+                    : 'None (Free Package)'}
                 </div>
               </div>
               <div>
@@ -301,13 +362,24 @@ export default function DashboardBillingPage() {
           {/* Footer Actions for Subscription */}
           <div className="pt-4 border-t border-[#F0F4FA] flex flex-wrap items-center justify-between gap-3">
             <div className="text-[12px] text-[#8A9BB0]">
-              {isPaidActive
+              {isCancelingAtPeriodEnd
+                ? `Auto-renewal is off. No further charges will occur. Full ${TIER_PRICING[currentTier].name} benefits remain active until ${subscription?.currentPeriodEnd}.`
+                : isPaidActive
                 ? 'Card will automatically renew each month. You can cancel anytime.'
                 : 'Upgrade anytime to unlock CSV batch importing and unlimited products.'}
             </div>
 
             <div className="flex items-center gap-3">
-              {isPaidActive ? (
+              {isCancelingAtPeriodEnd ? (
+                <button
+                  type="button"
+                  onClick={handleReactivateRenewal}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Reactivate Auto-Renewal</span>
+                </button>
+              ) : isPaidActive ? (
                 <button
                   type="button"
                   onClick={() => setShowCancelModal(true)}
@@ -397,7 +469,10 @@ export default function DashboardBillingPage() {
 
           <button
             type="button"
-            onClick={() => setShowAddCardModal(true)}
+            onClick={() => {
+              setPendingPlanTier(null);
+              setShowAddCardModal(true);
+            }}
             className="bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] font-bold text-[13px] px-4 py-2.5 rounded-full flex items-center gap-2 cursor-pointer transition shrink-0 self-start sm:self-auto"
           >
             <Plus className="w-4 h-4 text-[#0A6CFF]" />
@@ -568,10 +643,30 @@ export default function DashboardBillingPage() {
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-[22px] font-extrabold text-[#0B1F3A]">Add Payment Card</h3>
+            <h3 className="text-[22px] font-extrabold text-[#0B1F3A]">
+              {pendingPlanTier ? `Payment Details for ${TIER_PRICING[pendingPlanTier].name}` : 'Add Payment Card'}
+            </h3>
             <p className="text-[13px] text-[#5B6B82] mt-1 mb-5">
-              Securely save a business credit or debit card for recurring membership.
+              {pendingPlanTier
+                ? `Enter your card details to activate ${TIER_PRICING[pendingPlanTier].name} (£${TIER_PRICING[pendingPlanTier].price}/month). Billed monthly, cancel anytime.`
+                : 'Securely save a business credit or debit card for recurring membership.'}
             </p>
+
+            {/* Plan Summary Badge when activating a tier */}
+            {pendingPlanTier && (
+              <div className="mb-4 p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#0A6CFF]" />
+                  <span className="font-bold text-[14px] text-[#0B1F3A]">
+                    {TIER_PRICING[pendingPlanTier].name} Membership
+                  </span>
+                </div>
+                <div className="text-[15px] font-black text-[#0A6CFF]">
+                  £{TIER_PRICING[pendingPlanTier].price}
+                  <span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
+                </div>
+              </div>
+            )}
 
             {/* Test Card Quick Fill Button */}
             <div className="mb-5 p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between gap-3">
@@ -688,9 +783,9 @@ export default function DashboardBillingPage() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] transition cursor-pointer"
+                  className="w-1/2 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] transition cursor-pointer shadow-xs"
                 >
-                  Save Card
+                  {pendingPlanTier ? `Pay £${TIER_PRICING[pendingPlanTier].price} & Activate Plan` : 'Save Card'}
                 </button>
               </div>
             </form>
@@ -703,29 +798,28 @@ export default function DashboardBillingPage() {
       {/* ========================================== */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-[#0B1F3A]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[28px] max-w-[460px] w-full p-6 sm:p-8 shadow-2xl relative">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-4">
+          <div className="bg-white rounded-[28px] max-w-[480px] w-full p-6 sm:p-8 shadow-2xl relative">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
 
-            <h3 className="text-[22px] font-extrabold text-[#0B1F3A]">Cancel Subscription?</h3>
+            <h3 className="text-[22px] font-extrabold text-[#0B1F3A]">Cancel Auto-Renewal?</h3>
             <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed">
-              Are you sure you want to cancel your <strong className="text-[#0B1F3A] capitalize">{currentTier} plan</strong>?
+              Are you sure you want to cancel automatic renewal for your <strong className="text-[#0B1F3A] capitalize">{TIER_PRICING[currentTier].name}</strong>?
             </p>
 
-            <div className="my-5 p-4 bg-red-50/70 border border-red-200 rounded-2xl text-[13px] text-red-900 space-y-2">
-              <div className="font-bold flex items-center gap-1.5 text-red-700">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Immediate Account Demotion</span>
+            <div className="my-5 p-4 bg-amber-50/80 border border-amber-200 rounded-2xl text-[13px] text-amber-950 space-y-2.5">
+              <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                <ShieldCheck className="w-4 h-4 shrink-0 text-amber-700" />
+                <span>30-Day Period Retention Policy</span>
               </div>
-              <p>
-                Your account will be demoted to the <strong className="font-bold">Bronze (Free)</strong> package right away:
+              <p className="leading-relaxed">
+                Because you were already charged for your billing period, your <strong className="font-bold text-[#0B1F3A]">{TIER_PRICING[currentTier].name} benefits remain 100% active until {subscription?.currentPeriodEnd}</strong>.
               </p>
-              <ul className="list-disc pl-5 space-y-1 text-[12px] text-red-800">
-                <li>Listing allowance reduced to maximum 15 items.</li>
-                <li>Monthly RFQ quotation limit capped at 10.</li>
-                <li>CSV bulk upload features will be disabled.</li>
-                <li>Spotlight badges and hot listing promotions deactivated.</li>
+              <ul className="list-disc pl-5 space-y-1 text-[12px] text-amber-900">
+                <li>Your card will <strong className="font-bold">not</strong> be charged again.</li>
+                <li>All active listings, quotation desks, and supplier perks remain active until {subscription?.currentPeriodEnd}.</li>
+                <li>Once the 30 days are over, your plan will quietly switch to Bronze (Free) without recurring charges.</li>
               </ul>
             </div>
 
@@ -735,14 +829,14 @@ export default function DashboardBillingPage() {
                 onClick={() => setShowCancelModal(false)}
                 className="w-1/2 py-2.5 rounded-full border border-[#E3E9F2] text-[#0B1F3A] font-bold text-[14px] hover:bg-[#F3F6FB] transition cursor-pointer"
               >
-                Keep Plan
+                Keep Subscription
               </button>
               <button
                 type="button"
                 onClick={handleConfirmCancelSubscription}
-                className="w-1/2 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-[14px] transition cursor-pointer shadow-xs"
+                className="w-1/2 py-2.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[14px] transition cursor-pointer shadow-xs"
               >
-                Yes, Cancel & Demote
+                Cancel Auto-Renewal
               </button>
             </div>
           </div>

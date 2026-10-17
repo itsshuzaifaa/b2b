@@ -1,7 +1,7 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/server';
-import { sendVettingDecisionEmail } from '@/lib/email/dispatcher';
+import { sendVettingDecisionEmail, sendAccountApprovalEmail, sendAccountSuspensionEmail } from '@/lib/email/dispatcher';
 import { TIER_LIMITS, type MembershipTier, type ApprovalStatus, type Company, type Product } from '@/types/database';
 import { MOCK_COMPANIES, MOCK_PRODUCTS } from '@/lib/mock-data';
 
@@ -62,6 +62,19 @@ export async function updateSellerVetting(
 
     // 3. Dispatch Decision Notification Email
     if (company.email) {
+      if (status === 'approved') {
+        await sendAccountApprovalEmail(company.email, {
+          companyName: company.name,
+          contactName: company.contact_name || company.name,
+        });
+      } else {
+        await sendAccountSuspensionEmail(company.email, {
+          companyName: company.name,
+          contactName: company.contact_name || company.name,
+          reason: notes?.trim() || 'Verification documents incomplete or criteria not met.',
+        });
+      }
+
       await sendVettingDecisionEmail(company.email, {
         companyName: company.name,
         decision: status,

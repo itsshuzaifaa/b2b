@@ -224,7 +224,7 @@ export async function syncWithSupabase(role?: string, companyId?: string, email?
 // Filter conversations strictly for active company/role
 export function getConversationsForUser(company: Company | null): InquiryConversation[] {
   const all = getStoredConversations();
-  if (!company) return all;
+  if (!company || !company.id) return [];
 
   // Admin Jeff only sees messages sent to or from admin, plus broadcasts:
   // Trade inquiries between buyers and sellers are strictly private and confidential
@@ -237,59 +237,33 @@ export function getConversationsForUser(company: Company | null): InquiryConvers
   const userEmail = company.email?.toLowerCase().trim();
   const contactEmail = company.contact_email?.toLowerCase().trim();
 
-  // Buyer sees:
-  // 1) Direct messages from Admin Desk / Jeff (welcome messages & platform advisories)
-  // 2) Buyer Broadcasts (targetAudience === 'buyer' or 'all')
-  // 3) Inquiries they initiated as buyer
-  if (company.role === 'buyer') {
-    return all.filter(
-      (c) =>
-        ((c.type === 'seller_admin' || c.status === 'admin_desk') &&
-          ((userEmail && c.buyerEmail?.toLowerCase().trim() === userEmail) ||
-            (c.buyerCompanyId === company.id) ||
-            !c.buyerEmail)) ||
-        (c.type === 'broadcast' && (c.targetAudience === 'buyer' || c.targetAudience === 'all')) ||
-        (c.type === 'buyer_seller' &&
-          (c.buyerCompanyId === company.id ||
-            (userEmail &&
-              (c.buyerEmail?.toLowerCase().trim() === userEmail ||
-                c.buyerContactEmail?.toLowerCase().trim() === userEmail)) ||
-            (contactEmail &&
-              (c.buyerEmail?.toLowerCase().trim() === contactEmail ||
-                c.buyerContactEmail?.toLowerCase().trim() === contactEmail)) ||
-            !c.buyerEmail))
-    );
-  }
-
-  // Seller sees:
-  // 1) Seller Broadcasts (targetAudience === 'seller' or untargeted)
-  // 2) Direct Admin Desk support thread for their company
-  // 3) Inquiries where they are the seller
-  // 4) Inquiries where they contacted another supplier from the marketplace (they are the inquirer/buyer)
   return all.filter((c) => {
+    // 1. Broadcasts
     if (c.type === 'broadcast') {
-      return c.targetAudience === 'seller' || !c.targetAudience || c.targetAudience === 'all';
+      return c.targetAudience === 'all' || !c.targetAudience || (company.role ? c.targetAudience === company.role : true);
     }
+
+    // 2. Direct Admin Desk support thread or personal welcome message from Jeff
+    // Strictly scoped to this user's email or company ID only (never leaks other users like Bostan!)
     if (c.type === 'seller_admin' || c.status === 'admin_desk') {
-      return (
-        c.sellerCompanyId === company.id ||
+      const isMyDeskThread = Boolean(
         (userEmail && (c.buyerEmail?.toLowerCase().trim() === userEmail || c.buyerContactEmail?.toLowerCase().trim() === userEmail)) ||
-        (contactEmail && (c.buyerEmail?.toLowerCase().trim() === contactEmail || c.buyerContactEmail?.toLowerCase().trim() === contactEmail))
+        (contactEmail && (c.buyerEmail?.toLowerCase().trim() === contactEmail || c.buyerContactEmail?.toLowerCase().trim() === contactEmail)) ||
+        (company.id && c.buyerCompanyId === company.id)
       );
+      return isMyDeskThread;
     }
-    if (c.type === 'buyer_seller' || !c.type) {
-      const isSeller = c.sellerCompanyId === company.id;
-      const isBuyer =
-        c.buyerCompanyId === company.id ||
-        (userEmail &&
-          (c.buyerEmail?.toLowerCase().trim() === userEmail ||
-            c.buyerContactEmail?.toLowerCase().trim() === userEmail)) ||
-        (contactEmail &&
-          (c.buyerEmail?.toLowerCase().trim() === contactEmail ||
-            c.buyerContactEmail?.toLowerCase().trim() === contactEmail));
-      return isSeller || isBuyer;
-    }
-    return false;
+
+    // 3. Trade Inquiries (buyer_seller)
+    // Strictly requires company to be either the verified seller or the verified buyer
+    const isSeller = Boolean(company.id && c.sellerCompanyId === company.id);
+    const isBuyer = Boolean(
+      (company.id && c.buyerCompanyId === company.id) ||
+      (userEmail && (c.buyerEmail?.toLowerCase().trim() === userEmail || c.buyerContactEmail?.toLowerCase().trim() === userEmail)) ||
+      (contactEmail && (c.buyerEmail?.toLowerCase().trim() === contactEmail || c.buyerContactEmail?.toLowerCase().trim() === contactEmail))
+    );
+
+    return isSeller || isBuyer;
   });
 }
 
