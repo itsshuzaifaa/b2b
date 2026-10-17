@@ -2,584 +2,419 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '@/lib/mock-data';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
-import { InquiryModal } from '@/components/modals/InquiryModal';
-import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
-import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
+import { Search, ChevronDown, PlusCircle, ArrowRight, ShieldCheck, Sparkles, Filter } from 'lucide-react';
+import { TradingBoardDetailModal } from '@/components/modals/TradingBoardDetailModal';
+import { AuthGateModal } from '@/components/modals/AuthGateModal';
+import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
 import {
-  isLeadUnlocked,
-  unlockLead,
-  getRemainingUnlocks,
-  getUnlockedLeadIds,
-} from '@/lib/leads/unlock-store';
-import type { Product, MembershipTier } from '@/types/database';
-import {
-  Search,
-  Flame,
-  Package,
-  Lock,
-  Unlock,
-  MessageSquare,
-  Sparkles,
-  CheckCircle2,
-} from 'lucide-react';
+  ALL_TRADING_BOARD_ITEMS,
+  type TradingBoardItem,
+} from '@/lib/trading-board-data';
+import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 
-export default function MarketplacePage() {
+function MarketplaceContent() {
   const router = useRouter();
-  const { isLoggedIn, company } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const searchParams = useSearchParams();
+  const { isLoggedIn, company, role } = useAuth();
+
+  // Tab state: ALL, BUY, SELL
+  const tabParam = searchParams.get('tab')?.toUpperCase();
+  const [activeTab, setActiveTab] = useState<'ALL' | 'BUY' | 'SELL'>(
+    tabParam === 'BUY' ? 'BUY' : tabParam === 'SELL' ? 'SELL' : 'ALL'
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [showHotOnly, setShowHotOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'featured' | 'price_low' | 'price_high' | 'moq_low'>('featured');
+  const [selectedCategory, setSelectedCategory] = useState('All categories');
+  const [items, setItems] = useState<TradingBoardItem[]>(ALL_TRADING_BOARD_ITEMS);
 
-  // Modal and unlock states
-  const [activeInquiryProduct, setActiveInquiryProduct] = useState<Product | null>(null);
-  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
-  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
-  const [unlockFeedback, setUnlockFeedback] = useState<string | null>(null);
+  // Modals
+  const [selectedDetailItem, setSelectedDetailItem] = useState<TradingBoardItem | null>(null);
+  const [authGateOpen, setAuthGateOpen] = useState(false);
+  const [createWtbOpen, setCreateWtbOpen] = useState(false);
 
-  const tier = (company?.membership_tier || company?.tier || 'bronze') as MembershipTier;
-  const remainingUnlocks = company ? getRemainingUnlocks(company.id, tier) : 2;
+  // Load items + local user listings + local user WTBs
+  const refreshItems = () => {
+    try {
+      localStorage.removeItem('b2b_seller_listings_real_v2');
+      localStorage.removeItem('b2b_seller_listings_v1');
+      localStorage.removeItem('b2b_user_wtb_requests_v1');
 
-  const refreshUnlocked = () => {
-    if (company?.id) {
-      setUnlockedIds(getUnlockedLeadIds(company.id));
-    } else {
-      setUnlockedIds([]);
+      // 1. User Sell listings
+      const rawUserListings = localStorage.getItem('b2b_seller_listings_v3');
+      const userListings = rawUserListings ? JSON.parse(rawUserListings) : [];
+
+      const formattedUserSell: TradingBoardItem[] = Array.isArray(userListings)
+        ? userListings.map((l: any, idx: number) => ({
+            id: l.id || `user-lst-${idx}`,
+            type: 'SELL',
+            category: l.category || 'Mobile Phones',
+            brand: l.brand || 'Apple',
+            itemCode: l.itemCode || l.ean?.slice(0, 8) || 'MDL-2026',
+            description: l.title || l.description || 'Wholesale Lot',
+            ean: l.ean || '195949048735',
+            qty: Number(l.available || l.qty || 50),
+            condition: l.condition === 'new' ? 'New' : l.condition === 'refurbished' ? 'Refurbished' : 'Used',
+            price: Number(l.unitPrice || l.price || 99),
+            currency: '€',
+            location: l.location || 'DE',
+            match: '98%',
+            companyName: company?.name || 'Verified Supplier',
+            contactEmail: company?.email || 'supplier@b2blink.eu',
+            contactName: company?.contact_name || 'Trade Desk',
+            contactPhone: company?.phone || '',
+            moq: Number(l.moq || 10),
+          }))
+        : [];
+
+      // 2. User WTB requests
+      const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
+      const userWtbs = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
+
+      const combined = [...formattedUserSell, ...userWtbs, ...ALL_TRADING_BOARD_ITEMS];
+      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      setItems(unique);
+    } catch {
+      setItems(ALL_TRADING_BOARD_ITEMS);
     }
   };
 
   useEffect(() => {
-    refreshUnlocked();
-    window.addEventListener('b2b_lead_unlock_update', refreshUnlocked);
-    return () => window.removeEventListener('b2b_lead_unlock_update', refreshUnlocked);
-  }, [company]);
-
-  // Load real products from API / Supabase
-  useEffect(() => {
-    let isMounted = true;
-    fetch('/api/products')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return;
-        let baseProducts: Product[] = [];
-        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          baseProducts = data.products;
-        } else {
-          baseProducts = [...MOCK_PRODUCTS];
-        }
-
-        // Merge any locally added seller products so newly created listings appear immediately
-        try {
-          const raw = localStorage.getItem('b2b_seller_listings_real_v2');
-          if (raw) {
-            const localListings = JSON.parse(raw);
-            if (Array.isArray(localListings)) {
-              localListings.forEach((localItem: any) => {
-                if (!baseProducts.some((p) => p.id === localItem.id || p.title === localItem.title)) {
-                  baseProducts.unshift({
-                    id: localItem.id,
-                    company_id: company?.id || 'comp-local',
-                    title: localItem.title,
-                    description: localItem.description,
-                    barcode_or_sku: localItem.ean,
-                    category_slug: localItem.category ? localItem.category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-') : 'electronics',
-                    unit_price: localItem.unitPrice,
-                    quantity_available: localItem.available,
-                    moq: localItem.moq,
-                    is_hot: localItem.status === 'Hot',
-                    status: 'active',
-                    images: localItem.images && localItem.images.length > 0 ? localItem.images : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
-                    created_at: new Date().toISOString(),
-                    company: company ? {
-                      id: company.id,
-                      name: company.company_name || company.name || 'Verified Supplier',
-                      contact_name: company.contact_name || 'Trade Representative',
-                      email: company.contact_email || company.email || '',
-                      role: 'seller',
-                      membership_tier: company.tier || 'silver',
-                      approval_status: 'approved',
-                      categories: company.niches || [],
-                      created_at: new Date().toISOString(),
-                    } : undefined,
-                  });
-                }
-              });
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        setProducts(baseProducts);
-      })
-      .catch((err) => {
-        console.warn('[MARKETPLACE LOAD ERROR]', err);
-        if (isMounted) setProducts(MOCK_PRODUCTS);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-
+    refreshItems();
+    window.addEventListener('b2b_wtb_created', refreshItems);
+    window.addEventListener('b2b_listings_updated', refreshItems);
     return () => {
-      isMounted = false;
+      window.removeEventListener('b2b_wtb_created', refreshItems);
+      window.removeEventListener('b2b_listings_updated', refreshItems);
     };
   }, [company]);
 
-  // Filtered products list
-  const filteredProducts = useMemo(() => {
-    return products.filter((prod) => {
-      const query = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !query ||
-        prod.title.toLowerCase().includes(query) ||
-        prod.category_slug.toLowerCase().includes(query) ||
-        (prod.barcode_or_sku && prod.barcode_or_sku.toLowerCase().includes(query));
+  // Compute counts
+  const totalCount = items.length;
+  const buyCount = useMemo(() => items.filter((i) => i.type === 'BUY').length, [items]);
+  const sellCount = useMemo(() => items.filter((i) => i.type === 'SELL').length, [items]);
 
-      const matchesCategory =
-        selectedCategory === 'all' || prod.category_slug === selectedCategory;
-
-      const matchesHot = !showHotOnly || prod.is_hot;
-
-      return matchesSearch && matchesCategory && matchesHot;
-    }).sort((a, b) => {
-      if (sortBy === 'price_low') return a.unit_price - b.unit_price;
-      if (sortBy === 'price_high') return b.unit_price - a.unit_price;
-      if (sortBy === 'moq_low') return a.moq - b.moq;
-      if (a.is_hot && !b.is_hot) return -1;
-      if (!a.is_hot && b.is_hot) return 1;
-      return 0;
+  // Categories list
+  const categoriesList = useMemo(() => {
+    const set = new Set<string>();
+    WHOLESALE_CATEGORIES.forEach((c) => set.add(c.name));
+    items.forEach((i) => {
+      if (i.category) set.add(i.category);
     });
-  }, [products, searchQuery, selectedCategory, showHotOnly, sortBy]);
+    return ['All categories', ...Array.from(set)];
+  }, [items]);
 
-  const handleInquiryClick = (product: Product) => {
-    if (!isLoggedIn || !company) {
-      router.push(`/register?redirect=/marketplace`);
-      return;
-    }
+  // Filtered Items
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      if (activeTab === 'BUY' && item.type !== 'BUY') return false;
+      if (activeTab === 'SELL' && item.type !== 'SELL') return false;
+      if (selectedCategory !== 'All categories' && item.category !== selectedCategory) return false;
 
-    const isOwnProduct = product.company_id === company.id;
-    const isUnlocked =
-      isOwnProduct ||
-      unlockedIds.includes(product.id) ||
-      isLeadUnlocked(company.id, product.id);
-
-    if (isUnlocked) {
-      setActiveInquiryProduct(product);
-      return;
-    }
-
-    // Attempt to unlock lead
-    if (remainingUnlocks > 0 || tier === 'gold') {
-      const res = unlockLead(company.id, product.id, tier);
-      if (res.success) {
-        setUnlockFeedback(
-          `Supplier contact unlocked! (${
-            res.remaining === Infinity ? 'Unlimited' : `${res.remaining} unlocks remaining`
-          })`
-        );
-        setTimeout(() => setUnlockFeedback(null), 3500);
-        refreshUnlocked();
-        setActiveInquiryProduct(product);
-      } else {
-        setUpgradeModalOpen(true);
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const matchesEan = item.ean.toLowerCase().includes(query);
+        const matchesDesc = item.description.toLowerCase().includes(query);
+        const matchesBrand = item.brand.toLowerCase().includes(query);
+        const matchesCode = item.itemCode.toLowerCase().includes(query);
+        const matchesCategory = item.category.toLowerCase().includes(query);
+        if (!matchesEan && !matchesDesc && !matchesBrand && !matchesCode && !matchesCategory) return false;
       }
-    } else {
-      setUpgradeModalOpen(true);
+      return true;
+    });
+  }, [items, activeTab, selectedCategory, searchQuery]);
+
+  // Row click
+  const handleRowClick = (item: TradingBoardItem) => {
+    if (!isLoggedIn || !company) {
+      setAuthGateOpen(true);
+      return;
     }
-  };
-
-  const handleChatClick = (product: Product) => {
-    // Open the same direct supplier desk popup as WTB quote unlock, with email directly & live chat options
-    handleInquiryClick(product);
-  };
-
-  const getSellerInitials = (name?: string) => {
-    if (!name) return 'EU';
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
+    setSelectedDetailItem(item);
   };
 
   return (
-    <div className="min-h-screen bg-[#F3F6FB] flex flex-col">
-      {/* 1. Header Banner with Rounded Bottom Edge */}
-      <section className="relative text-white pt-32 sm:pt-36 lg:pt-40 pb-16 lg:pb-20 overflow-hidden rounded-b-[32px] lg:rounded-b-[48px] bg-[#0B1F3A] shadow-xl">
-        {/* Subtle Warehouse Backdrop Overlay */}
-        <div className="absolute inset-0 z-0">
-          <Image
-            src="/hero-warehouse.jpg"
-            alt="European Wholesale Logistics"
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover opacity-20 filter brightness-75"
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(115deg, rgba(7,22,44,.96) 0%, rgba(11,31,58,.88) 50%, rgba(10,108,255,.45) 100%)',
-            }}
-          />
-        </div>
-
-        <div className="max-w-[1160px] mx-auto px-5 sm:px-8 relative z-10">
-          <div className="max-w-3xl">
-            {/* Eyebrow Label */}
-            <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#00C2FF] mb-3">
-              VERIFIED EUROPEAN WHOLESALE INVENTORY
+    <div className="min-h-screen bg-[#E2EDF8]">
+      {/* Hero Header without search bar */}
+      <div className="bg-[#0B1F3A] text-white pt-28 pb-12 sm:pb-14 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#3B82F6_1px,transparent_1px)] [background-size:16px_16px]" />
+        <div className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/20 text-[#60A5FA] text-[13px] font-bold mb-3">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Verified European Wholesale Inventory</span>
+              </div>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-[-0.03em] text-white">
+                Live Trading Board
+              </h1>
+              <p className="mt-2 text-slate-300 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed">
+                Fresh from verified European sellers and active commercial procurement desks. Browse real-time buy and sell offers with direct contact access and 0% commission.
+              </p>
             </div>
 
-            {/* H1 Title: 42px / 1.1 (32px on phones), weight 800 */}
-            <h1 className="text-[32px] lg:text-[42px] leading-[1.1] font-extrabold tracking-[-0.025em] text-white">
-              Wholesale Marketplace
-            </h1>
-
-            {/* Description: 15-16px, text on dark */}
-            <p className="mt-3 text-[15px] sm:text-[16px] text-[#D3DEEE] leading-relaxed max-w-2xl font-normal">
-              Pallet and master-carton lots from certified European distributors. Search by title, GTIN/EAN barcode, or filter by category niche with 0% platform fee.
-            </p>
-          </div>
-
-          {/* Search & Sort Bar */}
-          <div className="mt-8 bg-white p-2.5 rounded-2xl shadow-[0_10px_30px_rgba(11,31,58,0.12)] flex flex-col md:flex-row gap-2 border border-[#EAEFF6]">
-            {/* Search Input */}
-            <div className="relative flex-1 flex items-center">
-              <Search className="w-5 h-5 text-[#5B6B82] absolute left-4" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by product name, barcode (EAN / UPC), or keyword..."
-                className="w-full pl-12 pr-4 py-3 text-[15px] text-[#0B1F3A] rounded-xl focus:outline-none placeholder:text-[#5B6B82] font-medium"
-              />
-            </div>
-
-            {/* Sort & Hot Toggle Controls */}
-            <div className="flex items-center gap-2 px-2 border-t md:border-t-0 md:border-l border-[#EAEFF6] pt-2 md:pt-0">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'featured' | 'price_low' | 'price_high' | 'moq_low')}
-                className="text-[14px] font-semibold text-[#0B1F3A] bg-[#F3F6FB] hover:bg-[#EAEFF6] py-2.5 px-4 rounded-full border border-[#E3E9F2] focus:outline-none transition-colors"
+            {/* Quick Action Buttons */}
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    setAuthGateOpen(true);
+                  } else {
+                    setCreateWtbOpen(true);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-full bg-[#16A34A] hover:bg-emerald-700 text-white font-bold text-[13.5px] flex items-center gap-2 shadow-xs transition cursor-pointer"
               >
-                <option value="featured">Featured / Hot First</option>
-                <option value="price_low">Price: Low to High</option>
-                <option value="price_high">Price: High to Low</option>
-                <option value="moq_low">Lowest MOQ First</option>
-              </select>
+                <PlusCircle className="w-4 h-4" />
+                <span>Post Sourcing Request (WTB)</span>
+              </button>
 
               <button
                 type="button"
-                onClick={() => setShowHotOnly(!showHotOnly)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-[14px] font-bold transition-colors ${
-                  showHotOnly
-                    ? 'bg-[#0B1F3A] text-[#00C2FF] border border-[#00C2FF]'
-                    : 'bg-[#F3F6FB] text-[#41536D] hover:bg-[#EAEFF6] border border-[#E3E9F2]'
-                }`}
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    setAuthGateOpen(true);
+                  } else {
+                    router.push('/dashboard/listings');
+                  }
+                }}
+                className="px-5 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13.5px] flex items-center gap-2 shadow-xs transition cursor-pointer"
               >
-                <Flame className={`w-4 h-4 ${showHotOnly ? 'text-[#00C2FF]' : 'text-[#0A6CFF]'}`} />
-                <span>HOT DEALS</span>
+                <PlusCircle className="w-4 h-4" />
+                <span>Add Product Listing</span>
               </button>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* 2. Main Catalog Body */}
-      <main className="max-w-[1160px] mx-auto px-5 sm:px-8 py-10 lg:py-14 w-full flex-1">
-        {/* Guest Teaser Banner if not logged in */}
-        {!isLoggedIn && (
-          <div className="mb-10 p-6 rounded-[24px] bg-[#0B1F3A] text-white flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl border border-white/10">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-[#0A6CFF]/20 text-[#00C2FF] flex items-center justify-center shrink-0">
-                <Lock className="w-6 h-6" />
+      {/* Main Board Container */}
+      <div className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        <div className="bg-white rounded-[32px] sm:rounded-[36px] border border-[#CBD5E1] p-6 sm:p-8 lg:p-9 shadow-[0_2px_8px_rgba(11,31,58,0.04)]">
+
+          {/* Filter Bar: Tabs, Search, and Category */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-6 pb-6">
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('ALL')}
+                className={`px-5 py-2 rounded-full text-[13.5px] font-extrabold transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'ALL'
+                    ? 'bg-[#0A6CFF] text-white shadow-xs'
+                    : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
+                }`}
+              >
+                All Listings ({totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('BUY')}
+                className={`px-5 py-2 rounded-full text-[13.5px] font-extrabold transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'BUY'
+                    ? 'bg-[#16A34A] text-white shadow-xs'
+                    : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
+                }`}
+              >
+                Buy Offers ({buyCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('SELL')}
+                className={`px-5 py-2 rounded-full text-[13.5px] font-extrabold transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'SELL'
+                    ? 'bg-[#0A6CFF] text-white shadow-xs'
+                    : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
+                }`}
+              >
+                Sell Offers ({sellCount})
+              </button>
+            </div>
+
+            {/* Search Bar & Category Dropdown */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Search */}
+              <div className="relative flex-1 sm:w-[280px] lg:w-[320px]">
+                <Search className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search brand, model, or keyword..."
+                  className="w-full pl-9 pr-4 py-2 text-[13.5px] bg-white border-2 border-[#CBD5E1] rounded-xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                />
               </div>
-              <div>
-                <h4 className="text-[16px] font-bold text-white">Wholesale Guest Mode Active</h4>
-                <p className="text-[14px] text-[#D3DEEE] mt-0.5">
-                  Create a free account to unlock direct proforma orders, instant supplier messaging, and full warehouse lot manifests.
-                </p>
+
+              {/* Category Dropdown */}
+              <div className="relative">
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full sm:w-auto appearance-none bg-white border-2 border-[#CBD5E1] rounded-xl pl-4 pr-9 py-2 text-[13.5px] text-[#0B1F3A] font-bold focus:outline-none focus:border-[#0A6CFF] transition cursor-pointer"
+                >
+                  {categoriesList.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-[#64748B] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
-            <Link
-              href="/register"
-              className="shrink-0 min-h-[48px] px-8 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] inline-flex items-center justify-center transition-colors shadow-xs"
-            >
-              Register Free Member Account
-            </Link>
-          </div>
-        )}
-
-        {/* Niche Category Filter Pills */}
-        <div className="flex items-center gap-2.5 overflow-x-auto pb-4 scrollbar-none mb-10 -mx-1 px-1">
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('all')}
-            className={`px-5 py-2.5 rounded-full text-[14px] font-bold whitespace-nowrap transition-colors ${
-              selectedCategory === 'all'
-                ? 'bg-[#0A6CFF] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#E3E9F2] hover:bg-white hover:text-[#0B1F3A]'
-            }`}
-          >
-            All Niches ({products.length})
-          </button>
-          {MOCK_CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(cat.slug)}
-              className={`px-5 py-2.5 rounded-full text-[14px] font-bold whitespace-nowrap transition-colors ${
-                selectedCategory === cat.slug
-                  ? 'bg-[#0A6CFF] text-white shadow-xs'
-                  : 'bg-white text-[#41536D] border border-[#E3E9F2] hover:bg-white hover:text-[#0B1F3A]'
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Unlock notification banner if recently unlocked */}
-        {unlockFeedback && (
-          <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center gap-2 animate-in fade-in duration-200">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>{unlockFeedback}</span>
-          </div>
-        )}
-
-        {/* Catalog Section Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-2.5 mb-1">
-              <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF]">
-                CURRENT STOCK
-              </span>
-              {isLoggedIn && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase bg-[#EBF3FF] text-[#0A6CFF] border border-[#D0E2FF]">
-                  <Sparkles className="w-3 h-3 text-[#0A6CFF]" />
-                  <span>
-                    {tier.toUpperCase()} TIER: {remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Unlocks Left`}
-                  </span>
-                </span>
-              )}
-            </div>
-            <h2 className="text-[24px] lg:text-[28px] font-extrabold text-[#0B1F3A] tracking-[-0.025em]">
-              Active Wholesale Lots ({filteredProducts.length})
-            </h2>
           </div>
 
-          <Link
-            href="/requests/new"
-            className="text-[14px] font-bold text-[#0B1F3A] hover:text-[#0A6CFF] border border-[#E3E9F2] bg-white px-5 py-2 rounded-full transition-colors hidden sm:inline-flex"
-          >
-            + Post a Want-To-Buy Request
-          </Link>
-        </div>
-
-        {/* Empty State */}
-        {filteredProducts.length === 0 ? (
-          <div className="bg-white rounded-[28px] border border-[#EAEFF6] shadow-[0_10px_30px_rgba(11,31,58,0.06)] p-12 text-center max-w-xl mx-auto my-12">
-            <div className="w-16 h-16 rounded-full bg-[#F3F6FB] flex items-center justify-center mx-auto mb-4 text-[#5B6B82]">
-              <Package className="w-8 h-8" />
-            </div>
-            <h4 className="text-[20px] font-bold text-[#0B1F3A]">No matching wholesale stock found</h4>
-            <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed">
-              Try searching a different keyword or barcode, or post a Want-To-Buy request to receive direct quotes from vetted European distributors holding that stock.
-            </p>
-            <Link
-              href="/requests/new"
-              className="mt-6 inline-flex items-center justify-center min-h-[48px] px-8 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] transition-colors shadow-xs"
-            >
-              Post a Want-To-Buy Request
-            </Link>
-          </div>
-        ) : (
-          /* 4-Column Responsive Grid matching Homepage Two-Part Architecture */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
-            {filteredProducts.map((product, index) => {
-              const sellerName = product.company?.name || 'Vetted European Seller';
-              const sellerInitials = getSellerInitials(sellerName);
-              const productImage = product.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800';
-
-              const isOwnProduct = Boolean(company?.id && product.company_id === company.id);
-              const isUnlocked =
-                isOwnProduct ||
-                unlockedIds.includes(product.id) ||
-                (company?.id ? isLeadUnlocked(company.id, product.id) : false);
-
-              const displaySellerName = isUnlocked
-                ? sellerName
-                : 'Vetted Wholesaler (Locked)';
-
-              // Clean badges exactly matching Image 2
-              const badge =
-                index === 0
-                  ? 'Verified stock'
-                  : index === 1
-                  ? 'New stock'
-                  : index === 2
-                  ? 'Verified stock'
-                  : index === 3
-                  ? 'Spotlight'
-                  : index % 3 === 0
-                  ? 'Verified stock'
-                  : index % 3 === 1
-                  ? 'New stock'
-                  : 'Spotlight';
-
-              return (
-                <div key={product.id} className="flex flex-col gap-3">
-                  {/* Part 1: White Product Card */}
-                  <div className="bg-white rounded-[28px] border border-[#EAEFF6] shadow-[0_10px_30px_rgba(11,31,58,0.06)] p-[10px] flex flex-col justify-between flex-1">
-                    <div>
-                      {/* Photo Container */}
-                      <Link
-                        href={`/marketplace/${product.id}`}
-                        className="relative h-[200px] w-full rounded-[20px] overflow-hidden bg-[#F3F6FB] mb-4 block group"
+          {/* Unified Trading Board Table matching homepage minimalist 2D design */}
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#EEF2F6] text-[11px] font-black uppercase tracking-wider text-[#334155]">
+                  <th className="py-3 px-3.5 rounded-l-lg">BUY/SELL</th>
+                  <th className="py-3 px-3">CATEGORY</th>
+                  <th className="py-3 px-3">BRAND</th>
+                  <th className="py-3 px-3">ITEM CODE</th>
+                  <th className="py-3 px-3">DESCRIPTION</th>
+                  <th className="py-3 px-3">EAN/UPC</th>
+                  <th className="py-3 px-3">QTY</th>
+                  <th className="py-3 px-3">CONDITION</th>
+                  <th className="py-3 px-3">PRICE</th>
+                  <th className="py-3 px-3">LOCATION</th>
+                  <th className="py-3 px-3 rounded-r-lg">MATCH</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-12 text-center text-[#64748B] text-[14px]">
+                      No trading board listings match your search criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map((item, idx) => {
+                    const isBuy = item.type === 'BUY';
+                    return (
+                      <tr
+                        key={item.id}
+                        onClick={() => handleRowClick(item)}
+                        className={`cursor-pointer transition-colors ${
+                          idx % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'
+                        } ${isBuy ? 'hover:bg-[#F0FDF4]' : 'hover:bg-[#EFF6FF]'} group`}
                       >
-                        <Image
-                          src={productImage}
-                          alt={product.title}
-                          fill
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                          <span className="bg-[#0A6CFF] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
-                            {badge}
+                        {/* 1. BUY/SELL Pill */}
+                        <td className="py-3.5 px-3.5 rounded-l-lg whitespace-nowrap">
+                          <span
+                            className={`text-[11px] font-black px-2.5 py-1 rounded-md inline-block uppercase tracking-wider ${
+                              isBuy
+                                ? 'bg-[#DCFCE7] text-[#15803D]'
+                                : 'bg-[#E0F2FE] text-[#0284C7]'
+                            }`}
+                          >
+                            {item.type}
                           </span>
-                          {isUnlocked && (
-                            <span className="bg-emerald-600 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full shadow-xs">
-                              Unlocked
-                            </span>
-                          )}
-                        </div>
-                      </Link>
+                        </td>
 
-                      {/* Card Content: Title & Description */}
-                      <div className="px-2">
-                        <Link href={`/marketplace/${product.id}`} className="block group">
-                          <h3 className="text-[18px] font-bold text-[#0B1F3A] leading-snug line-clamp-1 group-hover:text-[#0A6CFF] transition-colors">
-                            {product.title}
-                          </h3>
-                        </Link>
-                        <p className="text-[14px] text-[#5B6B82] mt-1.5 line-clamp-2 leading-relaxed min-h-[42px]">
-                          {product.description}
-                        </p>
-                      </div>
+                        {/* 2. CATEGORY */}
+                        <td className="py-3.5 px-3 text-[13px] text-[#475569] font-medium whitespace-nowrap">
+                          {item.category}
+                        </td>
 
-                      {/* Light Divider */}
-                      <div className="border-t border-[#EAEFF6] my-4 mx-2" />
+                        {/* 3. BRAND */}
+                        <td className="py-3.5 px-3 text-[13.5px] font-extrabold text-[#0B1F3A] whitespace-nowrap">
+                          {item.brand}
+                        </td>
 
-                      {/* Price Row */}
-                      <div className="flex items-end justify-between px-2 mb-4">
-                        <div>
-                          <span className="text-[22px] font-extrabold text-[#0B1F3A] leading-none block">
-                            £{product.unit_price.toFixed(2)}
+                        {/* 4. ITEM CODE */}
+                        <td className="py-3.5 px-3 text-[12px] font-mono text-[#64748B] whitespace-nowrap">
+                          {item.itemCode}
+                        </td>
+
+                        {/* 5. DESCRIPTION */}
+                        <td className="py-3.5 px-3">
+                          <div
+                            className={`font-extrabold text-[#0B1F3A] text-[13.5px] truncate max-w-[260px] sm:max-w-[320px] transition-colors ${
+                              isBuy ? 'group-hover:text-[#16A34A]' : 'group-hover:text-[#0A6CFF]'
+                            }`}
+                            title={item.description}
+                          >
+                            {item.description}
+                          </div>
+                        </td>
+
+                        {/* 6. EAN/UPC */}
+                        <td className="py-3.5 px-3 text-[12px] font-mono text-[#475569] whitespace-nowrap">
+                          {item.ean}
+                        </td>
+
+                        {/* 7. QTY */}
+                        <td className="py-3.5 px-3 text-[13.5px] font-black text-[#0B1F3A] whitespace-nowrap">
+                          {item.qty.toLocaleString()}
+                        </td>
+
+                        {/* 8. CONDITION */}
+                        <td className="py-3.5 px-3 text-[12.5px] text-[#475569] font-medium whitespace-nowrap">
+                          {item.condition}
+                        </td>
+
+                        {/* 9. PRICE */}
+                        <td className="py-3.5 px-3 text-[14px] font-black text-[#0B1F3A] whitespace-nowrap">
+                          {item.currency}{item.price.toFixed(2)}
+                        </td>
+
+                        {/* 10. LOCATION */}
+                        <td className="py-3.5 px-3 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-[#475569] text-[11px] font-mono font-bold">
+                            {item.location}
                           </span>
-                          <span className="text-[13px] text-[#5B6B82] mt-1 block">
-                            per piece
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[17px] font-extrabold text-[#0A6CFF] leading-none block">
-                            {product.moq} pcs
-                          </span>
-                          <span className="text-[13px] text-[#5B6B82] mt-1 block">
-                            MOQ
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                        </td>
 
-                    {/* Action Button: Send inquiry or Unlock contact */}
-                    <button
-                      type="button"
-                      onClick={() => handleInquiryClick(product)}
-                      className={`w-full min-h-[46px] rounded-full font-bold text-[14px] sm:text-[15px] flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99] ${
-                        isUnlocked
-                          ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/20'
-                          : remainingUnlocks > 0 || tier === 'gold'
-                          ? 'bg-[#0A6CFF] hover:bg-[#0857cf] text-white shadow-[#0A6CFF]/25'
-                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-105 text-white shadow-amber-500/20'
-                      }`}
-                    >
-                      {isUnlocked ? (
-                        <span>Send Direct Inquiry</span>
-                      ) : (
-                        <div className="flex items-center justify-center gap-2">
-                          <Lock className="w-4 h-4 text-white shrink-0" />
-                          <span>Unlock Contact</span>
-                          {(remainingUnlocks > 0 || tier === 'gold') && (
-                            <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-white/20 text-white tracking-wide">
-                              {remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} Left`}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Part 2: Slim White Seller Pill below the card */}
-                  <div className="bg-white rounded-full border border-[#EAEFF6] px-3.5 py-2 flex items-center justify-between shadow-[0_4px_16px_rgba(11,31,58,0.04)]">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-[28px] h-[28px] rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${
-                          isUnlocked ? 'bg-[#0B1F3A]' : 'bg-slate-400'
-                        }`}
-                      >
-                        {isUnlocked ? sellerInitials : <Lock className="w-3.5 h-3.5" />}
-                      </div>
-                      <span className="text-[14px] font-semibold text-[#0B1F3A] truncate">
-                        {displaySellerName}
-                      </span>
-                    </div>
-
-                    {/* Contact & Chat popup trigger */}
-                    <button
-                      type="button"
-                      onClick={() => handleInquiryClick(product)}
-                      aria-label={`Inquire or Chat with ${sellerName}`}
-                      className="w-8 h-8 rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] flex items-center justify-center transition-colors shrink-0"
-                      title={isUnlocked ? 'Contact Supplier' : 'Unlock Supplier Contact'}
-                    >
-                      {isUnlocked ? (
-                        <MessageSquare className="w-3.5 h-3.5" />
-                      ) : (
-                        <Lock className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                        {/* 11. MATCH */}
+                        <td className="py-3.5 px-3 rounded-r-lg whitespace-nowrap">
+                          <span className="bg-[#DCFCE7] text-[#15803D] text-[11px] font-black px-2 py-0.5 rounded">
+                            {item.match}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
-      </main>
+        </div>
+      </div>
 
-      {/* Inquiry Modal */}
-      <InquiryModal
-        product={activeInquiryProduct}
-        isOpen={!!activeInquiryProduct}
-        onClose={() => setActiveInquiryProduct(null)}
+      {/* Trading Board Detail Modal */}
+      {selectedDetailItem && (
+        <TradingBoardDetailModal
+          item={selectedDetailItem}
+          isOpen={!!selectedDetailItem}
+          onClose={() => setSelectedDetailItem(null)}
+        />
+      )}
+
+      {/* Create WTB Modal */}
+      <CreateWtbModal
+        isOpen={createWtbOpen}
+        onClose={() => setCreateWtbOpen(false)}
+        onSuccess={() => refreshItems()}
       />
 
-      {/* Upgrade Membership Modal for paywall unlocks */}
-      <UpgradeMembershipModal
-        isOpen={upgradeModalOpen}
-        onClose={() => setUpgradeModalOpen(false)}
-        title="Upgrade to Unlock Supplier Contacts"
-        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with verified European wholesale distributors."
+      {/* Auth Gate Modal when visitor is not logged in */}
+      <AuthGateModal
+        isOpen={authGateOpen}
+        onClose={() => setAuthGateOpen(false)}
+        title="Verified Wholesale Access Required"
+        subtitle="Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries."
       />
     </div>
+  );
+}
+
+export default function MarketplacePage() {
+  return (
+    <React.Suspense fallback={<div className="min-h-screen bg-[#F3F6FB]" />}>
+      <MarketplaceContent />
+    </React.Suspense>
   );
 }

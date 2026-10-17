@@ -388,8 +388,8 @@ export function quoteReceivedEmail(props: QuoteReceivedEmailProps): { subject: s
 export function vettingDecisionEmail(props: VettingDecisionEmailProps): { subject: string; html: string } {
   const isApproved = props.decision === 'approved';
   const subject = isApproved
-    ? `[B2B LINK] Welcome! Your Seller Account has been Approved by Jeff`
-    : `[B2B LINK] Update regarding your Seller Application`;
+    ? `[B2B LINK] Welcome! Your Account Has Been Verified`
+    : `[B2B LINK] Update Regarding Your B2B LINK Account`;
 
   const bannerColor = isApproved ? '#ecfdf5' : '#fff1f2';
   const borderColor = isApproved ? '#a7f3d0' : '#fecdd3';
@@ -398,13 +398,13 @@ export function vettingDecisionEmail(props: VettingDecisionEmailProps): { subjec
   const content = `
     <div style="background-color: ${bannerColor}; border: 1px solid ${borderColor}; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
       <h3 style="margin: 0; color: ${textColor}; font-size: 16px; font-weight: 700;">
-        ${isApproved ? '🎉 Congratulations! Your application has been approved.' : 'Application Status Update'}
+        ${isApproved ? '🎉 Congratulations! Your business verification has been completed.' : 'Account Status: Under Review'}
       </h3>
       <p style="margin: 6px 0 0 0; font-size: 13px; color: ${textColor}; line-height: 1.5;">
         ${
           isApproved
-            ? 'Jeff and the B2B LINK desk have reviewed and certified your wholesale credentials.'
-            : 'Jeff and the compliance team have completed their review of your wholesale account.'
+            ? 'The B2B LINK Verification Team has reviewed and confirmed your company verification.'
+            : 'The B2B LINK Verification Team has reviewed your account status.'
         }
       </p>
     </div>
@@ -414,26 +414,44 @@ export function vettingDecisionEmail(props: VettingDecisionEmailProps): { subjec
     ${
       isApproved
         ? `<p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
-            You now have full verified access to the platform. You can immediately begin listing inventory, responding to buyer inquiries, and quoting on active WTB boards in your categories.
+            We are pleased to confirm that the business verification for ${props.companyName} has been completed. Your account is now active and your company has Verified Member status on B2B LINK.
           </p>
           <ul style="font-size: 14px; color: #334155; line-height: 1.8; margin: 0 0 24px 0; padding-left: 20px;">
-            <li>Publish products to verified wholesale buyers</li>
-            <li>Receive real-time WTB alerts matching your catalog & barcodes</li>
-            <li>Access direct quote submission tools</li>
-          </ul>`
+            <li>Browse live BUY and SELL listings</li>
+            <li>Post and manage your own BUY and SELL requirements</li>
+            <li>Receive relevant Buyer-Seller Matches</li>
+            <li>Search for products and trading opportunities</li>
+            <li>Connect directly with other members</li>
+          </ul>
+          <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+            You can log in to your account to get started.<br /><br />
+            Welcome to B2B LINK.<br /><br />
+            Kind regards,<br />
+            <strong>B2B LINK Verification Team</strong>
+          </p>`
         : `<p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
-            Unfortunately, your seller application could not be approved at this time.
+            We are contacting you regarding the B2B LINK account for ${props.companyName}.
+          </p>
+          <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 14px; color: #9f1239;">
+            <strong>Account Status: Under Review</strong>
+          </div>
+          <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+            We require additional information before we can complete the verification of your account. Please reply to this email with any information requested by our Verification Team.
           </p>
           ${
             props.notes
               ? `<div style="background-color: #f8fafc; border-left: 3px solid #ef4444; padding: 12px 16px; font-size: 14px; color: #334155; margin-bottom: 24px;">
-                  <strong>Reason / Reviewer Notes:</strong><br/>
+                  <strong>Reviewer Notes:</strong><br/>
                   ${props.notes}
                 </div>`
               : ''
           }
-          <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 20px 0;">
-            If you believe this is in error or have updated credentials to provide, please reply directly to Jeff at our verification desk.
+          <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+            Once the required information has been received, we will continue our review and update you as soon as possible.
+          </p>
+          <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+            Kind regards,<br />
+            <strong>B2B LINK Verification Team</strong>
           </p>`
     }
   `;
@@ -441,11 +459,11 @@ export function vettingDecisionEmail(props: VettingDecisionEmailProps): { subjec
   return {
     subject,
     html: emailWrapper(
-      isApproved ? 'Seller Account Approved' : 'Application Decision',
-      isApproved ? 'Approved' : 'Review Decision',
+      isApproved ? 'Account Verified' : 'Account Under Review',
+      isApproved ? 'VERIFIED MEMBER' : 'UNDER REVIEW',
       content,
       props.actionUrl,
-      isApproved ? 'Open Seller Dashboard' : 'View Account Details'
+      isApproved ? 'Log In to Account' : 'View Account Details'
     ),
   };
 }
@@ -486,48 +504,127 @@ export function passwordResetEmail(props: PasswordResetEmailProps): { subject: s
   };
 }
 
+export interface PasswordResetOtpEmailProps {
+  recipientEmail: string;
+  otpCode: string;
+  contactName?: string;
+}
+
 /**
- * 7. Sent to user upon registration to confirm corporate email address.
+ * 6B. Sent to user when requesting a password reset verification code.
  */
-export function verificationEmail(props: VerificationEmailProps): { subject: string; html: string } {
-  const subject = 'Verify your email address - B2B LINK OÜ';
+export function passwordResetOtpEmail(props: PasswordResetOtpEmailProps): { subject: string; html: string } {
+  const subject = `${props.otpCode} is your B2B LINK password reset verification code`;
   const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
 
   const content = `
-    <h1 style="font-size: 26px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.025em; margin: 0 0 12px 0; line-height: 1.2;">
-      Verify your email address
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.025em; margin: 0 0 12px 0; line-height: 1.25;">
+      Password Reset Verification Code
     </h1>
 
-    <p style="font-size: 15px; line-height: 1.6; color: #5B6B82; margin: 0 0 20px 0;">
-      ${nameGreeting} welcome to <strong>B2B LINK OÜ</strong>. To activate your wholesale trading account and access Europe's verified network, please enter this code on the verification screen:
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
     </p>
 
-    <div style="background-color: #F8FAFF; border: 2px dashed #0A6CFF; border-radius: 16px; padding: 26px 20px; text-align: center; margin: 24px 0;">
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      We received a request to reset the password for your account associated with <strong>${props.recipientEmail}</strong>.
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Please enter the following 6-digit verification code to choose a new password:
+    </p>
+
+    <div style="background-color: #F8FAFF; border: 2px dashed #0A6CFF; border-radius: 16px; padding: 24px 20px; text-align: center; margin: 20px 0;">
       <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; color: #0A6CFF; margin-bottom: 8px;">
-        YOUR VERIFICATION CODE
+        VERIFICATION CODE
       </div>
-      <div style="font-size: 36px; font-weight: 800; letter-spacing: 0.25em; color: #0B1F3A; font-family: 'Manrope', monospace; line-height: 1.2;">
+      <div style="font-size: 36px; font-weight: 800; letter-spacing: 0.25em; color: #0B1F3A; font-family: monospace; line-height: 1.2;">
         ${props.otpCode}
       </div>
-      <div style="font-size: 12px; color: #8A9BB0; margin-top: 10px; font-weight: 500;">
-        Valid for 15 minutes &bull; Enter this code on the verification screen
+      <div style="font-size: 12px; color: #64748B; margin-top: 10px; font-weight: 500;">
+        This code is valid for 15 minutes.
       </div>
     </div>
 
-    <p style="font-size: 14px; line-height: 1.6; color: #5B6B82; margin: 0 0 16px 0; text-align: center;">
-      Or click the button below to verify instantly in your browser:
+    <p style="font-size: 13px; line-height: 1.6; color: #64748B; margin: 20px 0 0 0;">
+      If you did not request a password reset, you can safely ignore this email. Your account credentials remain secure.
     </p>
 
-    <div style="background-color: #F8FAFC; border-left: 3px solid #0A6CFF; padding: 12px 16px; font-size: 13px; color: #5B6B82; margin-top: 24px; border-radius: 6px;">
-      If you did not register on B2B LINK OÜ, you can safely ignore this email.
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Desk</strong>
     </div>
   `;
 
   return {
     subject,
     html: emailWrapper(
-      'Verify Corporate Email',
-      'ACCOUNT VERIFICATION',
+      'Password Reset Verification',
+      'PASSWORD RESET',
+      content,
+      `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password`,
+      'Reset Password'
+    ),
+  };
+}
+
+/**
+ * 7. Sent to user upon registration to confirm corporate email address.
+ */
+/**
+ * 7. (Message 1) Email Verification
+ * Trigger Event: User submits the registration form
+ * Recipient: Registered business email address
+ * Subject: Verify Your Email Address - B2B LINK
+ */
+export function verificationEmail(props: VerificationEmailProps): { subject: string; html: string } {
+  const subject = 'Verify Your Email Address - B2B LINK';
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.025em; margin: 0 0 12px 0; line-height: 1.25;">
+      Verify Your Email Address
+    </h1>
+
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      Welcome to B2B LINK.
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      To verify your email address and continue setting up your account, please enter the following verification code:
+    </p>
+
+    <div style="background-color: #F8FAFF; border: 2px dashed #0A6CFF; border-radius: 16px; padding: 24px 20px; text-align: center; margin: 20px 0;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; color: #0A6CFF; margin-bottom: 8px;">
+        VERIFICATION CODE
+      </div>
+      <div style="font-size: 34px; font-weight: 800; letter-spacing: 0.25em; color: #0B1F3A; font-family: 'Manrope', monospace; line-height: 1.2;">
+        ${props.otpCode}
+      </div>
+      <div style="font-size: 12px; color: #64748B; margin-top: 10px; font-weight: 500;">
+        This code is valid for 15 minutes.
+      </div>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Alternatively, click the button below to verify your email address:
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Verify Your Email Address',
+      'EMAIL VERIFICATION',
       content,
       props.actionUrl,
       'Verify Email Address'
@@ -536,260 +633,345 @@ export function verificationEmail(props: VerificationEmailProps): { subject: str
 }
 
 /**
- * 8. KYC Document Submission Request Email sent to newly registered wholesale businesses.
- * Directs them to reply with documents to newcustomers@brandnova.info
+ * 8. (Message 2) Business Verification Request
+ * Trigger Event: Sent after the business email address has been verified
+ * Recipient: Registered customer contact email
+ * Subject: Action Required: Complete Your B2B LINK Business Verification
  */
 export function kycVerificationRequestEmail(
   props: KycVerificationRequestEmailProps
 ): { subject: string; html: string } {
-  const subject = `Action Required: Submit verification documents to activate your account - BrandNova / B2B LINK`;
+  const subject = 'Action Required: Complete Your B2B LINK Business Verification';
   const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
 
   const content = `
     <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; letter-spacing: -0.025em; margin: 0 0 14px 0; line-height: 1.25;">
-      Welcome to BrandNova Wholesale Trading
+      Complete Your B2B LINK Business Verification
     </h1>
 
-    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 16px 0;">
-      ${nameGreeting} thank you for creating your wholesale account for <strong>${props.companyName}</strong>.
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
     </p>
 
-    <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 16px; padding: 18px 20px; margin: 20px 0;">
-      <div style="font-size: 13px; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">
-        Account Status: Pending Document Verification
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Thank you for registering <strong>${props.companyName}</strong> with B2B LINK.
+    </p>
+
+    <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px; padding: 16px 18px; margin: 18px 0;">
+      <div style="font-size: 12px; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">
+        Account Status: Pending Verification
       </div>
       <p style="font-size: 14px; line-height: 1.5; color: #92400E; margin: 0;">
-        To protect all members of our European wholesale network, your trading dashboard is currently locked. To activate full access to inventory lots, Want-To-Buy leads, and direct supplier contacts, please provide your business verification documents.
+        Your email address has been verified, and your account is now awaiting business verification.
       </p>
     </div>
 
-    <h3 style="font-size: 16px; font-weight: 800; color: #0B1F3A; margin: 24px 0 12px 0;">
-      Required Wholesale Documents Checklist:
-    </h3>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
-      <tr>
-        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
-          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">1. Certificate of Incorporation / Company Registration</div>
-          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Official government proof of registered business entity</div>
-        </td>
-      </tr>
-      <tr><td style="height: 8px;"></td></tr>
-      <tr>
-        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
-          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">2. VAT / Tax Registration Certificate</div>
-          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Valid European VAT number or domestic tax authority certificate</div>
-        </td>
-      </tr>
-      <tr><td style="height: 8px;"></td></tr>
-      <tr>
-        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px; margin-bottom: 8px;">
-          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">3. Proof of Registered Trading Address</div>
-          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Recent utility bill or official corporate bank statement (dated within 90 days)</div>
-        </td>
-      </tr>
-      <tr><td style="height: 8px;"></td></tr>
-      <tr>
-        <td style="padding: 10px 14px; background-color: #F8FAFC; border-radius: 12px;">
-          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">4. Wholesale Trade Licenses or Invoices (Optional)</div>
-          <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Relevant trading licenses or commercial invoices from authorized distributors</div>
-        </td>
-      </tr>
-    </table>
-
-    <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 16px; padding: 20px; margin: 24px 0; text-align: left;">
-      <div style="font-size: 13px; font-weight: 800; color: #1E40AF; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">
-        How to Submit Your Documents:
-      </div>
-      <p style="font-size: 14px; line-height: 1.6; color: #1E3A8A; margin: 0 0 10px 0;">
-        Simply <strong>reply directly to this email with your PDF or scanned document files attached</strong>.
-      </p>
-      <p style="font-size: 13px; line-height: 1.5; color: #3B82F6; margin: 0;">
-        Alternatively, email your documents directly to <strong>newcustomers@brandnova.info</strong> with your company name in the subject line.
-      </p>
-    </div>
-
-    <p style="font-size: 13px; line-height: 1.6; color: #64748B; margin: 16px 0 0 0;">
-      Our Platform Director <strong>Jeff</strong> and the compliance team review applications promptly. You will receive an automated notification as soon as your account is approved.
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Our Verification Team may check information including company registration details, VAT details where applicable, business contact information, company email/domain and bank account information.
     </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      If we require any additional information or supporting documents, we will contact you directly.
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      Your account will remain in Pending Verification status until the review has been completed.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Verification Team</strong>
+    </div>
   `;
 
   return {
     subject,
     html: emailWrapper(
-      'Account Verification Documents Required',
+      'Business Verification Request',
       'ACTION REQUIRED',
       content,
       props.actionUrl,
-      'View Verification Status in Dashboard'
+      'View Verification Status'
     ),
   };
 }
 
+// Alias for clean naming
+export const businessVerificationRequestEmail = kycVerificationRequestEmail;
+
 /**
- * 9. Admin alert email to Jeff / newcustomers@brandnova.info when a new user signs up
+ * 9. (Message 3) New Member Verification - Internal Admin Alert
+ * Trigger Event: Generated automatically when a new company registers
+ * Recipient: Internal B2B LINK administration / verification queue
+ * Subject: New Member Verification Required - [Company Name]
  */
 export function adminNewCustomerAlertEmail(props: {
   companyName: string;
   contactName: string;
   email: string;
   phone?: string | null;
-  role: string;
+  country?: string | null;
+  role?: string;
   actionUrl: string;
 }): { subject: string; html: string } {
-  const subject = `[New Customer] Verification Required for ${props.companyName}`;
+  const subject = `New Member Verification Required - ${props.companyName}`;
 
   const content = `
     <h1 style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
-      New Customer Registration Awaiting KYC
+      New Member Verification Required
     </h1>
-    <p style="font-size: 14px; color: #475569; margin: 0 0 20px 0;">
-      A new business has registered on the platform. The onboarding document checklist email was automatically dispatched to them.
+    <p style="font-size: 14px; color: #334155; margin: 0 0 20px 0;">
+      A new company has registered with B2B LINK and is awaiting verification.
     </p>
 
     <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 18px; margin-bottom: 24px; font-size: 14px;">
-      <div style="margin-bottom: 8px;"><strong>Company Name:</strong> ${props.companyName}</div>
-      <div style="margin-bottom: 8px;"><strong>Contact Person:</strong> ${props.contactName}</div>
-      <div style="margin-bottom: 8px;"><strong>Corporate Email:</strong> <a href="mailto:${props.email}">${props.email}</a></div>
-      <div style="margin-bottom: 8px;"><strong>Phone:</strong> ${props.phone || 'Not provided'}</div>
-      <div><strong>Registered Role:</strong> ${props.role.toUpperCase()}</div>
+      <div style="margin-bottom: 8px;"><strong>Company:</strong> ${props.companyName}</div>
+      <div style="margin-bottom: 8px;"><strong>Contact:</strong> ${props.contactName}</div>
+      <div style="margin-bottom: 8px;"><strong>Email:</strong> <a href="mailto:${props.email}" style="color: #0A6CFF; text-decoration: none;">${props.email}</a></div>
+      <div style="margin-bottom: 8px;"><strong>Telephone:</strong> ${props.phone || 'Not provided'}</div>
+      <div style="margin-bottom: 8px;"><strong>Country:</strong> ${props.country || 'European Union'}</div>
+      <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #E2E8F0; font-weight: 700; color: #B45309;">
+        Current Status: Pending Verification
+      </div>
     </div>
 
     <p style="font-size: 13px; color: #64748B;">
-      When the customer replies with their documents, it will land in this inbox (<strong>newcustomers@brandnova.info</strong>). You can then log into the Site Admin portal to Verify or Suspend their account.
+      Please review the company information in the Admin Panel and complete the required verification checks.
     </p>
   `;
 
   return {
     subject,
     html: emailWrapper(
-      'New Customer Alert',
-      'COMPLIANCE DESK',
+      'New Member Verification Required',
+      'VERIFICATION QUEUE',
       content,
       props.actionUrl,
-      'Open Admin Vetting Portal'
+      'Open Admin Panel'
     ),
   };
 }
 
+export const newMemberVerificationAdminEmail = adminNewCustomerAlertEmail;
+
 /**
- * 10. Sent to user when Jeff approves their account in the admin portal
+ * 10. (Message 4) Account Verified
+ * Trigger Event: Sent when the Verification Team activates the member account
+ * Recipient: Customer business email address
+ * Subject: Your B2B LINK Account Has Been Verified
  */
 export function accountApprovalEmail(props: AccountApprovalEmailProps): { subject: string; html: string } {
-  const subject = 'Your BrandNova wholesale account has been verified & approved!';
-  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
-
-  const content = `
-    <h1 style="font-size: 26px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
-      Your Account is Verified & Active!
-    </h1>
-    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
-      ${nameGreeting} our compliance director Jeff has verified your business documents. Your <strong>${props.companyName}</strong> wholesale account is now fully active with unlocked dashboard access.
-    </p>
-
-    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
-      <div style="font-size: 14px; font-weight: 800; color: #065F46; margin-bottom: 6px;">
-        WHAT YOU CAN DO NOW:
-      </div>
-      <ul style="font-size: 13px; color: #047857; margin: 0; padding-left: 20px; line-height: 1.8;">
-        <li>Browse live wholesale inventory and unlock direct supplier contact details</li>
-        <li>Post and manage Want-To-Buy (WTB) procurement requests</li>
-        <li>Upload and manage your own product inventory lots</li>
-        <li>Send and receive verified wholesale quotations</li>
-      </ul>
-    </div>
-  `;
-
-  return {
-    subject,
-    html: emailWrapper(
-      'Account Approved',
-      'APPROVED & ACTIVE',
-      content,
-      props.actionUrl,
-      'Log In to Your Dashboard'
-    ),
-  };
-}
-
-/**
- * 11. Sent to user if their account is suspended or documents need attention
- */
-export function accountSuspendedEmail(props: AccountSuspendedEmailProps): { subject: string; html: string } {
-  const subject = 'Notice: Update regarding your BrandNova Wholesale Account';
+  const subject = 'Your B2B LINK Account Has Been Verified';
   const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
 
   const content = `
     <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
-      Account Status Notice
+      Your Account Has Been Verified
     </h1>
-    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
-      ${nameGreeting} we are writing regarding your <strong>${props.companyName}</strong> wholesale account.
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
     </p>
 
-    <div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
-      <div style="font-size: 14px; font-weight: 800; color: #991B1B; margin-bottom: 6px;">
-        STATUS: ACCOUNT ACCESS SUSPENDED
-      </div>
-      <p style="font-size: 13px; color: #B91C1C; margin: 0;">
-        ${props.reason || 'Your account access has been paused pending further review or missing compliance documentation.'}
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      We are pleased to confirm that the business verification for <strong>${props.companyName}</strong> has been completed.
+    </p>
+
+    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <p style="font-size: 14px; line-height: 1.5; color: #065F46; margin: 0; font-weight: 700;">
+        Your account is now active and your company has Verified Member status on B2B LINK.
       </p>
     </div>
 
-    <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-      If you have questions or wish to submit updated documentation, please contact our compliance desk directly at <strong>newcustomers@brandnova.info</strong>.
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 12px 0;">
+      You can now access the features available under your membership, including:
     </p>
+
+    <ul style="font-size: 14px; color: #334155; line-height: 1.8; margin: 0 0 24px 0; padding-left: 20px;">
+      <li>Browse live BUY and SELL listings</li>
+      <li>Post and manage your own BUY and SELL requirements</li>
+      <li>Receive relevant Buyer-Seller Matches</li>
+      <li>Search for products and trading opportunities</li>
+      <li>Connect directly with other members</li>
+    </ul>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      You can log in to your account to get started.
+    </p>
+
+    <p style="font-size: 15px; line-height: 1.6; font-weight: 700; color: #0B1F3A; margin: 0 0 20px 0;">
+      Welcome to B2B LINK.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Verification Team</strong>
+    </div>
   `;
 
   return {
     subject,
     html: emailWrapper(
-      'Account Status Notice',
-      'ACCOUNT SUSPENDED',
+      'Account Verified',
+      'VERIFIED MEMBER',
       content,
       props.actionUrl,
-      'Contact Compliance Desk'
+      'Log In to Your Account'
     ),
   };
 }
 
+export const accountVerifiedEmail = accountApprovalEmail;
+
+/**
+ * 11. (Message 5) Account Under Review / Suspended
+ * Trigger Event: Sent when additional verification information is required, or when an active account is placed under review
+ * Recipient: Customer business email address
+ * Subject: Update Regarding Your B2B LINK Account
+ */
+export function accountSuspendedEmail(props: AccountSuspendedEmailProps & { status?: 'under_review' | 'suspended' }): { subject: string; html: string } {
+  const subject = 'Update Regarding Your B2B LINK Account';
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+  const isSuspended = props.status === 'suspended';
+
+  const content = isSuspended
+    ? `
+      <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+        Update Regarding Your B2B LINK Account
+      </h1>
+      <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+        ${nameGreeting}
+      </p>
+      <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+        We are contacting you regarding the B2B LINK account for <strong>${props.companyName}</strong>.
+      </p>
+
+      <div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px;">
+        <div style="font-size: 13px; font-weight: 800; color: #991B1B; margin-bottom: 6px;">
+          Account Status: Suspended
+        </div>
+        <p style="font-size: 14px; line-height: 1.5; color: #B91C1C; margin: 0;">
+          ${props.reason || 'Your B2B LINK account has been temporarily suspended while we review an account or verification matter. Please contact the B2B LINK Verification Team for further information.'}
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+        Kind regards,<br />
+        <strong>B2B LINK Verification Team</strong>
+      </div>
+    `
+    : `
+      <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+        Update Regarding Your B2B LINK Account
+      </h1>
+      <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+        ${nameGreeting}
+      </p>
+      <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+        We are contacting you regarding the B2B LINK account for <strong>${props.companyName}</strong>.
+      </p>
+
+      <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px;">
+        <div style="font-size: 13px; font-weight: 800; color: #B45309; margin-bottom: 6px;">
+          Account Status: Under Review
+        </div>
+        <p style="font-size: 14px; line-height: 1.5; color: #92400E; margin: 0;">
+          We require additional information before we can complete the verification of your account.
+        </p>
+      </div>
+
+      <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+        Please reply to this email with any information requested by our Verification Team.
+      </p>
+
+      ${
+        props.reason
+          ? `<div style="background-color: #F8FAFC; border-left: 3px solid #F59E0B; padding: 12px 16px; font-size: 14px; color: #334155; margin-bottom: 20px; border-radius: 0 6px 6px 0;">
+              <strong>Verification Request Details:</strong><br/>
+              ${props.reason}
+            </div>`
+          : ''
+      }
+
+      <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+        Once the required information has been received, we will continue our review and update you as soon as possible.
+      </p>
+
+      <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+        Kind regards,<br />
+        <strong>B2B LINK Verification Team</strong>
+      </div>
+    `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Update Regarding Your B2B LINK Account',
+      isSuspended ? 'SUSPENDED' : 'UNDER REVIEW',
+      content,
+      props.actionUrl,
+      'Contact Verification Team'
+    ),
+  };
+}
+
+export const accountUnderReviewEmail = accountSuspendedEmail;
+
 export interface CustomerQueryReplyEmailProps {
   customerName: string;
   companyName: string;
-  subject: string;
+  subject?: string;
   replyMessage: string;
   originalMessage?: string;
   actionUrl?: string;
 }
 
+/**
+ * 12. (Message 8) Customer Support Reply
+ * Trigger Event: Sent when B2B LINK replies to a customer enquiry
+ * Recipient: Prospective or registered customer email address
+ * Subject: Response from B2B LINK Support
+ */
 export function customerQueryReplyEmail(props: CustomerQueryReplyEmailProps): {
   subject: string;
   html: string;
 } {
-  const subject = props.subject || 'Response from B2B LINK Support Desk';
+  const subject = props.subject || 'Response from B2B LINK Support';
   const nameGreeting = props.customerName ? `Hello ${props.customerName},` : 'Hello,';
   const formattedReply = props.replyMessage.replace(/\n/g, '<br />');
   const formattedOriginal = props.originalMessage ? props.originalMessage.replace(/\n/g, '<br />') : null;
 
   const content = `
     <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
-      Response from B2B LINK Support Desk
+      Response from B2B LINK Support
     </h1>
-    <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0;">
-      ${nameGreeting} thank you for contacting the B2B LINK European Wholesale & Compliance Desk. Our administration team has reviewed your inquiry for <strong>${props.companyName}</strong>:
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Thank you for contacting B2B LINK.
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Our Support Team has reviewed your enquiry regarding <strong>${props.companyName}</strong>.
     </p>
 
     <!-- Support Reply Body -->
-    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 20px; margin-bottom: 24px; font-size: 14px; line-height: 1.7; color: #1E293B;">
-      ${formattedReply}
+    <div style="margin-bottom: 20px;">
+      <div style="font-size: 12px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+        Our response:
+      </div>
+      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 20px; font-size: 14px; line-height: 1.7; color: #1E293B;">
+        ${formattedReply}
+      </div>
     </div>
 
     ${
       formattedOriginal
         ? `
-      <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid #E2E8F0;">
+      <div style="margin-top: 24px; margin-bottom: 20px;">
         <div style="font-size: 12px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
-          Your Original Message
+          Your original enquiry:
         </div>
         <div style="font-size: 13px; line-height: 1.6; color: #64748B; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 14px;">
           ${formattedOriginal}
@@ -799,21 +981,28 @@ export function customerQueryReplyEmail(props: CustomerQueryReplyEmailProps): {
         : ''
     }
 
-    <p style="font-size: 13px; color: #64748B; margin-top: 24px; line-height: 1.5;">
-      You can reply directly to this email to continue the conversation with our support and compliance desk.
+    <p style="font-size: 14px; color: #334155; margin-top: 20px; line-height: 1.6;">
+      You can reply directly to this email if you require any further assistance.
     </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong>
+    </div>
   `;
 
   return {
     subject,
     html: emailWrapper(
-      'Support Desk Reply',
-      'CUSTOMER INQUIRY RESPONSE',
+      'Response from B2B LINK Support',
+      'CUSTOMER SUPPORT',
       content,
-      props.actionUrl || 'http://localhost:3000/contact',
+      props.actionUrl || 'https://b2blink.eu/contact',
       'Visit Support Desk'
     ),
   };
 }
+
+export const customerSupportReplyEmail = customerQueryReplyEmail;
 
 

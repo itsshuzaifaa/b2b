@@ -74,7 +74,12 @@ export default function AdminVettingPage() {
           )}
 
           <div className="divide-y divide-slate-100">
-            {sellers.map((seller) => {
+            {sellers.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-sm">
+                No seller accounts currently awaiting verification or certification.
+              </div>
+            ) : (
+              sellers.map((seller) => {
               const isPending = seller.approval_status === 'pending';
               const isApproved = seller.approval_status === 'approved';
 
@@ -148,7 +153,8 @@ export default function AdminVettingPage() {
                   </div>
                 </div>
               );
-            })}
+            })
+          )}
           </div>
         </div>
       </div>

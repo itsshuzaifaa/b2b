@@ -1,21 +1,18 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Image from 'next/image';
 import {
   getAdminListings,
   suspendListing,
   reinstateListing,
   deleteListing,
-  toggleListingHot,
   type AdminModeratedListing,
 } from '@/lib/admin/admin-store';
+import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import {
-  ShieldAlert,
   Search,
   CheckCircle2,
   Trash2,
-  Flame,
   Eye,
   Ban,
   Check,
@@ -24,17 +21,25 @@ import {
   Building2,
   Mail,
   AlertTriangle,
+  Barcode,
+  ChevronDown,
+  ShieldCheck,
+  MapPin,
+  Tag,
+  Phone,
+  Layers,
 } from 'lucide-react';
 
 export default function AdminListingsPage() {
   const [listings, setListings] = useState<AdminModeratedListing[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'hot' | 'suspended'>('all');
+  const [tabFilter, setTabFilter] = useState<'all' | 'sell' | 'buy' | 'suspended'>('all');
+  const [selectedCategory, setSelectedCategory] = useState('All categories');
 
   // Modals
   const [selectedProduct, setSelectedProduct] = useState<AdminModeratedListing | null>(null);
   const [suspendTargetProduct, setSuspendTargetProduct] = useState<AdminModeratedListing | null>(null);
-  const [suspendReason, setSuspendReason] = useState('Suspended pending EAN authenticity check and invoice audit.');
+  const [suspendReason, setSuspendReason] = useState('Suspended pending EAN authenticity check and commercial invoice audit.');
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState<AdminModeratedListing | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -57,69 +62,95 @@ export default function AdminListingsPage() {
     e.preventDefault();
     if (!suspendTargetProduct) return;
     suspendListing(suspendTargetProduct.id, suspendReason);
-    showNotice(`Listing "${suspendTargetProduct.title}" has been suspended from the marketplace.`);
+    showNotice(`Listing "${suspendTargetProduct.title}" has been suspended from the live trading board.`);
     setSuspendTargetProduct(null);
     loadData();
   };
 
   const handleReinstate = (id: string, title: string) => {
     reinstateListing(id);
-    showNotice(`Listing "${title}" is now active in the marketplace.`);
-    loadData();
-  };
-
-  const handleToggleHot = (id: string) => {
-    toggleListingHot(id);
-    showNotice('Hot deal badge status updated.');
+    showNotice(`Listing "${title}" is now active on the live trading board.`);
     loadData();
   };
 
   const handleDelete = (id: string) => {
     deleteListing(id);
     setDeleteConfirmProduct(null);
-    showNotice('Listing permanently removed from catalog.');
+    showNotice('Listing permanently removed from marketplace catalog.');
     loadData();
   };
 
+  // Compute counts
+  const totalCount = listings.length;
+  const sellCount = useMemo(() => listings.filter((l) => l.type === 'SELL').length, [listings]);
+  const buyCount = useMemo(() => listings.filter((l) => l.type === 'BUY').length, [listings]);
+  const suspendedCount = useMemo(() => listings.filter((l) => l.moderation_status === 'suspended').length, [listings]);
+
+  // Categories list
+  const categoriesList = useMemo(() => {
+    const set = new Set<string>();
+    WHOLESALE_CATEGORIES.forEach((c) => set.add(c.name));
+    listings.forEach((l) => {
+      if (l.category_name) set.add(l.category_name);
+    });
+    return ['All categories', ...Array.from(set)];
+  }, [listings]);
+
+  // Filtered Listings
   const filteredListings = useMemo(() => {
     return listings.filter((item) => {
+      // 1. Tab filter
+      if (tabFilter === 'sell' && item.type !== 'SELL') return false;
+      if (tabFilter === 'buy' && item.type !== 'BUY') return false;
+      if (tabFilter === 'suspended' && item.moderation_status !== 'suspended') return false;
+
+      // 2. Category filter
+      if (selectedCategory !== 'All categories' && item.category_name !== selectedCategory) {
+        return false;
+      }
+
+      // 3. Search query
       const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
+      if (!q) return true;
+
+      return (
         item.title.toLowerCase().includes(q) ||
+        item.brand.toLowerCase().includes(q) ||
+        item.item_code.toLowerCase().includes(q) ||
         item.company_name.toLowerCase().includes(q) ||
-        item.category_slug.toLowerCase().includes(q) ||
-        (item.barcode_or_sku && item.barcode_or_sku.toLowerCase().includes(q));
-
-      if (!matchesSearch) return false;
-      if (statusFilter === 'active') return item.moderation_status === 'active';
-      if (statusFilter === 'hot') return item.is_hot;
-      if (statusFilter === 'suspended') return item.moderation_status === 'suspended';
-
-      return true;
+        item.seller_email.toLowerCase().includes(q) ||
+        item.ean.toLowerCase().includes(q) ||
+        item.category_name.toLowerCase().includes(q) ||
+        item.location.toLowerCase().includes(q)
+      );
     });
-  }, [listings, searchQuery, statusFilter]);
-
-  const activeCount = listings.filter((l) => l.moderation_status === 'active').length;
-  const hotCount = listings.filter((l) => l.is_hot).length;
-  const suspendedCount = listings.filter((l) => l.moderation_status === 'suspended').length;
+  }, [listings, tabFilter, selectedCategory, searchQuery]);
 
   return (
     <>
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <div>
+          <div className="text-[12px] font-extrabold uppercase tracking-[0.14em] text-[#0A6CFF] mb-1.5">
+            ADMIN CONSOLE &middot; MARKETPLACE CONTROL
+          </div>
           <h1 className="text-[28px] sm:text-[32px] font-extrabold text-[#0B1F3A] tracking-[-0.025em] leading-tight">
             Listing Moderation
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            Quality control for marketplace stock lots. Suspend fraudulent offerings, reinstate listings, and curate Hot deals.
+            Quality control for marketplace trading board lots. Suspend fraudulent offerings, reinstate listings, and inspect EAN compliance.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
-            {listings.length} total lots
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-extrabold px-3.5 py-1.5 rounded-full border border-[#D0E2FF]">
+            {totalCount} total lots
+          </div>
+          <div className="bg-[#DCFCE7] text-[#15803D] text-[12px] font-extrabold px-3.5 py-1.5 rounded-full border border-[#86EFAC]/60">
+            {buyCount} buy offers
+          </div>
+          <div className="bg-[#E0F2FE] text-[#0284C7] text-[12px] font-extrabold px-3.5 py-1.5 rounded-full border border-[#7DD3FC]/60">
+            {sellCount} sell offers
           </div>
         </div>
       </div>
@@ -131,47 +162,48 @@ export default function AdminListingsPage() {
         </div>
       )}
 
-      {/* Filter Tabs & Search */}
-      <div className="mt-6 space-y-4">
+      {/* Filter Tabs & Search Bar */}
+      <div className="mt-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             type="button"
-            onClick={() => setStatusFilter('all')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              statusFilter === 'all'
+            onClick={() => setTabFilter('all')}
+            className={`px-4 py-2 rounded-full text-[13px] font-extrabold whitespace-nowrap transition cursor-pointer ${
+              tabFilter === 'all'
                 ? 'bg-[#0B1F3A] text-white shadow-xs'
                 : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
             }`}
           >
-            All Lots ({listings.length})
+            All Lots ({totalCount})
           </button>
           <button
             type="button"
-            onClick={() => setStatusFilter('active')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              statusFilter === 'active'
-                ? 'bg-[#0B1F3A] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
+            onClick={() => setTabFilter('sell')}
+            className={`px-4 py-2 rounded-full text-[13px] font-extrabold whitespace-nowrap transition cursor-pointer ${
+              tabFilter === 'sell'
+                ? 'bg-[#0A6CFF] text-white shadow-xs'
+                : 'bg-white text-[#0A6CFF] border border-[#CBD5E1] hover:bg-[#EBF3FF]'
             }`}
           >
-            Active &amp; Compliant ({activeCount})
+            Sell Offers ({sellCount})
           </button>
           <button
             type="button"
-            onClick={() => setStatusFilter('hot')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              statusFilter === 'hot'
-                ? 'bg-orange-500 text-white shadow-xs'
-                : 'bg-white text-orange-600 border border-orange-200 hover:bg-orange-50'
+            onClick={() => setTabFilter('buy')}
+            className={`px-4 py-2 rounded-full text-[13px] font-extrabold whitespace-nowrap transition cursor-pointer ${
+              tabFilter === 'buy'
+                ? 'bg-[#16A34A] text-white shadow-xs'
+                : 'bg-white text-[#15803D] border border-[#CBD5E1] hover:bg-[#DCFCE7]'
             }`}
           >
-            Hot Deals ({hotCount})
+            Buy Offers ({buyCount})
           </button>
           <button
             type="button"
-            onClick={() => setStatusFilter('suspended')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              statusFilter === 'suspended'
+            onClick={() => setTabFilter('suspended')}
+            className={`px-4 py-2 rounded-full text-[13px] font-extrabold whitespace-nowrap transition cursor-pointer ${
+              tabFilter === 'suspended'
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
             }`}
@@ -180,139 +212,187 @@ export default function AdminListingsPage() {
           </button>
         </div>
 
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search product title, supplier, EAN, or category..."
-            className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-white border border-[#EAEFF6] rounded-full text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
-          />
-          <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        {/* Search Bar & Category Dropdown */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Search */}
+          <div className="relative w-full sm:w-[280px]">
+            <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search brand, model, EAN, supplier..."
+              className="w-full pl-9 pr-4 py-2 text-[13.5px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+            />
+          </div>
+
+          {/* Category Dropdown */}
+          <div className="relative">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full sm:w-auto appearance-none bg-white border border-[#CBD5E1] rounded-xl pl-4 pr-9 py-2 text-[13px] text-[#0B1F3A] font-bold focus:outline-none focus:border-[#0A6CFF] transition cursor-pointer"
+            >
+              {categoriesList.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-[#64748B] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
       </div>
 
-      {/* Moderation Table Card */}
-      <div className="mt-6 bg-white rounded-[24px] border border-[#EAEFF6] shadow-[0_4px_20px_rgba(11,31,58,0.02)] overflow-hidden">
+      {/* Trading Board Moderation Table */}
+      <div className="mt-6 bg-white rounded-[24px] border border-[#CBD5E1] shadow-[0_2px_8px_rgba(11,31,58,0.03)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-[#F1F5F9] text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A9BB0]">
-                <th className="py-4 px-6">PRODUCT LOT</th>
-                <th className="py-4 px-6">SUPPLIER</th>
-                <th className="py-4 px-6">PRICE &amp; MOQ</th>
-                <th className="py-4 px-6">AVAILABLE</th>
-                <th className="py-4 px-6">STATUS</th>
-                <th className="py-4 px-6 text-right">MODERATION ACTIONS</th>
+              <tr className="bg-[#EEF2F6] text-[10.5px] font-black uppercase tracking-wider text-[#334155] border-b border-[#CBD5E1]">
+                <th className="py-3 px-3.5 whitespace-nowrap">TYPE</th>
+                <th className="py-3 px-3 whitespace-nowrap">BRAND</th>
+                <th className="py-3 px-3 whitespace-nowrap">CODE</th>
+                <th className="py-3 px-3">DESCRIPTION</th>
+                <th className="py-3 px-3 whitespace-nowrap">CATEGORY</th>
+                <th className="py-3 px-3 whitespace-nowrap">EAN / BARCODE</th>
+                <th className="py-3 px-3 whitespace-nowrap">QTY &amp; MOQ</th>
+                <th className="py-3 px-3 whitespace-nowrap">PRICE</th>
+                <th className="py-3 px-3 whitespace-nowrap">LOC</th>
+                <th className="py-3 px-3">SUPPLIER / BUYER</th>
+                <th className="py-3 px-3 whitespace-nowrap">STATUS</th>
+                <th className="py-3 px-3.5 text-right whitespace-nowrap">ACTIONS</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F8FAFC] text-[14px]">
+            <tbody className="divide-y divide-[#F1F5F9] text-[13px]">
               {filteredListings.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#5B6B82]">
+                  <td colSpan={12} className="py-12 text-center text-[#5B6B82]">
                     <Package className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                    <p className="font-bold text-[15px] text-[#0B1F3A]">No catalog listings found</p>
-                    <p className="text-[12px] mt-1">Try clearing filters or search query.</p>
+                    <p className="font-bold text-[15px] text-[#0B1F3A]">No trading board lots found</p>
+                    <p className="text-[12px] mt-1 text-[#64748B]">Try clearing filters or search query.</p>
                   </td>
                 </tr>
               ) : (
-                filteredListings.map((item) => {
+                filteredListings.map((item, idx) => {
                   const isSuspended = item.moderation_status === 'suspended';
-                  const productImage = item.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800';
+                  const isBuy = item.type === 'BUY';
 
                   return (
-                    <tr key={item.id} className="hover:bg-[#F8FAFC]/70 transition group">
-                      {/* Product Column */}
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-[#F3F6FB] shrink-0 border border-[#EAEFF6]">
-                            <Image src={productImage} alt={item.title} fill className="object-cover" />
+                    <tr
+                      key={item.id}
+                      className={`transition-colors ${
+                        idx % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'
+                      } ${isSuspended ? 'bg-red-50/40 hover:bg-red-50/70' : isBuy ? 'hover:bg-[#F0FDF4]' : 'hover:bg-[#EFF6FF]'} group`}
+                    >
+                      {/* 1. Type */}
+                      <td className="py-3 px-3.5 whitespace-nowrap">
+                        {isBuy ? (
+                          <span className="bg-[#DCFCE7] text-[#15803D] text-[10px] font-black px-2 py-0.5 rounded uppercase border border-[#86EFAC]/50">
+                            BUY
+                          </span>
+                        ) : (
+                          <span className="bg-[#E0F2FE] text-[#0284C7] text-[10px] font-black px-2 py-0.5 rounded uppercase border border-[#7DD3FC]/50">
+                            SELL
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 2. Brand */}
+                      <td className="py-3 px-3 font-bold text-[#0B1F3A] text-[12.5px] whitespace-nowrap">
+                        {item.brand}
+                      </td>
+
+                      {/* 3. Code */}
+                      <td className="py-3 px-3 font-mono text-[#64748B] text-[11.5px] font-medium whitespace-nowrap">
+                        {item.item_code}
+                      </td>
+
+                      {/* 4. Description */}
+                      <td className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProduct(item)}
+                          className="font-extrabold text-[#0B1F3A] text-[12.5px] text-left hover:text-[#0A6CFF] transition line-clamp-1 cursor-pointer max-w-[220px]"
+                          title={item.title}
+                        >
+                          {item.title}
+                        </button>
+                      </td>
+
+                      {/* 5. Category */}
+                      <td className="py-3 px-3 text-[#64748B] text-[11.5px] whitespace-nowrap">
+                        <span className="truncate max-w-[140px] inline-block" title={item.category_name}>
+                          {item.category_name}
+                        </span>
+                      </td>
+
+                      {/* 6. EAN */}
+                      <td className="py-3 px-3 whitespace-nowrap font-mono text-[11.5px] text-[#475569]">
+                        <span className="flex items-center gap-1">
+                          <Barcode className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{item.ean}</span>
+                        </span>
+                      </td>
+
+                      {/* 7. Quantity & MOQ */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="font-extrabold text-[#0B1F3A] text-[12.5px]">
+                          {item.quantity_available.toLocaleString()} u
+                        </div>
+                        <div className="text-[10.5px] text-[#8A9BB0]">
+                          MOQ: {item.moq} pcs
+                        </div>
+                      </td>
+
+                      {/* 8. Price */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="font-black text-[#0B1F3A] text-[13px]">
+                          {item.currency}{item.unit_price.toFixed(2)}
+                        </div>
+                      </td>
+
+                      {/* 9. Location */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className="bg-[#EEF2F6] text-[#334155] font-black text-[10.5px] px-2 py-0.5 rounded border border-[#CBD5E1]">
+                          {item.location}
+                        </span>
+                      </td>
+
+                      {/* 10. Supplier / Buyer */}
+                      <td className="py-3 px-3">
+                        <div className="min-w-[140px]">
+                          <div className="font-bold text-[#0B1F3A] text-[12px] truncate">
+                            {item.company_name}
                           </div>
-                          <div className="min-w-0">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedProduct(item)}
-                              className="font-bold text-[#0B1F3A] hover:text-[#0A6CFF] text-left transition line-clamp-1 cursor-pointer"
-                            >
-                              {item.title}
-                            </button>
-                            <div className="text-[11px] text-[#8A9BB0] mt-0.5 flex items-center gap-1.5">
-                              <span className="capitalize">{item.category_slug.replace('-', ' ')}</span>
-                              {item.barcode_or_sku && (
-                                <>
-                                  <span>·</span>
-                                  <span className="font-mono text-[#0A6CFF]">EAN {item.barcode_or_sku}</span>
-                                </>
-                              )}
-                            </div>
+                          <div className="text-[11px] text-[#8A9BB0] truncate">
+                            {item.seller_email}
                           </div>
                         </div>
                       </td>
 
-                      {/* Supplier Column */}
-                      <td className="py-4 px-6 text-[#5B6B82]">
-                        <div className="font-bold text-[#0B1F3A] text-[13px]">{item.company_name}</div>
-                        <div className="text-[11px] text-[#8A9BB0]">{item.seller_email}</div>
+                      {/* 11. Status */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        {isSuspended ? (
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300">
+                            Suspended
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Active
+                          </span>
+                        )}
                       </td>
 
-                      {/* Price & MOQ */}
-                      <td className="py-4 px-6">
-                        <div className="font-extrabold text-[#0B1F3A] text-[15px]">
-                          £{item.unit_price.toFixed(2)}
-                        </div>
-                        <div className="text-[11px] text-[#8A9BB0]">MOQ: {item.moq} pcs</div>
-                      </td>
-
-                      {/* Quantity */}
-                      <td className="py-4 px-6 text-[#5B6B82] font-semibold">
-                        {item.quantity_available.toLocaleString()} units
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-4 px-6">
-                        <div className="flex flex-col items-start gap-1">
-                          {isSuspended ? (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                              Suspended
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Active
-                            </span>
-                          )}
-
-                          {item.is_hot && !isSuspended && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 flex items-center gap-1">
-                              <Flame className="w-2.5 h-2.5 text-orange-500" />
-                              <span>HOT</span>
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Moderation Actions */}
-                      <td className="py-4 px-6 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Toggle Hot Tag */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleHot(item.id)}
-                            title={item.is_hot ? 'Remove Hot Deal status' : 'Promote to Hot Deal'}
-                            className={`p-2 rounded-xl transition cursor-pointer ${
-                              item.is_hot
-                                ? 'text-orange-500 hover:bg-orange-50'
-                                : 'text-slate-400 hover:text-orange-500 hover:bg-slate-100'
-                            }`}
-                          >
-                            <Flame className="w-4 h-4" />
-                          </button>
-
-                          {/* Inspect Modal */}
+                      {/* 12. Actions */}
+                      <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Inspect Dossier */}
                           <button
                             type="button"
                             onClick={() => setSelectedProduct(item)}
-                            title="Inspect lot details"
-                            className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
+                            title="Inspect trading board dossier"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#0A6CFF] hover:bg-slate-100 transition cursor-pointer"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
@@ -322,8 +402,8 @@ export default function AdminListingsPage() {
                             <button
                               type="button"
                               onClick={() => handleReinstate(item.id, item.title)}
-                              title="Reinstate listing to marketplace"
-                              className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 transition cursor-pointer"
+                              title="Reinstate listing to live board"
+                              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition cursor-pointer"
                             >
                               <Check className="w-4 h-4" />
                             </button>
@@ -332,7 +412,7 @@ export default function AdminListingsPage() {
                               type="button"
                               onClick={() => setSuspendTargetProduct(item)}
                               title="Suspend this listing"
-                              className="p-2 rounded-xl text-amber-500 hover:bg-amber-50 transition cursor-pointer"
+                              className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 transition cursor-pointer"
                             >
                               <Ban className="w-4 h-4" />
                             </button>
@@ -343,7 +423,7 @@ export default function AdminListingsPage() {
                             type="button"
                             onClick={() => setDeleteConfirmProduct(item)}
                             title="Delete listing permanently"
-                            className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -358,7 +438,185 @@ export default function AdminListingsPage() {
         </div>
       </div>
 
-      {/* SUSPEND LISTING REASON MODAL */}
+      {/* DOSSIER INSPECTION MODAL */}
+      {selectedProduct && (
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] p-6 sm:p-7 max-w-xl w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
+              <div className="flex items-center gap-2.5">
+                {selectedProduct.type === 'BUY' ? (
+                  <span className="bg-[#DCFCE7] text-[#15803D] text-[11px] font-black px-2.5 py-0.5 rounded uppercase border border-[#86EFAC]/60">
+                    BUY OFFER
+                  </span>
+                ) : (
+                  <span className="bg-[#E0F2FE] text-[#0284C7] text-[11px] font-black px-2.5 py-0.5 rounded uppercase border border-[#7DD3FC]/60">
+                    SELL OFFER
+                  </span>
+                )}
+                <div>
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#0A6CFF]">
+                    {selectedProduct.brand} &middot; {selectedProduct.item_code}
+                  </span>
+                  <h3 className="text-[17px] font-extrabold text-[#0B1F3A] line-clamp-1">
+                    {selectedProduct.title}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Details */}
+            <div className="py-5 space-y-4 text-[13px]">
+              {/* Product Specifications Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-[#F8FAFD] border border-[#EAEFF6]">
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    Unit Price
+                  </span>
+                  <p className="text-[19px] font-black text-[#0B1F3A]">
+                    {selectedProduct.currency}{selectedProduct.unit_price.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    Available Quantity
+                  </span>
+                  <p className="text-[16px] font-extrabold text-[#0B1F3A]">
+                    {selectedProduct.quantity_available.toLocaleString()} pcs
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    MOQ Requirement
+                  </span>
+                  <p className="text-[15px] font-extrabold text-[#0B1F3A]">
+                    {selectedProduct.moq} pcs
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    EAN Barcode
+                  </span>
+                  <p className="font-mono text-[13px] font-bold text-[#0B1F3A] flex items-center gap-1">
+                    <Barcode className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{selectedProduct.ean}</span>
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    Condition / Lot
+                  </span>
+                  <p className="font-bold text-[#0B1F3A]">
+                    {selectedProduct.condition || 'Factory New'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#8A9BB0]">
+                    Storage Location
+                  </span>
+                  <p className="font-bold text-[#0B1F3A] flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{selectedProduct.location} Warehouse Hub</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Company & Trader Contact Dossier */}
+              <div className="p-4 rounded-2xl bg-white border border-[#EAEFF6] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#0A6CFF]">
+                    Counterparty Dossier
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Verified Trader
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <span className="text-[11px] text-[#8A9BB0] block">Company Name</span>
+                    <span className="font-bold text-[#0B1F3A] text-[13.5px]">{selectedProduct.company_name}</span>
+                  </div>
+                  {selectedProduct.contact_name && (
+                    <div>
+                      <span className="text-[11px] text-[#8A9BB0] block">Contact Person</span>
+                      <span className="font-bold text-[#0B1F3A] text-[13.5px]">{selectedProduct.contact_name}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-[11px] text-[#8A9BB0] block">Email Address</span>
+                    <span className="font-medium text-[#0A6CFF] text-[13px]">{selectedProduct.seller_email}</span>
+                  </div>
+                  {selectedProduct.contact_phone && (
+                    <div>
+                      <span className="text-[11px] text-[#8A9BB0] block">Phone / WhatsApp</span>
+                      <span className="font-medium text-[#0B1F3A] text-[13px]">{selectedProduct.contact_phone}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Moderation Notes if Suspended */}
+              {selectedProduct.moderation_status === 'suspended' && (
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-[12.5px]">
+                  <strong>Current Moderation Status:</strong> Suspended by Admin.
+                  {selectedProduct.moderation_reason && (
+                    <div className="mt-1 text-red-700">
+                      Reason: {selectedProduct.moderation_reason}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-3 flex items-center justify-between gap-3 border-t border-[#F1F5F9]">
+              <div>
+                {selectedProduct.moderation_status === 'suspended' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleReinstate(selectedProduct.id, selectedProduct.title);
+                      setSelectedProduct(null);
+                    }}
+                    className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[13px] transition cursor-pointer shadow-xs"
+                  >
+                    Reinstate Listing
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSuspendTargetProduct(selectedProduct);
+                      setSelectedProduct(null);
+                    }}
+                    className="px-5 py-2.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[13px] transition cursor-pointer shadow-xs"
+                  >
+                    Suspend Listing
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="px-6 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[13px] hover:bg-[#0857cf] transition cursor-pointer shadow-xs"
+              >
+                Close Dossier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUSPEND MODAL */}
       {suspendTargetProduct && (
         <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-[32px] p-7 max-w-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6]">
@@ -368,21 +626,21 @@ export default function AdminListingsPage() {
             <h3 className="text-[18px] font-bold text-[#0B1F3A] text-center">
               Suspend Listing?
             </h3>
-            <p className="text-[12px] text-[#5B6B82] text-center mt-1">
-              Hides <strong>{suspendTargetProduct.title}</strong> from all buyers in the marketplace.
+            <p className="text-[12.5px] text-[#5B6B82] text-center mt-1">
+              Hides <strong>{suspendTargetProduct.title}</strong> from all buyers on the live trading board.
             </p>
 
             <form onSubmit={handleConfirmSuspend} className="mt-4 space-y-4">
               <div>
                 <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1.5">
-                  Moderation Reason for Seller *
+                  Moderation Reason for Counterparty *
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={suspendReason}
                   onChange={(e) => setSuspendReason(e.target.value)}
-                  className="w-full p-3 text-[13px] border border-[#E2E8F0] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-amber-500 resize-none font-medium"
+                  className="w-full p-3 text-[13px] border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-amber-500 resize-none font-medium"
                 />
               </div>
 
@@ -390,7 +648,7 @@ export default function AdminListingsPage() {
                 <button
                   type="button"
                   onClick={() => setSuspendTargetProduct(null)}
-                  className="px-4 py-2 text-[13px] font-semibold text-[#5B6B82]"
+                  className="px-4 py-2 text-[13px] font-semibold text-[#5B6B82] cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -406,81 +664,6 @@ export default function AdminListingsPage() {
         </div>
       )}
 
-      {/* INSPECT PRODUCT DETAILS MODAL */}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A6CFF]">
-                  Catalog Dossier
-                </span>
-                <h3 className="text-[17px] font-bold text-[#0B1F3A] line-clamp-1">
-                  {selectedProduct.title}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedProduct(null)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="py-5 space-y-4 text-[13px]">
-              <div className="relative aspect-[16/9] w-full rounded-2xl overflow-hidden bg-[#F3F6FB] border border-[#EAEFF6]">
-                <Image
-                  src={selectedProduct.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'}
-                  alt={selectedProduct.title}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6]">
-                <div>
-                  <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Unit Price</span>
-                  <p className="text-[18px] font-black text-[#0B1F3A]">
-                    £{selectedProduct.unit_price.toFixed(2)}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Quantity Available</span>
-                  <p className="text-[16px] font-extrabold text-[#0B1F3A]">
-                    {selectedProduct.quantity_available.toLocaleString()} pcs
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Supplier</span>
-                  <p className="font-bold text-[#0B1F3A]">{selectedProduct.company_name}</p>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">EAN Barcode</span>
-                  <p className="font-mono text-[#0A6CFF] font-bold">{selectedProduct.barcode_or_sku || 'N/A'}</p>
-                </div>
-              </div>
-
-              {selectedProduct.moderation_reason && (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[12px]">
-                  <strong>Current Moderation Note:</strong> {selectedProduct.moderation_reason}
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#F1F5F9]">
-              <button
-                type="button"
-                onClick={() => setSelectedProduct(null)}
-                className="px-6 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[13px] hover:bg-[#0857cf] transition cursor-pointer"
-              >
-                Close Inspection
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* DELETE PRODUCT MODAL */}
       {deleteConfirmProduct && (
         <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -489,10 +672,10 @@ export default function AdminListingsPage() {
               <Trash2 className="w-6 h-6" />
             </div>
             <h3 className="text-[18px] font-bold text-[#0B1F3A] text-center">
-              Delete Product Listing?
+              Delete Listing Permanently?
             </h3>
             <p className="text-[13px] text-[#5B6B82] text-center mt-1.5 leading-relaxed">
-              Are you sure you want to permanently delete <strong>{deleteConfirmProduct.title}</strong>?
+              Are you sure you want to permanently delete <strong>{deleteConfirmProduct.title}</strong> from the trading board?
             </p>
 
             <div className="mt-6 flex items-center justify-center gap-3">

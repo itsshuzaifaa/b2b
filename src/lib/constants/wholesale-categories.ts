@@ -88,4 +88,10 @@ export const WHOLESALE_CATEGORIES: WholesaleCategory[] = [
   { id: 'overstock-liquidation-lots', name: 'Overstock, Liquidation Lots & Closeouts', sector: 'Surplus & Closeouts' },
   { id: 'graded-returns-refurbished', name: 'Graded Returns, Refurbished & B-Stock', sector: 'Surplus & Closeouts' },
   { id: 'packaging-shipping-pallets', name: 'Pallets, Packaging Materials & Shipping Supplies', sector: 'Logistics' },
+
+  // Other / Custom Categories
+  { id: 'other', name: 'Other', sector: 'Other' },
 ];
+
+export const WHOLESALE_CATEGORY_NAMES: string[] = WHOLESALE_CATEGORIES.map((c) => c.name);
+

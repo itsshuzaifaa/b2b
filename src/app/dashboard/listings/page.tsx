@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
 import { CsvImportModal } from '@/components/dashboard/CsvImportModal';
+import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import {
   Search,
   Plus,
-  UploadCloud,
-  Upload,
   Edit2,
   Trash2,
   X,
@@ -15,16 +13,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Flame,
-  Package,
-  Layers,
-  Image as ImageIcon,
-  DollarSign,
 } from 'lucide-react';
 
 export interface ListingItem {
   id: string;
   title: string;
   brand?: string;
+  itemCode?: string;
   condition?: 'new' | 'used' | 'refurbished' | 'worn_out';
   description: string;
   ean: string;
@@ -32,8 +27,9 @@ export interface ListingItem {
   unitPrice: number;
   available: number;
   moq: number;
+  location?: string;
   status: 'Hot' | 'Active' | 'Draft';
-  images: string[];
+  images?: string[];
 }
 
 export const POPULAR_BRANDS = [
@@ -69,7 +65,7 @@ export const POPULAR_BRANDS = [
   'Other / Generic',
 ];
 
-const STORAGE_KEY = 'b2b_seller_listings_real_v2';
+const STORAGE_KEY = 'b2b_seller_listings_v3';
 
 const INITIAL_LISTINGS: ListingItem[] = [];
 
@@ -77,7 +73,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 
 export default function DashboardListingsPage() {
   const { company } = useAuth();
-  const [listings, setListings] = useState<ListingItem[]>(INITIAL_LISTINGS);
+  const [listings, setListings] = useState<ListingItem[]>([]);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'Hot' | 'Drafts'>('All');
@@ -85,61 +81,44 @@ export default function DashboardListingsPage() {
   // Multi-step modal state (shared for Add and Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Form states
+  // Form states (Clean, image-free wholesale trading specifications)
   const [formTitle, setFormTitle] = useState('');
   const [formBrand, setFormBrand] = useState('Apple');
   const [brandSearch, setBrandSearch] = useState('');
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
+  const [formItemCode, setFormItemCode] = useState('');
   const [formCondition, setFormCondition] = useState<'new' | 'used' | 'refurbished' | 'worn_out'>('new');
-  const [formCategory, setFormCategory] = useState('Consumer Electronics');
+  const [formCategory, setFormCategory] = useState(WHOLESALE_CATEGORIES[0].name);
+  const [formCustomCategory, setFormCustomCategory] = useState('');
   const [formEan, setFormEan] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formImageUrl, setFormImageUrl] = useState('');
-  const [formImages, setFormImages] = useState<string[]>([]);
-  const [formPrice, setFormPrice] = useState('149.00');
-  const [formAvailable, setFormAvailable] = useState('100');
+  const [formLocation, setFormLocation] = useState('DE');
+  const [formPrice, setFormPrice] = useState('920.00');
+  const [formAvailable, setFormAvailable] = useState('50');
   const [formMoq, setFormMoq] = useState('10');
-  const [formIsHot, setFormIsHot] = useState(false);
+  const [formIsHot, setFormIsHot] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
-
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  const handleFiles = (files: FileList | null) => {
-    if (!files) return;
-    Array.from(files).forEach((file) => {
-      if (file.size > 10 * 1024 * 1024) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          setFormImages((prev) => [...prev, e.target!.result as string].slice(0, 5));
-          setFormError(null);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const removePhoto = (index: number) => {
-    setFormImages((prev) => prev.filter((_, i) => i !== index));
-  };
 
   // Load listings from localStorage
   useEffect(() => {
     try {
+      localStorage.removeItem('b2b_seller_listings_real_v2');
+      localStorage.removeItem('b2b_seller_listings_v1');
+
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setListings(parsed);
           return;
         }
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_LISTINGS));
+      setListings([]);
     } catch {
-      // ignore
+      setListings([]);
     }
   }, []);
 
@@ -160,15 +139,16 @@ export default function DashboardListingsPage() {
     setFormBrand('Apple');
     setBrandSearch('');
     setIsBrandDropdownOpen(false);
+    setFormItemCode('');
     setFormCondition('new');
-    setFormCategory('Consumer Electronics');
+    setFormCategory(WHOLESALE_CATEGORIES[0].name);
+    setFormCustomCategory('');
     setFormEan('');
     setFormDescription('');
-    setFormImageUrl('');
-    setFormImages([]);
-    setFormPrice('99.00');
-    setFormAvailable('200');
-    setFormMoq('15');
+    setFormLocation('DE');
+    setFormPrice('920.00');
+    setFormAvailable('50');
+    setFormMoq('10');
     setFormIsHot(true);
     setFormError(null);
     setIsModalOpen(true);
@@ -182,12 +162,19 @@ export default function DashboardListingsPage() {
     setFormBrand(item.brand || 'Apple');
     setBrandSearch('');
     setIsBrandDropdownOpen(false);
+    setFormItemCode(item.itemCode || '');
     setFormCondition(item.condition || 'new');
-    setFormCategory(item.category);
+    const knownCategory = WHOLESALE_CATEGORIES.some((c) => c.name === item.category);
+    if (knownCategory) {
+      setFormCategory(item.category);
+      setFormCustomCategory('');
+    } else {
+      setFormCategory('Other');
+      setFormCustomCategory(item.category || '');
+    }
     setFormEan(item.ean);
     setFormDescription(item.description);
-    setFormImages(item.images || []);
-    setFormImageUrl(item.images?.[0] || '');
+    setFormLocation(item.location || 'DE');
     setFormPrice(String(item.unitPrice));
     setFormAvailable(String(item.available));
     setFormMoq(String(item.moq));
@@ -206,30 +193,11 @@ export default function DashboardListingsPage() {
   // Step 1 Validation
   const handleNextStep1 = () => {
     if (!formTitle.trim()) {
-      setFormError('Please enter a product title.');
-      return;
-    }
-    if (!formDescription.trim()) {
-      setFormError('Please provide a short description.');
+      setFormError('Please enter a product title / description.');
       return;
     }
     setFormError(null);
     setCurrentStep(2);
-  };
-
-  // Step 2 Validation
-  const handleNextStep2 = () => {
-    const combined = [...formImages];
-    if (formImageUrl.trim() && !combined.includes(formImageUrl.trim())) {
-      combined.unshift(formImageUrl.trim());
-      setFormImages(combined);
-    }
-    if (combined.length === 0) {
-      setFormError('Please upload at least one product photo or enter an image URL.');
-      return;
-    }
-    setFormError(null);
-    setCurrentStep(3);
   };
 
   // Final Submit
@@ -252,8 +220,9 @@ export default function DashboardListingsPage() {
       return;
     }
 
-    const finalImages = formImages.length > 0 ? formImages : (formImageUrl.trim() ? [formImageUrl.trim()] : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800']);
     const finalSku = formEan.trim() || `SKU-${Date.now().toString().slice(-8)}`;
+    const finalItemCode = formItemCode.trim() || `MDL-${Date.now().toString().slice(-5)}`;
+    const finalCategory = formCategory === 'Other' && formCustomCategory.trim() ? formCustomCategory.trim() : formCategory;
 
     if (modalMode === 'edit' && editingId) {
       const updated = listings.map((l) => {
@@ -262,14 +231,15 @@ export default function DashboardListingsPage() {
             ...l,
             title: formTitle.trim(),
             brand: formBrand,
+            itemCode: finalItemCode,
             condition: formCondition,
-            category: formCategory,
+            category: finalCategory,
             ean: finalSku,
-            description: formDescription.trim(),
-            images: finalImages,
+            description: formDescription.trim() || formTitle.trim(),
             unitPrice: priceNum,
             available: availNum,
             moq: moqNum,
+            location: formLocation.toUpperCase(),
             status: formIsHot ? ('Hot' as const) : ('Active' as const),
           };
         }
@@ -281,17 +251,23 @@ export default function DashboardListingsPage() {
         id: `lst-${Date.now()}`,
         title: formTitle.trim(),
         brand: formBrand,
+        itemCode: finalItemCode,
         condition: formCondition,
-        category: formCategory,
+        category: finalCategory,
         ean: finalSku,
-        description: formDescription.trim(),
-        images: finalImages,
+        description: formDescription.trim() || formTitle.trim(),
         unitPrice: priceNum,
         available: availNum,
         moq: moqNum,
+        location: formLocation.toUpperCase(),
         status: formIsHot ? 'Hot' : 'Active',
       };
       saveListings([newItem, ...listings]);
+
+      // Dispatch event for instant update across tabs and trading board
+      try {
+        window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+      } catch {}
 
       if (company?.id) {
         void fetch('/api/products', {
@@ -302,14 +278,13 @@ export default function DashboardListingsPage() {
             title: formTitle.trim(),
             brand: formBrand,
             condition: formCondition,
-            description: formDescription.trim(),
+            description: formDescription.trim() || formTitle.trim(),
             barcodeOrSku: finalSku,
-            categorySlug: formCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
+            categorySlug: finalCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
             unitPrice: priceNum,
             quantityAvailable: availNum,
             moq: moqNum,
             isHot: formIsHot,
-            images: finalImages,
             status: 'active',
           }),
         })
@@ -426,133 +401,129 @@ export default function DashboardListingsPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[#F1F5F9] text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A9BB0]">
-                <th className="py-4 px-6">PRODUCT, BARCODE &amp; DETAILS</th>
-                <th className="py-4 px-6">CATEGORY</th>
-                <th className="py-4 px-6">UNIT PRICE</th>
-                <th className="py-4 px-6">AVAILABLE</th>
-                <th className="py-4 px-6">MOQ</th>
-                <th className="py-4 px-6">STATUS</th>
-                <th className="py-4 px-6 text-right">ACTIONS</th>
+                <th className="py-4 px-5">Category</th>
+                <th className="py-4 px-5">Brand</th>
+                <th className="py-4 px-5">Item Code</th>
+                <th className="py-4 px-5">Description</th>
+                <th className="py-4 px-5">EAN / UPC</th>
+                <th className="py-4 px-5">Condition</th>
+                <th className="py-4 px-5">Price</th>
+                <th className="py-4 px-5">Available</th>
+                <th className="py-4 px-5">MOQ</th>
+                <th className="py-4 px-5">Location</th>
+                <th className="py-4 px-5">Status</th>
+                <th className="py-4 px-5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F8FAFC] text-[14px]">
-              {filteredListings.map((item) => (
-                <tr key={item.id} className="hover:bg-[#F8FAFC]/70 transition group">
-                  {/* Product & Barcode & Description */}
-                  <td className="py-4 px-6">
-                    <div className="flex items-start gap-3.5 max-w-sm">
-                      <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-[#EAEFF6]">
-                        <Image
-                          src={item.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'}
-                          alt={item.title}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-[#0B1F3A] leading-snug truncate">
-                          {item.title}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          {item.brand && (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-50 text-[#0A6CFF] border border-blue-100">
-                              {item.brand}
-                            </span>
-                          )}
-                          <span
-                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                              item.condition === 'new'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : item.condition === 'refurbished'
-                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                : item.condition === 'worn_out'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {item.condition === 'new'
-                              ? 'Brand New'
-                              : item.condition === 'refurbished'
-                              ? 'Refurbished'
-                              : item.condition === 'worn_out'
-                              ? 'Worn Out'
-                              : 'Used'}
-                          </span>
-                          <span className="text-[11px] text-[#8A9BB0] font-mono">
-                            EAN/UPC: {item.ean}
-                          </span>
-                        </div>
-                        <p className="text-[12px] text-[#5B6B82] line-clamp-1 mt-1">
-                          {item.description}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Category */}
-                  <td className="py-4 px-6 text-[#5B6B82] font-medium whitespace-nowrap">
-                    {item.category}
-                  </td>
-
-                  {/* Unit Price */}
-                  <td className="py-4 px-6 font-bold text-[#0B1F3A] whitespace-nowrap">
-                    £{item.unitPrice.toFixed(2)}
-                  </td>
-
-                  {/* Available */}
-                  <td className="py-4 px-6 text-[#5B6B82] font-medium whitespace-nowrap">
-                    {item.available.toLocaleString()} u
-                  </td>
-
-                  {/* MOQ */}
-                  <td className="py-4 px-6 text-[#5B6B82] font-medium whitespace-nowrap">
-                    {item.moq} u
-                  </td>
-
-                  {/* Status */}
-                  <td className="py-4 px-6 whitespace-nowrap">
-                    {item.status === 'Hot' ? (
-                      <span className="bg-[#FFF7ED] text-[#EA580C] text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 border border-orange-200">
-                        <Flame className="w-3 h-3" />
-                        <span>Hot</span>
-                      </span>
-                    ) : (
-                      <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-block">
-                        Active
-                      </span>
-                    )}
-                  </td>
-
-                  {/* Actions (Edit and Delete) */}
-                  <td className="py-4 px-6 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        title="Edit listing details"
-                        className="text-[#0A6CFF] hover:bg-blue-50 p-1.5 rounded-lg font-bold text-[13px] transition cursor-pointer flex items-center gap-1"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteListing(item.id)}
-                        title="Delete listing"
-                        className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+            <tbody className="divide-y divide-[#F8FAFC] text-[13px]">
+              {filteredListings.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="py-12 text-center text-slate-400 font-medium">
+                    No product listings found matching your search.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredListings.map((item) => (
+                  <tr key={item.id} className="hover:bg-[#F8FAFC]/80 transition group">
+                    <td className="py-3.5 px-5 font-semibold text-[#5B6B82] whitespace-nowrap">
+                      {item.category}
+                    </td>
+                    <td className="py-3.5 px-5 font-bold text-[#0B1F3A] whitespace-nowrap">
+                      {item.brand || '—'}
+                    </td>
+                    <td className="py-3.5 px-5 font-mono text-[12px] font-bold text-[#0A6CFF] whitespace-nowrap">
+                      {item.itemCode || '—'}
+                    </td>
+                    <td className="py-3.5 px-5 max-w-xs">
+                      <div className="font-bold text-[#0B1F3A] truncate" title={item.title}>
+                        {item.title}
+                      </div>
+                      {item.description && item.description !== item.title && (
+                        <div className="text-[11px] text-[#8A9BB0] truncate mt-0.5" title={item.description}>
+                          {item.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-5 font-mono text-[12px] text-[#5B6B82] whitespace-nowrap">
+                      {item.ean}
+                    </td>
+                    <td className="py-3.5 px-5 whitespace-nowrap">
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                          item.condition === 'new' || !item.condition
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : item.condition === 'refurbished'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : item.condition === 'worn_out'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {item.condition === 'new' || !item.condition
+                          ? 'New'
+                          : item.condition === 'refurbished'
+                          ? 'Refurbished'
+                          : item.condition === 'worn_out'
+                          ? 'Worn Out'
+                          : 'Used'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-5 font-bold text-[#0B1F3A] whitespace-nowrap">
+                      £{item.unitPrice.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-5 font-medium text-[#5B6B82] whitespace-nowrap">
+                      {item.available.toLocaleString()} u
+                    </td>
+                    <td className="py-3.5 px-5 font-medium text-[#5B6B82] whitespace-nowrap">
+                      {item.moq} u
+                    </td>
+                    <td className="py-3.5 px-5 whitespace-nowrap">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-mono font-bold">
+                        {item.location || 'DE'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-5 whitespace-nowrap">
+                      {item.status === 'Hot' ? (
+                        <span className="bg-[#FFF7ED] text-[#EA580C] text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 border border-orange-200">
+                          <Flame className="w-3 h-3" />
+                          <span>Hot</span>
+                        </span>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-block">
+                          Active
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(item)}
+                          title="Edit listing details"
+                          className="text-[#0A6CFF] hover:bg-blue-50 p-1.5 rounded-lg font-bold text-[13px] transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteListing(item.id)}
+                          title="Delete listing"
+                          className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MULTI-STEP POPUP MODAL (SHARED FOR BOTH ADD AND EDIT) */}
+      {/* 2-STEP POPUP MODAL (CLEAN WHOLESALE SPECIFICATIONS, NO IMAGES) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-[32px] p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
@@ -560,7 +531,7 @@ export default function DashboardListingsPage() {
             <div className="pb-4 border-b border-[#F1F5F9]">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF]">
-                  STEP {currentStep} OF 3: {currentStep === 1 ? 'BASIC DETAILS' : currentStep === 2 ? 'IMAGES & MEDIA' : 'PRICING & INVENTORY'}
+                  STEP {currentStep} OF 2: {currentStep === 1 ? 'PRODUCT SPECIFICATIONS' : 'PRICING & COMMERCIAL TERMS'}
                 </span>
                 <button
                   type="button"
@@ -579,7 +550,7 @@ export default function DashboardListingsPage() {
               <div className="w-full h-1.5 bg-[#EAEFF6] rounded-full overflow-hidden mt-3">
                 <div
                   className="h-full bg-[#0A6CFF] transition-all duration-300"
-                  style={{ width: currentStep === 1 ? '33.3%' : currentStep === 2 ? '66.6%' : '100%' }}
+                  style={{ width: currentStep === 1 ? '50%' : '100%' }}
                 />
               </div>
             </div>
@@ -590,19 +561,19 @@ export default function DashboardListingsPage() {
               </div>
             )}
 
-            {/* STEP 1: BASIC DETAILS */}
+            {/* STEP 1: PRODUCT SPECIFICATIONS */}
             {currentStep === 1 && (
               <div className="py-5 space-y-4">
                 <div>
                   <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Product Title *
+                    Product Title / Description *
                   </label>
                   <input
                     type="text"
                     required
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
-                    placeholder="e.g. Sony WH-1000XM5 Wireless Headphones"
+                    placeholder="e.g. iPhone 15 Pro Max 256GB Natural Titanium"
                     className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium"
                   />
                 </div>
@@ -610,7 +581,7 @@ export default function DashboardListingsPage() {
                 {/* Company / Brand with Searchable Dropdown */}
                 <div className="relative">
                   <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Brand / Manufacturer Name *
+                    Brand / Manufacturer *
                   </label>
                   <div className="relative">
                     <button
@@ -618,7 +589,7 @@ export default function DashboardListingsPage() {
                       onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
                       className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl text-left bg-white font-semibold text-[#0B1F3A] flex items-center justify-between focus:outline-none focus:border-[#0A6CFF]"
                     >
-                      <span>{formBrand || 'Select a Brand / Company'}</span>
+                      <span>{formBrand || 'Select a Brand'}</span>
                       <Search className="w-4 h-4 text-slate-400" />
                     </button>
 
@@ -629,7 +600,7 @@ export default function DashboardListingsPage() {
                           <input
                             type="text"
                             autoFocus
-                            placeholder="Type to filter brands (Apple, Samsung, Sony...)"
+                            placeholder="Filter brands (Apple, Samsung, Sony...)"
                             value={brandSearch}
                             onChange={(e) => setBrandSearch(e.target.value)}
                             className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#EAEFF6] rounded-xl focus:outline-none focus:border-[#0A6CFF] font-medium"
@@ -660,7 +631,6 @@ export default function DashboardListingsPage() {
                             </button>
                           ))}
 
-                          {/* Custom brand entry option */}
                           {brandSearch.trim() &&
                             !POPULAR_BRANDS.some(
                               (b) => b.toLowerCase() === brandSearch.toLowerCase().trim()
@@ -683,8 +653,20 @@ export default function DashboardListingsPage() {
                   </div>
                 </div>
 
-                {/* Condition & Product Code (EAN/UPC) */}
+                {/* Item Code & Condition */}
                 <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                      Item / Model Code
+                    </label>
+                    <input
+                      type="text"
+                      value={formItemCode}
+                      onChange={(e) => setFormItemCode(e.target.value)}
+                      placeholder="e.g. A3106, SM-X810"
+                      className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono font-bold"
+                    />
+                  </div>
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
                       Condition *
@@ -704,49 +686,66 @@ export default function DashboardListingsPage() {
                       <option value="worn_out">Worn Out (For Parts)</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Category & EAN/UPC */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Product Code (EAN / UPC) *
+                      Category *
+                    </label>
+                    <select
+                      value={formCategory}
+                      onChange={(e) => setFormCategory(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white"
+                    >
+                      {WHOLESALE_CATEGORIES.map((cat) => (
+                        <option key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                      Barcode (EAN / UPC) *
                     </label>
                     <input
                       type="text"
                       value={formEan}
                       onChange={(e) => setFormEan(e.target.value)}
-                      placeholder="e.g. 5013493405928"
+                      placeholder="e.g. 195949048735"
                       className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono"
                     />
                   </div>
+
+                  {formCategory === 'Other' && (
+                    <div className="col-span-2">
+                      <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                        Specify Category *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formCustomCategory}
+                        onChange={(e) => setFormCustomCategory(e.target.value)}
+                        placeholder="Type custom category name (e.g. Solar Equipment, Vintage Watches...)"
+                        className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* Category */}
                 <div>
                   <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Category *
-                  </label>
-                  <select
-                    value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white"
-                  >
-                    <option value="Consumer Electronics">Consumer Electronics</option>
-                    <option value="Beauty & Cosmetics">Beauty & Cosmetics</option>
-                    <option value="Home & Kitchen">Home & Kitchen</option>
-                    <option value="Health & FMCG">Health & FMCG</option>
-                    <option value="Tools & Hardware">Tools & Hardware</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Lot Description &amp; Specifications *
+                    Lot Description &amp; Packaging Notes
                   </label>
                   <textarea
-                    rows={3}
-                    required
+                    rows={2}
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    placeholder="Describe packaging condition, batch codes, warranty, master carton counts, delivery lead time..."
-                    className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium resize-none leading-relaxed"
+                    placeholder="Master carton packing, batch codes, EU/UK specs, warranty details..."
+                    className="w-full px-4 py-2 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium resize-none leading-relaxed"
                   />
                 </div>
 
@@ -756,7 +755,7 @@ export default function DashboardListingsPage() {
                     onClick={handleNextStep1}
                     className="flex-1 py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
                   >
-                    <span>Continue to Images</span>
+                    <span>Continue to Pricing &amp; Terms</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <button
@@ -770,132 +769,13 @@ export default function DashboardListingsPage() {
               </div>
             )}
 
-            {/* STEP 2: IMAGES & MEDIA */}
+            {/* STEP 2: PRICING & COMMERCIAL TERMS */}
             {currentStep === 2 && (
-              <div className="py-5 space-y-4">
-                {/* Hidden file input */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(e) => handleFiles(e.target.files)}
-                />
-
-                {/* Drag and drop upload zone */}
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handleFiles(e.dataTransfer.files);
-                  }}
-                  className="border-2 border-dashed border-[#CBD5E1] rounded-[22px] p-6 sm:p-7 text-center bg-transparent hover:bg-[#F8FAFF] transition cursor-pointer"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#EBF3FF] text-[#0A6CFF] flex items-center justify-center mx-auto mb-3">
-                    <Upload className="w-5 h-5 stroke-[2.5]" />
-                  </div>
-                  <div className="text-[14px] font-bold text-[#0B1F3A]">
-                    Drag images here or <span className="text-[#0A6CFF] hover:underline">browse</span>
-                  </div>
-                  <div className="text-[12px] text-[#64748B] mt-1 font-normal">
-                    PNG, JPG or WEBP, up to 5 images, 10 MB each
-                  </div>
-                </div>
-
-                {/* Uploaded Thumbnails list with black circular × remove badge */}
-                {formImages.length > 0 && (
-                  <div>
-                    <span className="block text-[11px] font-bold uppercase text-[#8A9BB0] mb-2">
-                      Attached Product Images ({formImages.length}/5)
-                    </span>
-                    <div className="flex flex-wrap gap-3">
-                      {formImages.map((imgUrl, idx) => (
-                        <div
-                          key={idx}
-                          className="relative w-16 h-16 rounded-[16px] bg-[#DDE5F2] border border-[#CBD5E1] flex items-center justify-center shadow-2xs overflow-hidden"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={imgUrl}
-                            alt={`Product photo ${idx + 1}`}
-                            className="w-full h-full object-cover rounded-[15px]"
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removePhoto(idx);
-                            }}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#0B1F3A] text-white flex items-center justify-center shadow-xs hover:bg-red-600 transition cursor-pointer z-10"
-                          >
-                            <X className="w-3 h-3 stroke-[3]" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Or paste direct Image URL */}
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Or paste direct Image URL
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={formImageUrl}
-                      onChange={(e) => setFormImageUrl(e.target.value)}
-                      placeholder="https://images.unsplash.com/..."
-                      className="flex-1 px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium"
-                    />
-                    {formImageUrl.trim() && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (formImageUrl.trim() && !formImages.includes(formImageUrl.trim())) {
-                            setFormImages((prev) => [...prev, formImageUrl.trim()].slice(0, 5));
-                            setFormImageUrl('');
-                          }
-                        }}
-                        className="px-4 py-2 bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] rounded-2xl text-[12px] font-bold transition cursor-pointer"
-                      >
-                        Add
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-3 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(1)}
-                    className="py-3 px-5 rounded-full bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] font-bold text-[14px] flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span>Back</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextStep2}
-                    className="flex-1 py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                  >
-                    <span>Continue to Pricing</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: PRICING & INVENTORY */}
-            {currentStep === 3 && (
               <form onSubmit={handleSaveListing} className="py-5 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Unit Price (£) *
+                      Unit Price (£ / €) *
                     </label>
                     <input
                       type="number"
@@ -920,17 +800,33 @@ export default function DashboardListingsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Minimum Order Quantity (MOQ) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={formMoq}
-                    onChange={(e) => setFormMoq(e.target.value)}
-                    className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                      Minimum Order (MOQ) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={formMoq}
+                      onChange={(e) => setFormMoq(e.target.value)}
+                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                      Warehouse Location (Country) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={4}
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value.toUpperCase())}
+                      placeholder="e.g. DE, NL, UK, PL"
+                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono font-bold"
+                    />
+                  </div>
                 </div>
 
                 {/* Hot Lot Promotion Toggle */}
@@ -939,7 +835,7 @@ export default function DashboardListingsPage() {
                     <Flame className="w-5 h-5 text-orange-500 shrink-0" />
                     <div>
                       <div className="text-[13px] font-bold text-[#0B1F3A]">Feature as Hot Lot</div>
-                      <div className="text-[11px] text-[#5B6B82]">Highlight in top marketplace spotlight banner</div>
+                      <div className="text-[11px] text-[#5B6B82]">Highlight with hot badge across Live Trading Board</div>
                     </div>
                   </div>
                   <input
@@ -961,7 +857,7 @@ export default function DashboardListingsPage() {
                 <div className="pt-3 flex gap-3">
                   <button
                     type="button"
-                    onClick={() => setCurrentStep(2)}
+                    onClick={() => setCurrentStep(1)}
                     className="py-3 px-5 rounded-full bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] font-bold text-[14px] flex items-center gap-1 transition cursor-pointer"
                   >
                     <ChevronLeft className="w-4 h-4" />

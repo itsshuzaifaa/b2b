@@ -121,20 +121,38 @@ export async function POST(request: NextRequest) {
 
     const companyId = compInsert?.id || userId;
 
-    // 2.3 Send Personal Welcome Message from Jeff (B2B LINK Desk) to the user's board
+    // 2.3 Send Automated Welcome Message from B2B LINK Support Team (Message 6)
     try {
       const { data: adminComp } = await admin.from('companies').select('id').eq('role', 'admin').maybeSingle();
       const adminCompanyId = adminComp?.id || 'facbb93f-080f-480f-b54b-8ef26664da86';
       const deskProductId = '00000000-0000-4000-a000-000000000001';
 
       const userDisplayName = firstName || contactName || 'there';
-      const welcomeText = `Hello ${userDisplayName}! Welcome to B2B LINK.\n\nI'm Jeff, Platform Director. Welcome to our European wholesale trading network. Your unified account gives you full capabilities to browse verified European inventory, upload wholesale stock lots, quote on active Want-To-Buy (WTB) requests, and connect directly with verified trading partners.\n\nOur desk is on standby if you need any assistance!`;
+      const welcomeText = `Hello ${userDisplayName},
+
+Welcome to B2B LINK.
+
+B2B LINK is designed to make wholesale trading faster and simpler.
+
+You can use the platform to:
+• Browse live BUY and SELL listings
+• Post what you have available or what you need
+• Receive relevant Buyer-Seller Matches
+• Search by product, EAN/UPC or item code
+• Connect directly with other members
+
+If you need any assistance, our Support Team is here to help.
+
+Welcome to the network.
+
+Kind regards,
+B2B LINK Support Team`;
 
       const welcomeThread = [
         {
           id: `welcome-${Date.now()}`,
           senderId: adminCompanyId,
-          senderName: 'Jeff Vetting Director (B2B LINK Desk)',
+          senderName: 'B2B LINK Support Team',
           senderRole: 'admin',
           text: welcomeText,
           timestamp: new Date().toISOString(),

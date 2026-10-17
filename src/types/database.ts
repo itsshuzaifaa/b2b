@@ -118,6 +118,7 @@ export type ProductInquiry = {
 export type WtbRequest = {
   id: string;
   buyer_company_id?: string | null;
+  buyer_user_id?: string | null;
   buyer_company?: string | null;
   buyer_name: string;
   buyer_email: string;
@@ -127,6 +128,7 @@ export type WtbRequest = {
   category_slug: string;
   target_quantity: number;
   target_price: number;
+  delivery_deadline?: string | null;
   barcode_or_sku?: string | null;
   notes?: string | null;
   status: WtbStatus;

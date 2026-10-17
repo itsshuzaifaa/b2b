@@ -70,6 +70,7 @@ function RegisterContent() {
     'consumer-electronics',
     'smartphones-tablets',
   ]);
+  const [customOtherNiche, setCustomOtherNiche] = useState('');
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   // Country code dropdown state
@@ -270,6 +271,10 @@ function RegisterContent() {
         setErrorMsg('Please select at least one wholesale product category.');
         return;
       }
+      if (selectedNiches.includes('other') && !customOtherNiche.trim()) {
+        setErrorMsg('Please specify your custom wholesale category name.');
+        return;
+      }
 
       setStep(4);
       return;
@@ -331,7 +336,9 @@ function RegisterContent() {
           vatNumber: vatNumber.trim(),
           role: 'seller', // Unified account for both buying and selling
           membershipTier: selectedTier, // User-selected membership package
-          selectedNiches,
+          selectedNiches: selectedNiches.map((niche) =>
+            niche === 'other' && customOtherNiche.trim() ? customOtherNiche.trim() : niche
+          ),
         }),
       });
 
@@ -387,7 +394,7 @@ function RegisterContent() {
         </div>
 
         {/* Contextual notice if redirected from WTB Request */}
-        {redirectParam === '/requests/new' && (
+        {(redirectParam === '/requests/new' || redirectParam?.startsWith('/requests')) && (
           <div className="mb-5 p-3.5 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-2.5 text-[13px] text-[#0A6CFF] font-medium">
             <span>Please create your account to post your WTB request. You will be redirected right back after registering!</span>
           </div>
@@ -804,6 +811,21 @@ function RegisterContent() {
                         );
                       })
                     )}
+                  </div>
+                )}
+
+                {selectedNiches.includes('other') && (
+                  <div className="mt-3 animate-in fade-in">
+                    <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1">
+                      Specify Category / Sector <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customOtherNiche}
+                      onChange={(e) => setCustomOtherNiche(e.target.value)}
+                      placeholder="Type your category (e.g. Solar Panels, Medical Labs, Vintage Goods...)"
+                      className="w-full px-4 py-2.5 text-[14px] bg-slate-50 border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] font-medium"
+                    />
                   </div>
                 )}
               </div>

@@ -74,7 +74,14 @@ export default function AdminProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {products.map((p) => (
+                {products.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-500 text-sm">
+                      No products in catalog. Newly created listings will appear here.
+                    </td>
+                  </tr>
+                ) : (
+                  products.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/70 transition">
                     <td className="px-6 py-4">
                       <div className="font-bold text-slate-900">{p.title}</div>
@@ -109,7 +116,8 @@ export default function AdminProductsPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
               </tbody>
             </table>
           </div>

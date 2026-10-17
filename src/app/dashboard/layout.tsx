@@ -430,20 +430,20 @@ export default function DashboardLayout({
                 Platform Access Temporarily Suspended
               </h2>
               <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed">
-                Your account ({companyName}) has been suspended by compliance administration. To review your account status or file an appeal, please contact our verification desk.
+                Your B2B LINK account ({companyName}) has been temporarily suspended while we review an account or verification matter. Please contact the B2B LINK Verification Team for further information.
               </p>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-left text-[13px] text-slate-700 space-y-2">
               <div><strong>Account Email:</strong> {company?.email}</div>
-              <div><strong>Support Desk:</strong> <a href="mailto:newcustomers@brandnova.info" className="text-[#0A6CFF] font-semibold hover:underline">newcustomers@brandnova.info</a></div>
-              <div><strong>Admin Officer:</strong> Jeff (Chief Verification Officer)</div>
+              <div><strong>Verification Team:</strong> <a href="mailto:verification@b2blink.eu" className="text-[#0A6CFF] font-semibold hover:underline">verification@b2blink.eu</a></div>
+              <div><strong>Status:</strong> Suspended (Under Review)</div>
             </div>
             <div className="flex justify-center gap-3 pt-2">
               <a
-                href="mailto:newcustomers@brandnova.info?subject=Account%20Reactivation%20Appeal%20-%20"
+                href="mailto:verification@b2blink.eu?subject=Account%20Reactivation%20Appeal%20-%20"
                 className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition"
               >
-                Contact Verification Officer
+                Contact Verification Team
               </a>
               <button
                 type="button"
@@ -472,13 +472,13 @@ export default function DashboardLayout({
               <div className="text-center space-y-3">
                 <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
                   <Lock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Account Restricted · Verification In Progress</span>
+                  <span>Account Status · Pending Verification</span>
                 </div>
                 <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight leading-tight">
-                  Verify Your Account to Unlock Dashboard
+                  Business Verification In Progress
                 </h2>
                 <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
-                  We have dispatched an onboarding checklist to <strong className="text-[#0B1F3A]">{company?.email || 'your email'}</strong>. Your dashboard is temporarily locked until your wholesale documents are verified.
+                  Your email address has been verified, and your account is now awaiting business verification by the B2B LINK Verification Team.
                 </p>
               </div>
 
@@ -489,10 +489,10 @@ export default function DashboardLayout({
                 </div>
                 <div className="text-[13px] leading-relaxed">
                   <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5">
-                    Check your email and reply with your documents
+                    Verification Team Review
                   </div>
                   <p className="text-[#3B5278]">
-                    Reply directly to the email sent to <strong className="text-[#0B1F3A]">{company?.email}</strong> with your business verification documents attached. Our verification officer, Jeff, will review and verify your account.
+                    Our Verification Team checks company registration details, VAT details where applicable, business contact information, company email/domain and bank account information. If additional information or documents are required, we will contact you directly at <strong className="text-[#0B1F3A]">{company?.email}</strong>.
                   </p>
                 </div>
               </div>
@@ -501,38 +501,38 @@ export default function DashboardLayout({
               <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
                 <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3 flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
-                  <span>Required Wholesale Trading Documents</span>
+                  <span>Business Verification Checks</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
                     <div>
                       <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
-                      <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or registry extract</div>
+                      <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or official registry extract</div>
                     </div>
                   </div>
 
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
                     <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Certificate</div>
-                      <div className="text-[11px] text-[#5B6B82]">National VAT certificate or European VIES document</div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
+                      <div className="text-[11px] text-[#5B6B82]">European VIES VAT or national business tax registration</div>
                     </div>
                   </div>
 
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
                     <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Proof of Operating Address</div>
-                      <div className="text-[11px] text-[#5B6B82]">Recent utility bill or corporate bank statement (&lt;90 days)</div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">Business Contact & Domain</div>
+                      <div className="text-[11px] text-[#5B6B82]">Corporate website domain and verified trading contact</div>
                     </div>
                   </div>
 
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
                     <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Director ID / References</div>
-                      <div className="text-[11px] text-[#5B6B82]">Director photo ID or 2 supplier trade references</div>
+                      <div className="text-[12px] font-bold text-[#0B1F3A]">Bank Account Information</div>
+                      <div className="text-[11px] text-[#5B6B82]">Corporate bank details or official statement header</div>
                     </div>
                   </div>
                 </div>
@@ -541,11 +541,11 @@ export default function DashboardLayout({
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
                 <a
-                  href={`mailto:newcustomers@brandnova.info?subject=KYC%20Verification%20Documents%20-%20${encodeURIComponent(company?.name || companyName)}`}
+                  href={`mailto:verification@b2blink.eu?subject=Business%20Verification%20Information%20-%20${encodeURIComponent(company?.name || companyName)}`}
                   className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition"
                 >
                   <Mail className="w-4 h-4" />
-                  <span>Email Documents to Jeff</span>
+                  <span>Contact Verification Team</span>
                 </a>
 
                 <button

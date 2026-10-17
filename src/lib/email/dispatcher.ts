@@ -7,6 +7,7 @@ import {
   quoteReceivedEmail,
   vettingDecisionEmail,
   passwordResetEmail,
+  passwordResetOtpEmail,
   verificationEmail,
   kycVerificationRequestEmail,
   adminNewCustomerAlertEmail,
@@ -18,6 +19,7 @@ import {
   type QuoteReceivedEmailProps,
   type VettingDecisionEmailProps,
   type PasswordResetEmailProps,
+  type PasswordResetOtpEmailProps,
   type VerificationEmailProps,
   type KycVerificationRequestEmailProps,
   type AccountApprovalEmailProps,
@@ -29,7 +31,7 @@ import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'BrandNova / B2B LINK <notifications@brandnova.info>';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'B2B LINK <notifications@b2blink.eu>';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface SendEmailResult {
@@ -53,7 +55,7 @@ export async function sendEmail({
   html: string;
   replyTo?: string;
 }): Promise<SendEmailResult> {
-  const effectiveReplyTo = replyTo || 'newcustomers@brandnova.info';
+  const effectiveReplyTo = replyTo || 'support@b2blink.eu';
 
   if (!resend) {
     console.warn(`[EMAIL DISPATCHER (DEV MOCK)] To: ${to} | ReplyTo: ${effectiveReplyTo} | Subject: ${subject}`);
@@ -167,6 +169,18 @@ export async function sendPasswordResetEmail(
 }
 
 /**
+ * Dispatches a Password Reset 6-digit OTP verification email.
+ */
+export async function sendPasswordResetOtpEmail(
+  toEmail: string,
+  props: PasswordResetOtpEmailProps
+): Promise<SendEmailResult> {
+  const { subject, html } = passwordResetOtpEmail(props);
+  return sendEmail({ to: toEmail, subject, html });
+}
+
+
+/**
  * Dispatches an account registration email verification OTP code.
  */
 export async function sendVerificationEmail(
@@ -178,8 +192,8 @@ export async function sendVerificationEmail(
 }
 
 /**
- * Dispatches KYC Document Checklist Request Email to new wholesale customer
- * Also alerts Jeff / newcustomers@brandnova.info
+ * Dispatches Business Verification Request Email to new wholesale customer
+ * Also alerts B2B LINK administration / verification queue
  */
 export async function sendKycVerificationRequestEmail(
   toEmail: string,
@@ -188,60 +202,67 @@ export async function sendKycVerificationRequestEmail(
   const actionUrl = `${APP_URL}/dashboard`;
   const { subject, html } = kycVerificationRequestEmail({ ...props, actionUrl });
 
-  // 1. Send onboarding KYC email to customer (replyTo: newcustomers@brandnova.info)
+  // 1. Send onboarding verification email to customer (replyTo: verification@b2blink.eu)
   const result = await sendEmail({
     to: toEmail,
     subject,
     html,
-    replyTo: 'newcustomers@brandnova.info',
+    replyTo: 'verification@b2blink.eu',
   });
 
-  // 2. Alert Jeff / Admin desk at newcustomers@brandnova.info
+  // 2. Alert B2B LINK administration / verification queue
   try {
     const adminAlert = adminNewCustomerAlertEmail({
       companyName: props.companyName,
       contactName: props.contactName,
       email: toEmail,
       phone: props.phone,
+      country: props.address ? props.address.split(',').pop()?.trim() : 'European Union',
       role: 'wholesale_member',
       actionUrl: `${APP_URL}/site-admin/users`,
     });
     void sendEmail({
-      to: 'newcustomers@brandnova.info',
+      to: 'admin@b2blink.eu',
       subject: adminAlert.subject,
       html: adminAlert.html,
       replyTo: toEmail,
     });
   } catch (adminErr) {
-    console.warn('[ADMIN KYC ALERT NOTICE]', adminErr);
+    console.warn('[ADMIN VERIFICATION QUEUE ALERT NOTICE]', adminErr);
   }
 
   return result;
 }
 
+export const sendBusinessVerificationRequestEmail = sendKycVerificationRequestEmail;
+
 /**
- * Dispatches Account Approval Email when Jeff verifies the account
+ * Dispatches Account Verified Email when the Verification Team activates the member account
  */
 export async function sendAccountApprovalEmail(
   toEmail: string,
   props: Omit<AccountApprovalEmailProps, 'actionUrl'>
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard`;
+  const actionUrl = `${APP_URL}/login`;
   const { subject, html } = accountApprovalEmail({ ...props, actionUrl });
-  return sendEmail({ to: toEmail, subject, html, replyTo: 'newcustomers@brandnova.info' });
+  return sendEmail({ to: toEmail, subject, html, replyTo: 'verification@b2blink.eu' });
 }
 
+export const sendAccountVerifiedEmail = sendAccountApprovalEmail;
+
 /**
- * Dispatches Account Suspension Email
+ * Dispatches Account Under Review / Suspension Email
  */
 export async function sendAccountSuspensionEmail(
   toEmail: string,
-  props: Omit<AccountSuspendedEmailProps, 'actionUrl'>
+  props: Omit<AccountSuspendedEmailProps, 'actionUrl'> & { status?: 'under_review' | 'suspended' }
 ): Promise<SendEmailResult> {
   const actionUrl = `${APP_URL}/contact`;
   const { subject, html } = accountSuspendedEmail({ ...props, actionUrl });
-  return sendEmail({ to: toEmail, subject, html, replyTo: 'newcustomers@brandnova.info' });
+  return sendEmail({ to: toEmail, subject, html, replyTo: 'verification@b2blink.eu' });
 }
+
+export const sendAccountUnderReviewEmail = sendAccountSuspensionEmail;
 
 type QueueItemWithRelations = WtbNotificationQueue & {
   wtb_request: WtbRequest | null;

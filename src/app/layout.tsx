@@ -6,6 +6,7 @@ import { AuthProvider } from '@/lib/auth/auth-context';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { LiveMessageToast } from '@/components/messaging/LiveMessageToast';
+import { CookieConsentBanner } from '@/components/cookies/CookieConsentBanner';
 
 const manrope = Manrope({
   subsets: ['latin'],
@@ -42,6 +43,9 @@ export default function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <LiveMessageToast />
+          </Suspense>
+          <Suspense fallback={null}>
+            <CookieConsentBanner />
           </Suspense>
         </AuthProvider>
       </body>

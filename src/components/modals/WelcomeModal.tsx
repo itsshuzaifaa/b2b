@@ -85,88 +85,112 @@ export function WelcomeModal({ buyerName, buyerEmail, companyId }: WelcomeModalP
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#00C2FF] bg-[#00C2FF]/10 px-2.5 py-0.5 rounded-full border border-[#00C2FF]/20 flex items-center gap-1.5">
               <Sparkles className="w-3 h-3 text-[#00C2FF]" />
-              <span>EUROPE&apos;S VETTED WHOLESALE NETWORK</span>
+              <span>EUROPE&apos;S VERIFIED WHOLESALE NETWORK</span>
             </span>
           </div>
 
           <div className="flex items-start gap-3.5 mt-2">
             <div className="w-12 h-12 rounded-2xl bg-[#00C2FF]/20 border border-[#00C2FF]/40 text-[#00C2FF] font-black text-[15px] flex items-center justify-center shrink-0 shadow-inner">
-              JF
+              B2B
             </div>
             <div>
               <h2 className="text-[20px] sm:text-[22px] font-extrabold tracking-tight text-white leading-snug">
-                Welcome to B2B LINK, {firstName}!
+                Welcome to B2B LINK
               </h2>
               <p className="text-[13px] text-[#A7BFDE] mt-0.5">
-                From <strong className="text-white font-semibold">Jeff Vetting Director</strong> · B2B LINK Platform Desk
+                From <strong className="text-white font-semibold">B2B LINK Support Team</strong> · Wholesale Platform Desk
               </p>
             </div>
           </div>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 sm:p-8 space-y-6">
+        <div className="p-6 sm:p-8 space-y-5">
           <p className="text-[14px] text-[#41536D] leading-relaxed">
-            Your verified wholesale buyer account is fully active. You now have direct access to deal with certified European distributors, request formal manifests, and submit Want-To-Buy tenders.
+            Your unified wholesale account is active. Connect directly with European trading partners to buy and sell products with zero broker fees.
           </p>
 
-          {/* 3 Pillar Benefits */}
-          <div className="grid grid-cols-1 gap-3">
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
+          {/* 5 Core Features from Message 7 Specification */}
+          <div className="grid grid-cols-1 gap-2.5 max-h-[320px] overflow-y-auto pr-1">
+            <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0A6CFF] flex items-center justify-center shrink-0 mt-0.5">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Live Trading Board</h4>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Browse current BUY and SELL listings from B2B LINK members.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Buyer-Seller Match</h4>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Receive relevant matches based on the products you are buying or selling.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Fast Product Posting</h4>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Use EAN/UPC and product information to create listings quickly.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Direct Contact</h4>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Connect directly with relevant trading partners.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center shrink-0 mt-0.5">
                 <Percent className="w-4 h-4" />
               </div>
               <div>
                 <h4 className="text-[13px] font-bold text-[#0B1F3A]">0% Transaction Commission</h4>
                 <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                  Deal directly with vetted European sellers on EXW / DDP terms with no broker markups or platform trade cuts.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Direct Supplier Inquiries</h4>
-                <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                  Ask questions, request proforma invoices, and inspect warehouse lot manifests directly inside your unified inbox.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 mt-0.5">
-                <FileText className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-[13px] font-bold text-[#0B1F3A]">Want-To-Buy Sourcing Board</h4>
-                <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                  Can&apos;t find what you need? Post target quantities and target prices — matching European suppliers receive immediate alerts.
+                  B2B LINK does not charge commission on trades between members.
                 </p>
               </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="space-y-2.5 pt-2">
+          <div className="space-y-2 pt-2">
             <button
               type="button"
               onClick={handleGoToMarketplace}
-              className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+              className="w-full min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
             >
-              <span>Explore Live Marketplace</span>
+              <span>Go to Trading Board</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
             <button
               type="button"
               onClick={handleOpenJeffChat}
-              className="w-full min-h-[44px] rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] font-bold text-[13px] flex items-center justify-center gap-2 transition-colors border border-[#0A6CFF]/20 cursor-pointer"
+              className="w-full min-h-[40px] rounded-full bg-[#EBF3FF] hover:bg-[#DCEBFF] text-[#0A6CFF] font-bold text-[13px] flex items-center justify-center gap-2 transition-colors border border-[#0A6CFF]/20 cursor-pointer"
             >
               <MessageSquare className="w-4 h-4" />
-              <span>Open Welcome Message from Jeff</span>
+              <span>Open Welcome Message from Support Team</span>
             </button>
 
             <button
@@ -174,7 +198,7 @@ export function WelcomeModal({ buyerName, buyerEmail, companyId }: WelcomeModalP
               onClick={handleDismiss}
               className="w-full text-center text-[12px] font-semibold text-[#5B6B82] hover:text-[#0B1F3A] py-1 transition cursor-pointer"
             >
-              Continue to Buyer Dashboard
+              Continue to Dashboard
             </button>
           </div>
         </div>

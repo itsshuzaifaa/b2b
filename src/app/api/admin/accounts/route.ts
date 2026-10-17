@@ -139,9 +139,168 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, status: 'suspended' });
     }
 
+    if (action === 'update_tier' || action === 'tier') {
+      const { tier } = body;
+      try {
+        const admin = createAdminClient();
+        await admin
+          .from('companies')
+          .update({
+            tier: tier || 'bronze',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', companyId);
+      } catch (dbErr) {
+        console.warn('[ADMIN TIER DB WARNING]', dbErr);
+      }
+
+      return NextResponse.json({ success: true, status: 'tier_updated', tier });
+    }
+
+    if (action === 'delete') {
+      try {
+        const admin = createAdminClient();
+
+        // 1. Query company to get user_id & email
+        let targetId = companyId;
+        let targetUserId: string | null = null;
+
+        const { data: comp } = await admin
+          .from('companies')
+          .select('id, user_id, contact_email')
+          .eq('id', companyId)
+          .maybeSingle();
+
+        if (comp) {
+          targetId = comp.id;
+          targetUserId = comp.user_id ?? null;
+        }
+
+        // 2. Cascade delete associated records
+        try {
+          await admin.from('products').delete().eq('company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('quotations').delete().eq('seller_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('wtb_requests').delete().eq('buyer_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('product_inquiries').delete().eq('seller_company_id', targetId);
+          await admin.from('product_inquiries').delete().eq('buyer_company_id', targetId);
+        } catch {}
+
+        // 3. Delete company record
+        await admin.from('companies').delete().eq('id', targetId);
+        if (email) {
+          await admin.from('companies').delete().eq('contact_email', email);
+        }
+
+        // 4. Delete Supabase Auth user if linked
+        if (targetUserId) {
+          try {
+            await admin.auth.admin.deleteUser(targetUserId);
+          } catch (authErr) {
+            console.warn('[ADMIN DELETE AUTH WARNING]', authErr);
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[ADMIN DELETE DB WARNING]', dbErr);
+      }
+
+      return NextResponse.json({ success: true, action: 'deleted', companyId });
+    }
+
     return NextResponse.json({ error: 'Invalid action specified' }, { status: 400 });
   } catch (err: any) {
     console.error('Error in /api/admin/accounts POST:', err);
+    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const companyId = searchParams.get('id') || searchParams.get('companyId');
+    const email = searchParams.get('email');
+
+    if (!companyId && !email) {
+      return NextResponse.json({ error: 'Company ID or Email is required' }, { status: 400 });
+    }
+
+    try {
+      const admin = createAdminClient();
+
+      let targetId = companyId;
+      let targetUserId: string | null = null;
+
+      if (companyId) {
+        const { data: comp } = await admin
+          .from('companies')
+          .select('id, user_id, contact_email')
+          .eq('id', companyId)
+          .maybeSingle();
+
+        if (comp) {
+          targetId = comp.id;
+          targetUserId = comp.user_id ?? null;
+        }
+      } else if (email) {
+        const { data: comp } = await admin
+          .from('companies')
+          .select('id, user_id, contact_email')
+          .eq('contact_email', email)
+          .maybeSingle();
+
+        if (comp) {
+          targetId = comp.id;
+          targetUserId = comp.user_id ?? null;
+        }
+      }
+
+      if (targetId) {
+        try {
+          await admin.from('products').delete().eq('company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('quotations').delete().eq('seller_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('wtb_requests').delete().eq('buyer_company_id', targetId);
+        } catch {}
+        try {
+          await admin.from('product_inquiries').delete().eq('seller_company_id', targetId);
+          await admin.from('product_inquiries').delete().eq('buyer_company_id', targetId);
+        } catch {}
+
+        await admin.from('companies').delete().eq('id', targetId);
+      }
+
+      if (email) {
+        await admin.from('companies').delete().eq('contact_email', email);
+      }
+
+      if (targetUserId) {
+        try {
+          await admin.auth.admin.deleteUser(targetUserId);
+        } catch (authErr) {
+          console.warn('[ADMIN DELETE AUTH WARNING]', authErr);
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[ADMIN DELETE DB WARNING]', dbErr);
+    }
+
+    return NextResponse.json({ success: true, action: 'deleted', companyId });
+  } catch (err: any) {
+    console.error('Error in /api/admin/accounts DELETE:', err);
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
   }
 }

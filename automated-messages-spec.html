@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>B2B LINK - Automated Communications & Verification Guide</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    @page {
+      size: A4;
+      margin: 14mm 14mm 14mm 14mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #0B1F3A;
+      background: #FFFFFF;
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+      font-size: 13px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    /* Header Bar */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #0A6CFF;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-badge {
+      background: #0B1F3A;
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 16px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-badge span {
+      color: #00C2FF;
+    }
+
+    .doc-meta {
+      text-align: right;
+      font-size: 11px;
+      color: #64748B;
+    }
+
+    .doc-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #0B1F3A;
+      letter-spacing: -0.02em;
+      margin: 0 0 4px 0;
+    }
+
+    .doc-subtitle {
+      font-size: 13px;
+      color: #475569;
+      font-style: italic;
+      margin: 0 0 16px 0;
+    }
+
+    .summary-card {
+      background: #F1F5FB;
+      border: 1px solid #D6E4F5;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 12px;
+      color: #1E293B;
+    }
+
+    .department-card {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+    }
+
+    .department-list {
+      margin: 8px 0 0 0;
+      padding-left: 20px;
+      line-height: 1.7;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #0B1F3A;
+      border-left: 4px solid #0A6CFF;
+      padding-left: 10px;
+      margin: 24px 0 14px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .msg-card {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 4px rgba(11, 31, 58, 0.03);
+    }
+
+    .msg-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #EDF2F7;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .msg-type-pill {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 3px 8px;
+      border-radius: 9999px;
+    }
+
+    .pill-email {
+      background: #EFF6FF;
+      color: #1D4ED8;
+      border: 1px solid #BFDBFE;
+    }
+
+    .pill-alert {
+      background: #FEF3C7;
+      color: #B45309;
+      border: 1px solid #FDE68A;
+    }
+
+    .pill-chat {
+      background: #ECFDF5;
+      color: #047857;
+      border: 1px solid #A7F3D0;
+    }
+
+    .msg-meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+      font-size: 11.5px;
+    }
+
+    .msg-meta-table td {
+      padding: 4px 6px;
+      vertical-align: top;
+    }
+
+    .meta-label {
+      width: 120px;
+      font-weight: 700;
+      color: #64748B;
+    }
+
+    .meta-val {
+      color: #0F172A;
+      font-weight: 600;
+    }
+
+    .meta-val code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: #F1F5F9;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #0B1F3A;
+    }
+
+    .email-preview {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #1E293B;
+    }
+
+    .email-preview h4 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0B1F3A;
+    }
+
+    .otp-box {
+      background: #FFFFFF;
+      border: 2px dashed #0A6CFF;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      margin: 12px 0;
+    }
+
+    .otp-digits {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      color: #0B1F3A;
+    }
+
+    .cta-btn {
+      display: inline-block;
+      background: #0A6CFF;
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 8px 20px;
+      border-radius: 9999px;
+      text-decoration: none;
+      margin-top: 6px;
+    }
+
+    .term-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+
+    .term-table th, .term-table td {
+      border: 1px solid #E2E8F0;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .term-table th {
+      background: #0B1F3A;
+      color: #FFFFFF;
+      font-weight: 700;
+    }
+
+    .term-table tr:nth-child(even) {
+      background: #F8FAFC;
+    }
+
+    .footer-bar {
+      margin-top: 30px;
+      padding-top: 12px;
+      border-top: 1px solid #E2E8F0;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #64748B;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header-bar">
+    <div class="logo-container">
+      <div class="logo-badge">B2B<span>LINK</span></div>
+      <div style="font-weight: 700; font-size: 13px; color: #5B6B82;">Automated Communications & Verification Guide</div>
+    </div>
+    <div class="doc-meta">
+      <div><strong>B2B LINK OÜ</strong> | Internal Platform Specification</div>
+      <div><strong>Date:</strong> October 2026</div>
+    </div>
+  </div>
+
+  <h1 class="doc-title">AUTOMATED COMMUNICATIONS & VERIFICATION GUIDE</h1>
+  <p class="doc-subtitle">Final reviewed wording for platform implementation</p>
+
+  <div class="summary-card">
+    <strong style="color: #0A6CFF; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px;">
+      SYSTEM OVERVIEW & LIFECYCLE TRIGGERS
+    </strong>
+    All B2B LINK accounts are unified wholesale accounts that can be used to both buy and sell products.<br/><br/>
+    Newly registered accounts remain in Pending Verification status until the required business checks have been completed. Verification confirms that B2B LINK has carried out its membership checks; it does not guarantee a company, product or transaction.<br/><br/>
+    This guide defines the approved automated email, in-app and internal admin messages used throughout registration, verification, onboarding and support. Automated customer-facing messages should come from a B2B LINK department rather than an individual staff member.
+  </div>
+
+  <div class="department-card">
+    <strong style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #0B1F3A;">APPROVED DEPARTMENT NAMES</strong>
+    <ul class="department-list">
+      <li><strong>B2B LINK Support Team</strong> - General enquiries, welcome messages and account help.</li>
+      <li><strong>B2B LINK Verification Team</strong> - Business verification, additional information requests and account reviews.</li>
+      <li><strong>B2B LINK Membership Team</strong> - Membership plans, renewals and account-plan matters.</li>
+      <li><strong>B2B LINK Trading Support</strong> - Trading Board and listing assistance.</li>
+    </ul>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section-title">SECTION 1: AUTOMATED EMAIL MESSAGES</div>
+
+  <!-- 1. Email Verification -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">1. Email Verification</div>
+      <span class="msg-type-pill pill-email">Registration Trigger</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">User submits the registration form</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Registered business email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Verify Your Email Address - B2B LINK</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>Welcome to B2B LINK.</p>
+      <p>To verify your email address and continue setting up your account, please enter the following verification code:</p>
+      <div class="otp-box">
+        <div class="otp-digits">[Verification Code]</div>
+        <div style="font-size: 10px; color: #64748B; margin-top: 4px;">This code is valid for 15 minutes.</div>
+      </div>
+      <p>Alternatively, click the button below to verify your email address:</p>
+      <div style="text-align: center; margin: 10px 0;">
+        <span class="cta-btn">[Verify Email Address]</span>
+      </div>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Support Team</strong></p>
+    </div>
+  </div>
+
+  <!-- 2. Business Verification Request -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">2. Business Verification Request</div>
+      <span class="msg-type-pill pill-alert">Action Required</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Sent after the business email address has been verified</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Registered customer contact email</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Action Required: Complete Your B2B LINK Business Verification</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>Thank you for registering [Company Name] with B2B LINK.</p>
+      <p>Your email address has been verified, and your account is now awaiting business verification.</p>
+      <p>Our Verification Team may check information including company registration details, VAT details where applicable, business contact information, company email/domain and bank account information.</p>
+      <p>If we require any additional information or supporting documents, we will contact you directly.</p>
+      <p>Your account will remain in Pending Verification status until the review has been completed.</p>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Verification Team</strong></p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 3. New Member Verification - Internal Admin Alert -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">3. New Member Verification - Internal Admin Alert</div>
+      <span class="msg-type-pill pill-email">Internal Admin Alert</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Generated automatically when a new company registers</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Internal B2B LINK administration / verification queue</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>New Member Verification Required - [Company Name]</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>A new company has registered with B2B LINK and is awaiting verification.</p>
+      <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 12px;">
+        <div><strong>Company:</strong> [Company Name]</div>
+        <div><strong>Contact:</strong> [Contact Name]</div>
+        <div><strong>Email:</strong> [Email]</div>
+        <div><strong>Telephone:</strong> [Phone]</div>
+        <div><strong>Country:</strong> [Country]</div>
+      </div>
+      <p>Please review the company information in the Admin Panel and complete the required verification checks.</p>
+      <p style="font-weight: 700; color: #B45309;">Current Status: Pending Verification</p>
+    </div>
+  </div>
+
+  <!-- 4. Account Verified -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">4. Account Verified</div>
+      <span class="msg-type-pill pill-chat">Verified Member</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Sent when the Verification Team activates the member account</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Customer business email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Your B2B LINK Account Has Been Verified</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>We are pleased to confirm that the business verification for [Company Name] has been completed.</p>
+      <p style="color: #15803D; font-weight: 700;">Your account is now active and your company has Verified Member status on B2B LINK.</p>
+      <p>You can now access the features available under your membership, including:</p>
+      <ul style="padding-left: 20px; line-height: 1.7;">
+        <li>Browse live BUY and SELL listings</li>
+        <li>Post and manage your own BUY and SELL requirements</li>
+        <li>Receive relevant Buyer-Seller Matches</li>
+        <li>Search for products and trading opportunities</li>
+        <li>Connect directly with other members</li>
+      </ul>
+      <p>You can log in to your account to get started.</p>
+      <p style="font-weight: 700;">Welcome to B2B LINK.</p>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Verification Team</strong></p>
+    </div>
+  </div>
+
+  <!-- 5. Account Under Review / Suspended -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">5. Account Under Review / Suspended</div>
+      <span class="msg-type-pill pill-alert">Account Notice</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Sent when additional verification information is required, or when an active account is placed under review</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Customer business email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Update Regarding Your B2B LINK Account</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>We are contacting you regarding the B2B LINK account for [Company Name].</p>
+      <p style="font-weight: 700; color: #B45309;">Account Status: Under Review</p>
+      <p>We require additional information before we can complete the verification of your account.</p>
+      <p>Please reply to this email with any information requested by our Verification Team.</p>
+      <p>Once the required information has been received, we will continue our review and update you as soon as possible.</p>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Verification Team</strong></p>
+
+      <div style="background: #FEE2E2; border-left: 3px solid #EF4444; padding: 8px 12px; margin-top: 12px; font-size: 11px; color: #991B1B;">
+        <em>If an already-active account is genuinely suspended, use:</em> &ldquo;Account Status: Suspended. Your B2B LINK account has been temporarily suspended while we review an account or verification matter. Please contact the B2B LINK Verification Team for further information.&rdquo;
+      </div>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 2 -->
+  <div class="section-title">SECTION 2: IN-APP & DASHBOARD MESSAGES</div>
+
+  <!-- 6. In-App Welcome Message -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">6. In-App Welcome Message</div>
+      <span class="msg-type-pill pill-chat">In-App Chat</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Displayed automatically after account creation / first access to messages</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Sender:</td>
+        <td class="meta-val"><code>B2B LINK Support Team</code></td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Customer in-app messaging panel</td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [First Name],</p>
+      <p>Welcome to B2B LINK.</p>
+      <p>B2B LINK is designed to make wholesale trading faster and simpler.</p>
+      <p>You can use the platform to:</p>
+      <ul style="padding-left: 20px; line-height: 1.7;">
+        <li>Browse live BUY and SELL listings</li>
+        <li>Post what you have available or what you need</li>
+        <li>Receive relevant Buyer-Seller Matches</li>
+        <li>Search by product, EAN/UPC or item code</li>
+        <li>Connect directly with other members</li>
+      </ul>
+      <p>If you need any assistance, our Support Team is here to help.</p>
+      <p style="font-weight: 700;">Welcome to the network.</p>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Support Team</strong></p>
+    </div>
+  </div>
+
+  <!-- 7. First-Login Welcome -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">7. First-Login Welcome</div>
+      <span class="msg-type-pill pill-chat">Dashboard Modal / Banner</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Displayed on the member’s first dashboard login</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">User browser / dashboard</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Title:</td>
+        <td class="meta-val"><code>Welcome to B2B LINK</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <div style="font-size: 14px; font-weight: 800; color: #0B1F3A; margin-bottom: 8px;">Welcome to B2B LINK</div>
+      <div style="margin-bottom: 10px;">
+        <strong>Live Trading Board</strong><br/>
+        Browse current BUY and SELL listings from B2B LINK members.
+      </div>
+      <div style="margin-bottom: 10px;">
+        <strong>Buyer-Seller Match</strong><br/>
+        Receive relevant matches based on the products you are buying or selling.
+      </div>
+      <div style="margin-bottom: 10px;">
+        <strong>Fast Product Posting</strong><br/>
+        Use EAN/UPC and product information to create listings quickly.
+      </div>
+      <div style="margin-bottom: 10px;">
+        <strong>Direct Contact</strong><br/>
+        Connect directly with relevant trading partners.
+      </div>
+      <div style="margin-bottom: 12px;">
+        <strong>0% Transaction Commission</strong><br/>
+        B2B LINK does not charge commission on trades between members.
+      </div>
+      <div>
+        <span class="cta-btn">[Go to Trading Board]</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Customer Support Reply -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">8. Customer Support Reply</div>
+      <span class="msg-type-pill pill-email">Support Response</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Sent when B2B LINK replies to a customer enquiry</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Prospective or registered customer email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Response from B2B LINK Support</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Customer Name],</p>
+      <p>Thank you for contacting B2B LINK.</p>
+      <p>Our Support Team has reviewed your enquiry regarding [Company Name].</p>
+      <p><strong>Our response:</strong><br/>[Support Reply Message]</p>
+      <p><strong>Your original enquiry:</strong><br/>[Customer Query]</p>
+      <p>You can reply directly to this email if you require any further assistance.</p>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Support Team</strong></p>
+    </div>
+  </div>
+
+  <!-- FINAL TERMINOLOGY STANDARD -->
+  <div class="section-title">FINAL TERMINOLOGY STANDARD</div>
+
+  <table class="term-table">
+    <thead>
+      <tr>
+        <th style="width: 40%;">Use</th>
+        <th style="width: 60%;">Avoid / Replace</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Verified Member</strong></td>
+        <td>Certified business / approved trader</td>
+      </tr>
+      <tr>
+        <td><strong>Business Verification</strong></td>
+        <td>KYC, unless legally required for a specific process</td>
+      </tr>
+      <tr>
+        <td><strong>BUY / SELL listing</strong></td>
+        <td>WTB / procurement request, unless intentionally used</td>
+      </tr>
+      <tr>
+        <td><strong>B2B LINK Support Team</strong></td>
+        <td>Compliance Desk for ordinary customer support</td>
+      </tr>
+      <tr>
+        <td><strong>Under Review</strong></td>
+        <td>Suspended, unless the account has actually been suspended</td>
+      </tr>
+      <tr>
+        <td><strong>Buyer-Seller Match</strong></td>
+        <td>AI Match / Smart Match in customer-facing core terminology</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-size: 11px; color: #64748B; margin-top: 12px; font-style: italic;">
+    <strong>Implementation note:</strong> Customer-facing automated communications should be sent from the appropriate B2B LINK department rather than a named individual, so messaging remains consistent if staff responsibilities change.
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer-bar">
+    <div>B2B LINK OÜ &bull; Narva mnt 5, 10117 Tallinn, Estonia &bull; Registered in the Republic of Estonia</div>
+    <div>Department Desk: support@b2blink.eu &bull; verification@b2blink.eu</div>
+  </div>
+
+</body>
+</html>

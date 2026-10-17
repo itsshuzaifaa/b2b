@@ -40,6 +40,8 @@ export default function SiteAdminPaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentRecord | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [currentMonthStr, setCurrentMonthStr] = useState('Oct');
+  const [currentMonthYearStr, setCurrentMonthYearStr] = useState('Oct 2026');
 
   const loadData = () => {
     setPayments(getAdminPayments());
@@ -47,6 +49,11 @@ export default function SiteAdminPaymentsPage() {
 
   useEffect(() => {
     loadData();
+    try {
+      const now = new Date();
+      setCurrentMonthStr(now.toLocaleDateString('en-GB', { month: 'short' }));
+      setCurrentMonthYearStr(now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }));
+    } catch {}
     window.addEventListener('b2b_admin_update', loadData);
     return () => window.removeEventListener('b2b_admin_update', loadData);
   }, []);
@@ -79,20 +86,18 @@ export default function SiteAdminPaymentsPage() {
       if (!matchesSearch) return false;
 
       if (dateFilter === 'month') {
-        const currentMonth = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
-        return p.created_at.includes(currentMonth) || p.created_at.includes('2026');
+        return p.created_at.includes(currentMonthYearStr) || p.created_at.includes('2026');
       }
 
       return true;
     });
-  }, [payments, searchQuery, dateFilter]);
+  }, [payments, searchQuery, dateFilter, currentMonthYearStr]);
 
   // Aggregate metrics
   const completedPayments = payments.filter((p) => p.status === 'Completed');
   const totalSettled = completedPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 
   // This month's payments
-  const currentMonthStr = new Date().toLocaleDateString('en-GB', { month: 'short' });
   const thisMonthPayments = completedPayments.filter((p) => p.created_at.includes(currentMonthStr) || p.created_at.includes('Oct'));
   const thisMonthTotal = thisMonthPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 

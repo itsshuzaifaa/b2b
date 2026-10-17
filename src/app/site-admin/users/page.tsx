@@ -11,6 +11,7 @@ import {
   deleteAccount,
   updateAccountTier,
   updateAccountApproval,
+  isAccountDeleted,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
@@ -51,12 +52,15 @@ export default function SiteAdminUsersPage() {
 
   const loadData = async () => {
     try {
-      const res = await fetch('/api/admin/accounts');
+      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (data.accounts && data.accounts.length > 0) {
-          setAccounts(data.accounts);
-          saveAdminAccounts(data.accounts);
+        if (Array.isArray(data.accounts)) {
+          const cleanAccounts = data.accounts.filter(
+            (a: AdminClientAccount) => !isAccountDeleted(a.id, a.email)
+          );
+          setAccounts(cleanAccounts);
+          saveAdminAccounts(cleanAccounts);
           return;
         }
       }
@@ -78,7 +82,13 @@ export default function SiteAdminUsersPage() {
   };
 
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
+    // Optimistic AJAX state update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+    );
     updateAccountApproval(acc.id, 'approved');
+    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
+
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
@@ -92,13 +102,26 @@ export default function SiteAdminUsersPage() {
         }),
       });
     } catch {}
-    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
     loadData();
   };
 
   const handleToggleSuspend = async (acc: AdminClientAccount) => {
-    if (acc.account_status === 'suspended') {
+    const isCurrentlySuspended = acc.account_status === 'suspended';
+    const newStatus = isCurrentlySuspended ? 'active' : 'suspended';
+    const newApproval = isCurrentlySuspended ? 'approved' : 'rejected';
+
+    // Optimistic AJAX state update
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === acc.id
+          ? { ...a, account_status: newStatus, approval_status: newApproval }
+          : a
+      )
+    );
+
+    if (isCurrentlySuspended) {
       unsuspendAccount(acc.id);
+      showNotice(`Account "${acc.name}" reactivated. Welcome notice dispatched.`);
       try {
         await fetch('/api/admin/accounts', {
           method: 'POST',
@@ -112,9 +135,9 @@ export default function SiteAdminUsersPage() {
           }),
         });
       } catch {}
-      showNotice(`Account "${acc.name}" reactivated. Welcome notice dispatched.`);
     } else {
       suspendAccount(acc.id);
+      showNotice(`Account "${acc.name}" suspended. Suspension notice dispatched to ${acc.email}.`);
       try {
         await fetch('/api/admin/accounts', {
           method: 'POST',
@@ -128,24 +151,61 @@ export default function SiteAdminUsersPage() {
           }),
         });
       } catch {}
-      showNotice(`Account "${acc.name}" suspended. Suspension notice dispatched to ${acc.email}.`);
     }
     loadData();
   };
 
-  const handleDelete = (id: string) => {
-    deleteAccount(id);
+  const handleDelete = async (acc: AdminClientAccount) => {
+    // 1. Optimistic AJAX UI update immediately - NO hard reload
+    setAccounts((prev) => prev.filter((a) => a.id !== acc.id && a.email !== acc.email));
     setDeleteConfirmAccount(null);
-    showNotice('Account successfully removed from platform.');
+    deleteAccount(acc.id, acc.email);
+    showNotice(`Account "${acc.name}" permanently deleted.`);
+
+    // 2. AJAX call to API to delete from database
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          companyId: acc.id,
+          email: acc.email,
+        }),
+      });
+    } catch (err) {
+      console.warn('AJAX delete error:', err);
+    }
+
+    // 3. Re-sync via AJAX in background
     loadData();
   };
 
-  const handleSaveTier = (e: React.FormEvent) => {
+  const handleSaveTier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTierAccount) return;
-    updateAccountTier(editingTierAccount.id, selectedTier);
+    const targetAccount = editingTierAccount;
+    const newTier = selectedTier;
     setEditingTierAccount(null);
-    showNotice(`Membership tier updated to ${selectedTier.toUpperCase()} for ${editingTierAccount.name}`);
+
+    // Optimistic AJAX update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === targetAccount.id ? { ...a, membership_tier: newTier } : a))
+    );
+    updateAccountTier(targetAccount.id, newTier);
+    showNotice(`Membership tier updated to ${newTier.toUpperCase()} for ${targetAccount.name}`);
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_tier',
+          companyId: targetAccount.id,
+          tier: newTier,
+        }),
+      });
+    } catch {}
     loadData();
   };
 
@@ -640,7 +700,7 @@ export default function SiteAdminUsersPage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(deleteConfirmAccount.id)}
+                onClick={() => handleDelete(deleteConfirmAccount)}
                 className="px-6 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-[13px] shadow-xs transition cursor-pointer"
               >
                 Yes, Delete Account

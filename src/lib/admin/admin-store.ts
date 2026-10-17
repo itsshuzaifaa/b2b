@@ -1,6 +1,7 @@
 'use client';
 
 import { MOCK_COMPANIES, MOCK_PRODUCTS } from '@/lib/mock-data';
+import { ALL_TRADING_BOARD_ITEMS, type TradingBoardItem } from '@/lib/trading-board-data';
 import type { Company, MembershipTier, ApprovalStatus } from '@/types/database';
 import {
   getStoredConversations,
@@ -53,12 +54,22 @@ export interface AdminPaymentRecord {
 
 export interface AdminModeratedListing {
   id: string;
+  type: 'BUY' | 'SELL';
   company_id: string;
   company_name: string;
   seller_email: string;
+  contact_name?: string;
+  contact_phone?: string;
   title: string;
+  brand: string;
+  item_code: string;
   category_slug: string;
+  category_name: string;
+  ean: string;
+  condition: string;
   unit_price: number;
+  currency: string;
+  location: string;
   quantity_available: number;
   moq: number;
   barcode_or_sku?: string | null;
@@ -69,123 +80,58 @@ export interface AdminModeratedListing {
   created_at: string;
 }
 
-// STORAGE KEYS
-const ACCOUNTS_STORAGE_KEY = 'b2b_admin_accounts_v3';
-const PAYMENTS_STORAGE_KEY = 'b2b_admin_payments_v3';
-const LISTINGS_STORAGE_KEY = 'b2b_admin_listings_v1';
+// STORAGE KEYS (bumped to v4 for clean testing state)
+const ACCOUNTS_STORAGE_KEY = 'b2b_admin_accounts_v4';
+const PAYMENTS_STORAGE_KEY = 'b2b_admin_payments_v4';
+const LISTINGS_STORAGE_KEY = 'b2b_admin_listings_v5';
+const DELETED_ACCOUNTS_STORAGE_KEY = 'b2b_admin_deleted_accounts_v4';
 
-// INITIAL SEED ACCOUNTS
-// INITIAL SEED ACCOUNTS - Only real user accounts
-const INITIAL_ACCOUNTS: AdminClientAccount[] = [
-  {
-    id: 'b40715ed-1c53-4988-a4ab-9e3d437bc2b1',
-    name: 'fluxify digital',
-    contact_name: 'Habib Rehman',
-    email: 'huzaifaff559@gmail.com',
-    phone: '+92 321 2722444',
-    role: 'seller',
-    membership_tier: 'silver',
-    approval_status: 'approved',
-    account_status: 'active',
-    company_number: 'EE-123456',
-    vat_number: 'EE102938475',
-    country: 'Estonia',
-    created_at: '2026-10-15T09:40:00Z',
-    last_active: 'Just now',
-    listings_count: 0,
-    total_spend_or_sales: '£79/mo Membership',
-    verified_documents: true,
-  },
-  {
-    id: '87d3cc3d-4d43-48f4-9df3-ffdcb84a9319',
-    name: 'huzaifa Faisal',
-    contact_name: 'huzaifa Faisal',
-    email: 'huzaifa.webdesigner@gmail.com',
-    phone: '+44 7911 123456',
-    role: 'buyer',
-    membership_tier: 'bronze',
-    approval_status: 'approved',
-    account_status: 'active',
-    company_number: null,
-    vat_number: null,
-    country: 'United Kingdom',
-    created_at: '2026-10-14T11:00:00Z',
-    last_active: 'Today',
-    listings_count: 0,
-    total_spend_or_sales: '£0 (Free Buyer Access)',
-    verified_documents: true,
-  },
-];
+export function getDeletedAccountIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DELETED_ACCOUNTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
 
-// INITIAL SEED PAYMENTS - Stripe Ledger Format
-const INITIAL_PAYMENTS: AdminPaymentRecord[] = [
-  {
-    id: 'pi_3Nx8294019284',
-    company_id: 'b40715ed-1c53-4988-a4ab-9e3d437bc2b1',
-    company_name: 'fluxify digital',
-    contact_email: 'huzaifaff559@gmail.com',
-    plan_or_service: 'Silver Commercial Tier (Monthly)',
-    amount_gbp: 79.0,
-    payment_method: 'Corporate Card',
-    wise_reference: 'pm_card_visa_4242',
-    transaction_id: 'ch_3Nx8294019284',
-    status: 'Completed',
-    created_at: 'Oct 15, 11:14 AM',
-    completed_at: 'Oct 15, 11:14 AM',
-    invoice_number: 'in_1Nx8294019284',
-    notes: 'Stripe card checkout authorized via 3D Secure. Cardholder: Habib Rehman.',
-  },
-  {
-    id: 'pi_3Nx8294019283',
-    company_id: 'b40715ed-1c53-4988-a4ab-9e3d437bc2b1',
-    company_name: 'fluxify digital',
-    contact_email: 'huzaifaff559@gmail.com',
-    plan_or_service: 'Subscription update',
-    amount_gbp: 79.0,
-    payment_method: 'Corporate Card',
-    wise_reference: 'pm_card_visa_4242',
-    transaction_id: 'ch_3Nx8294019283',
-    status: 'Completed',
-    created_at: 'Sep 15, 10:30 AM',
-    completed_at: 'Sep 15, 10:30 AM',
-    invoice_number: 'in_1Nx8294019283',
-    notes: 'Recurring monthly renewal settled via Stripe card ending in 4242.',
-  },
-  {
-    id: 'pi_3Nx8294019282',
-    company_id: 'b40715ed-1c53-4988-a4ab-9e3d437bc2b1',
-    company_name: 'fluxify digital',
-    contact_email: 'huzaifaff559@gmail.com',
-    plan_or_service: 'Account Activation & Card Checkout',
-    amount_gbp: 79.0,
-    payment_method: 'Corporate Card',
-    wise_reference: 'pm_card_visa_4242',
-    transaction_id: 'ch_3Nx8294019282',
-    status: 'Completed',
-    created_at: 'Aug 15, 09:12 AM',
-    completed_at: 'Aug 15, 09:12 AM',
-    invoice_number: 'in_1Nx8294019282',
-    notes: 'Initial registration card verification and commercial checkout.',
-  },
-];
+export function markAccountAsDeleted(idOrEmail?: string | null) {
+  if (typeof window === 'undefined' || !idOrEmail) return;
+  try {
+    const list = getDeletedAccountIds();
+    const clean = idOrEmail.trim().toLowerCase();
+    let changed = false;
+    if (!list.includes(clean)) {
+      list.push(clean);
+      changed = true;
+    }
+    if (!list.includes(idOrEmail)) {
+      list.push(idOrEmail);
+      changed = true;
+    }
+    if (changed) {
+      localStorage.setItem(DELETED_ACCOUNTS_STORAGE_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
 
-// INITIAL SEED MODERATED LISTINGS
-const INITIAL_LISTINGS: AdminModeratedListing[] = MOCK_PRODUCTS.map((prod) => ({
-  id: prod.id,
-  company_id: prod.company_id,
-  company_name: prod.company?.name || 'Verified Wholesale Supplier',
-  seller_email: prod.company?.email || 'supplier@trade.eu',
-  title: prod.title,
-  category_slug: prod.category_slug,
-  unit_price: prod.unit_price,
-  quantity_available: prod.quantity_available,
-  moq: prod.moq,
-  barcode_or_sku: prod.barcode_or_sku,
-  is_hot: prod.is_hot,
-  moderation_status: 'active',
-  images: prod.images || ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
-  created_at: prod.created_at,
-}));
+export function isAccountDeleted(id?: string | null, email?: string | null): boolean {
+  const deleted = getDeletedAccountIds();
+  if (!deleted || deleted.length === 0) return false;
+  if (id && deleted.includes(id)) return true;
+  if (email && (deleted.includes(email) || deleted.includes(email.trim().toLowerCase()))) return true;
+  return false;
+}
+
+// INITIAL SEED ACCOUNTS (Clean empty state for real user accounts & testing)
+const INITIAL_ACCOUNTS: AdminClientAccount[] = [];
+
+// INITIAL SEED PAYMENTS - Stripe Ledger Format (Empty for testing)
+const INITIAL_PAYMENTS: AdminPaymentRecord[] = [];
+
+// INITIAL SEED MODERATED LISTINGS (Empty for testing)
+const INITIAL_LISTINGS: AdminModeratedListing[] = [];
 
 // BROADCAST HELPER
 function broadcastAdminUpdate() {
@@ -198,24 +144,29 @@ function broadcastAdminUpdate() {
 // 1. ACCOUNTS MANAGEMENT
 // ==========================================
 export function getAdminAccounts(): AdminClientAccount[] {
-  if (typeof window === 'undefined') return INITIAL_ACCOUNTS;
+  if (typeof window === 'undefined') return INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
   try {
     const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((a) => !isAccountDeleted(a.id, a.email));
+      }
     }
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(INITIAL_ACCOUNTS));
+    const filteredInitial = INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
+    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filteredInitial));
+    return filteredInitial;
   } catch {
     // ignore
   }
-  return INITIAL_ACCOUNTS;
+  return INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
 }
 
 export function saveAdminAccounts(accounts: AdminClientAccount[]) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+    const cleanAccounts = accounts.filter((a) => !isAccountDeleted(a.id, a.email));
+    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(cleanAccounts));
     broadcastAdminUpdate();
   } catch {
     // ignore
@@ -244,9 +195,15 @@ export function unsuspendAccount(companyId: string): boolean {
   return true;
 }
 
-export function deleteAccount(companyId: string): boolean {
+export function deleteAccount(companyId: string, email?: string | null): boolean {
+  markAccountAsDeleted(companyId);
+  if (email) {
+    markAccountAsDeleted(email);
+  }
   const current = getAdminAccounts();
-  const updated = current.filter((acc) => acc.id !== companyId);
+  const updated = current.filter(
+    (acc) => acc.id !== companyId && (!email || acc.email.toLowerCase() !== email.toLowerCase())
+  );
   saveAdminAccounts(updated);
   return true;
 }
@@ -319,9 +276,9 @@ export function getAdminPayments(): AdminPaymentRecord[] {
   if (typeof window === 'undefined') return INITIAL_PAYMENTS;
   try {
     const raw = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
     localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(INITIAL_PAYMENTS));
   } catch {
@@ -396,12 +353,96 @@ export function deletePayment(paymentId: string): boolean {
 export function getAdminListings(): AdminModeratedListing[] {
   if (typeof window === 'undefined') return INITIAL_LISTINGS;
   try {
+    // Clear out legacy mock and old test keys so they never contaminate the store
+    localStorage.removeItem('b2b_admin_listings_v1');
+    localStorage.removeItem('b2b_admin_listings_v2');
+    localStorage.removeItem('b2b_admin_listings_v3');
+    localStorage.removeItem('b2b_admin_listings_v4');
+    localStorage.removeItem('b2b_seller_listings_v1');
+    localStorage.removeItem('b2b_seller_listings_real_v2');
+    localStorage.removeItem('b2b_user_wtb_requests_v1');
+
+    // 1. Check if we have user-created sell listings or WTBs in localStorage
+    const rawUserListings = localStorage.getItem('b2b_seller_listings_v3');
+    const userSellListings = rawUserListings ? JSON.parse(rawUserListings) : [];
+
+    const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
+    const userWtbListings = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
+
+    const formattedUserItems: AdminModeratedListing[] = [
+      ...(Array.isArray(userSellListings)
+        ? userSellListings.map((l: any, idx: number) => ({
+            id: l.id || `user-lst-${idx}`,
+            type: 'SELL' as const,
+            company_id: l.company_id || 'user-seller',
+            company_name: l.companyName || 'Verified Supplier',
+            seller_email: l.contactEmail || 'supplier@b2blink.eu',
+            contact_name: l.contactName || 'Trade Desk',
+            contact_phone: l.contactPhone || '',
+            title: l.title || l.description || 'Wholesale Lot',
+            brand: l.brand || 'Wholesale',
+            item_code: l.itemCode || l.ean?.slice(0, 8) || 'MDL-2026',
+            category_slug: (l.category || 'electronics').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            category_name: l.category || 'Consumer Electronics',
+            ean: l.ean || '195949048735',
+            condition: l.condition || 'New',
+            unit_price: Number(l.unitPrice || l.price || 99),
+            currency: l.currency || '€',
+            location: l.location || 'DE',
+            quantity_available: Number(l.available || l.qty || 50),
+            moq: Number(l.moq || 10),
+            barcode_or_sku: l.ean || l.itemCode,
+            is_hot: false,
+            moderation_status: 'active' as const,
+            images: l.images || [],
+            created_at: l.created_at || new Date().toISOString(),
+          }))
+        : []),
+      ...(Array.isArray(userWtbListings)
+        ? userWtbListings.map((w: any) => ({
+            id: w.id,
+            type: 'BUY' as const,
+            company_id: w.company_id || 'user-buyer',
+            company_name: w.companyName || 'Verified Buyer',
+            seller_email: w.contactEmail || 'buyer@b2blink.eu',
+            contact_name: w.contactName || 'Procurement Desk',
+            contact_phone: w.contactPhone || '',
+            title: w.description || w.title || 'Wanted Lot',
+            brand: w.brand || 'Procurement',
+            item_code: w.itemCode || 'WTB-REQ',
+            category_slug: (w.category || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            category_name: w.category || 'General Wholesale',
+            ean: w.ean || '—',
+            condition: w.condition || 'New',
+            unit_price: Number(w.price || 0),
+            currency: w.currency || '€',
+            location: w.location || 'EU',
+            quantity_available: Number(w.qty || 100),
+            moq: Number(w.moq || 1),
+            barcode_or_sku: w.ean || w.itemCode,
+            is_hot: false,
+            moderation_status: 'active' as const,
+            images: [],
+            created_at: new Date().toISOString(),
+          }))
+        : []),
+    ];
+
     const raw = localStorage.getItem(LISTINGS_STORAGE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        const combined = [...parsed, ...formattedUserItems];
+        const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+        return unique;
+      }
     }
-    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(INITIAL_LISTINGS));
+
+    const mergedInitial = Array.from(
+      new Map([...formattedUserItems, ...INITIAL_LISTINGS].map((item) => [item.id, item])).values()
+    );
+    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(mergedInitial));
+    return mergedInitial;
   } catch {
     // ignore
   }
@@ -444,6 +485,27 @@ export function deleteListing(productId: string): boolean {
   const listings = getAdminListings();
   const updated = listings.filter((l) => l.id !== productId);
   saveAdminListings(updated);
+
+  if (typeof window !== 'undefined') {
+    try {
+      const rawUser = localStorage.getItem('b2b_seller_listings_v3');
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => p.id !== productId)));
+        }
+      }
+      const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
+      if (rawWtb) {
+        const parsed = JSON.parse(rawWtb);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: any) => w.id !== productId)));
+        }
+      }
+      window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+      window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+    } catch {}
+  }
   return true;
 }
 
@@ -493,13 +555,13 @@ export function getAdminSellerThreads(): InquiryConversation[] {
         productMoq: 0,
         sellerCompanyId: seller.id,
         sellerCompanyName: seller.name,
-        buyerCompanyId: 'comp-jeff-admin',
-        buyerCompanyName: 'Jeff Vetting Director (B2B LINK Desk)',
-        buyerEmail: 'jeff@b2blink.com',
-        buyerContactEmail: 'jeff@b2blink.com',
+        buyerCompanyId: 'comp-admin-support',
+        buyerCompanyName: 'B2B LINK Support Team',
+        buyerEmail: 'support@b2blink.eu',
+        buyerContactEmail: 'support@b2blink.eu',
         buyerPhone: '+372 612 3456',
         buyerContactPhone: '+372 612 3456',
-        lastMessageText: `Welcome to B2B LINK, ${seller.contact_name}! Your commercial seller portal is activated. Let us know if you need any assistance uploading lots.`,
+        lastMessageText: `Welcome to B2B LINK. B2B LINK is designed to make wholesale trading faster and simpler.`,
         lastMessageTime: 'Just now',
         unreadByBuyer: false,
         unreadBySeller: true,
@@ -507,9 +569,9 @@ export function getAdminSellerThreads(): InquiryConversation[] {
           {
             id: `msg-${Date.now()}-${seller.id}`,
             senderRole: 'buyer', // 'buyer' is admin perspective towards seller
-            senderName: 'Jeff Vetting Director (B2B LINK OÜ)',
-            senderId: 'comp-jeff-admin',
-            text: `Welcome to B2B LINK, ${seller.contact_name}! Your commercial seller portal is active. You can publish verified stock lots, manage quotes, and communicate directly with buyers with 0% platform fees. Feel free to reply here if you have any questions.`,
+            senderName: 'B2B LINK Support Team',
+            senderId: 'comp-admin-support',
+            text: `Hello ${seller.contact_name || seller.name},\n\nWelcome to B2B LINK.\n\nB2B LINK is designed to make wholesale trading faster and simpler.\n\nYou can use the platform to:\n• Browse live BUY and SELL listings\n• Post what you have available or what you need\n• Receive relevant Buyer-Seller Matches\n• Search by product, EAN/UPC or item code\n• Connect directly with other members\n\nIf you need any assistance, our Support Team is here to help.\n\nWelcome to the network.\n\nKind regards,\nB2B LINK Support Team`,
             timestamp: nowIso,
             isRead: false,
           },
@@ -578,45 +640,10 @@ export interface CustomerQuery {
   replied_at?: string;
 }
 
-const QUERIES_STORAGE_KEY = 'b2b_customer_queries_v1';
+const QUERIES_STORAGE_KEY = 'b2b_customer_queries_v2';
 
-const INITIAL_QUERIES: CustomerQuery[] = [
-  {
-    id: 'query-101',
-    name: 'Markus Weber',
-    company: 'Bavaria Global Trade GmbH',
-    email: 'm.weber@bavariatrade.de',
-    phone: '+49 89 2345 6789',
-    topic: 'verification',
-    message: 'Hello Support Desk,\n\nWe recently created our account and would like to confirm whether our Munich Commercial Registry excerpt and DE VAT ID are sufficient for instant verified status, or if you need a utility bill for our warehouse.\n\nThank you,\nMarkus Weber',
-    created_at: '17 Oct 2026, 01:25 AM',
-    status: 'new',
-  },
-  {
-    id: 'query-102',
-    name: "Sarah O'Connor",
-    company: 'Emerald Logistics Ireland',
-    email: 's.oconnor@emeraldwholesalegoods.ie',
-    phone: '+353 1 496 0123',
-    topic: 'technical',
-    message: 'Hi team,\n\nCould you please provide the CSV bulk ingestion column template for consumer electronics inventory? We have approximately 1,200 SKUs we want to import into the wholesale catalog.\n\nBest regards,\nSarah',
-    created_at: '16 Oct 2026, 04:18 PM',
-    status: 'new',
-  },
-  {
-    id: 'query-103',
-    name: 'Marco Bellini',
-    company: 'Milano Distribuzione Srl',
-    email: 'm.bellini@milanowholesale.it',
-    phone: '+39 02 8765 4321',
-    topic: 'billing',
-    message: 'Greetings,\n\nWe wish to subscribe to the Gold Tier package via corporate Wise wire transfer in EUR. Please send us the official proforma invoice with your Tallinn IBAN.\n\nCordiali saluti,\nMarco Bellini',
-    created_at: '15 Oct 2026, 11:40 AM',
-    status: 'replied',
-    reply_text: 'Dear Marco,\n\nThank you for reaching out. We have generated proforma invoice B2B-PRO-2026-8849 with our dedicated Wise EUR IBAN for Milano Distribuzione Srl. Your Gold membership will be activated immediately upon wire reference receipt.\n\nBest regards,\nB2B LINK Support',
-    replied_at: '15 Oct 2026, 01:10 PM',
-  },
-];
+const INITIAL_QUERIES: CustomerQuery[] = [];
+
 
 export function getCustomerQueries(): CustomerQuery[] {
   if (typeof window === 'undefined') return INITIAL_QUERIES;

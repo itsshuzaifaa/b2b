@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const effectivePhone = company?.phone || meta.phone || null;
     const effectiveAddress = company?.address || meta.address || null;
 
-    // 3. Dispatch KYC checklist email to customer and alert newcustomers@brandnova.info
+    // 3. Dispatch Business Verification Request email to customer and alert B2B LINK verification queue
     const emailResult = await sendKycVerificationRequestEmail(rawEmail, {
       companyName: effectiveCompanyName,
       contactName: effectiveContactName,

@@ -49,17 +49,17 @@ export async function POST(request: NextRequest) {
         const { subject, html } = customerQueryReplyEmail({
           customerName: target.name,
           companyName: target.company,
-          subject: replySubject || `Re: B2B LINK Support Desk - ${target.topic.toUpperCase()} Inquiry`,
+          subject: replySubject || 'Response from B2B LINK Support',
           replyMessage: replyText,
           originalMessage: target.message,
-          actionUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000/contact',
+          actionUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://b2blink.eu/contact',
         });
 
         emailResult = await sendEmail({
           to: target.email,
           subject: replySubject || subject,
           html,
-          replyTo: 'admin@b2blink.co.uk',
+          replyTo: 'support@b2blink.eu',
         });
       } catch (mailErr) {
         console.warn('[REPLY EMAIL DISPATCH WARNING]', mailErr);

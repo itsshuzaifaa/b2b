@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, MessageSquare, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageSquare, ArrowRight, Package } from 'lucide-react';
 import { InquiryModal } from '@/components/modals/InquiryModal';
 import { useAuth } from '@/lib/auth/auth-context';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
@@ -166,6 +166,32 @@ export function LiveInventorySection() {
                 <div className="bg-white rounded-full border border-[#EAEFF6] h-[44px]" />
               </div>
             ))}
+          </div>
+        ) : featuredListings.length === 0 ? (
+          <div className="bg-white rounded-[28px] border border-[#EAEFF6] p-10 text-center shadow-xs">
+            <div className="w-14 h-14 rounded-full bg-blue-50 text-[#0A6CFF] flex items-center justify-center mx-auto mb-4">
+              <Package className="w-7 h-7" />
+            </div>
+            <h3 className="text-[18px] font-extrabold text-[#0B1F3A] mb-2">
+              No live inventory lots posted yet
+            </h3>
+            <p className="text-[14px] text-[#5B6B82] max-w-md mx-auto mb-6">
+              New wholesale inventory from verified European suppliers is added continuously. Post what you need or submit a sell listing.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/requests"
+                className="px-6 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[14px] hover:bg-[#0857cf] transition shadow-xs"
+              >
+                Post Want to Buy Request
+              </Link>
+              <Link
+                href="/marketplace"
+                className="px-6 py-2.5 rounded-full bg-white border border-[#E3E9F2] text-[#0B1F3A] font-bold text-[14px] hover:bg-[#F3F6FB] transition"
+              >
+                Explore Marketplace
+              </Link>
+            </div>
           </div>
         ) : (
           /* Horizontal Scroll-Snap Slider (4 cards visible on desktop, 24px gap) */

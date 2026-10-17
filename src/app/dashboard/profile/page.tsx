@@ -11,6 +11,13 @@ import {
   User,
   Mail,
   Phone,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  Send,
+  RefreshCw,
 } from 'lucide-react';
 
 const PRESET_LOGOS = [
@@ -37,7 +44,148 @@ export default function DashboardProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
+  // Password Reset states
+  const [pwdMode, setPwdMode] = useState<'old_password' | 'code'>('old_password');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPwd, setShowOldPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [pwdCode, setPwdCode] = useState('');
+  const [isSendingPwdCode, setIsSendingPwdCode] = useState(false);
+  const [pwdCodeSent, setPwdCodeSent] = useState(false);
+  const [pwdCountdown, setPwdCountdown] = useState(0);
+  const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Countdown for code resend
+  useEffect(() => {
+    if (pwdCountdown > 0) {
+      const t = setTimeout(() => setPwdCountdown(pwdCountdown - 1), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [pwdCountdown]);
+
+  const handleSendPwdCode = async () => {
+    setPwdError(null);
+    setPwdSuccess(null);
+    const targetEmail = (corporateEmail || company?.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setPwdError('Please enter a valid corporate email address in your profile first.');
+      return;
+    }
+    setIsSendingPwdCode(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_code', email: targetEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setPwdError(data.error || 'Failed to dispatch verification code.');
+      } else {
+        setPwdCodeSent(true);
+        setPwdCountdown(60);
+        setPwdSuccess(`6-digit verification code sent to ${targetEmail}. Please check your inbox.`);
+      }
+    } catch (err) {
+      setPwdError(err instanceof Error ? err.message : 'Failed to send code.');
+    } finally {
+      setIsSendingPwdCode(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdError(null);
+    setPwdSuccess(null);
+
+    const targetEmail = (corporateEmail || company?.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setPwdError('Valid email is required to update password.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPwdError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPwdError('New passwords do not match. Please verify.');
+      return;
+    }
+
+    setIsUpdatingPwd(true);
+    try {
+      if (pwdMode === 'old_password') {
+        if (!oldPassword) {
+          setPwdError('Please enter your current password.');
+          setIsUpdatingPwd(false);
+          return;
+        }
+
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'reset_with_old_password',
+            email: targetEmail,
+            oldPassword,
+            newPassword,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setPwdError(data.error || 'Incorrect current password or update failed.');
+        } else {
+          setPwdSuccess('Your password has been changed successfully!');
+          setOldPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        }
+      } else {
+        // Mode === 'code'
+        if (!pwdCode.trim()) {
+          setPwdError('Please enter the 6-digit verification code sent to your email.');
+          setIsUpdatingPwd(false);
+          return;
+        }
+
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'verify_code_and_reset',
+            email: targetEmail,
+            code: pwdCode.trim(),
+            newPassword,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setPwdError(data.error || 'Invalid code or reset failed.');
+        } else {
+          setPwdSuccess('Your password has been reset successfully!');
+          setPwdCode('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setPwdCodeSent(false);
+        }
+      }
+    } catch (err) {
+      setPwdError(err instanceof Error ? err.message : 'An error occurred while updating password.');
+    } finally {
+      setIsUpdatingPwd(false);
+    }
+  };
 
   // Sync initial state from real auth company
   useEffect(() => {
@@ -188,8 +336,9 @@ export default function DashboardProfilePage() {
 
       {/* Main 2-Column Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-7">
-        {/* LEFT COLUMN: Form Fields (8 Cols) */}
-        <form onSubmit={handleSave} className="lg:col-span-8 space-y-8">
+        {/* LEFT COLUMN: Profile Form + Password Security Card (8 Cols) */}
+        <div className="lg:col-span-8 flex flex-col gap-8">
+          <form onSubmit={handleSave} className="space-y-8">
           {isBuyer ? (
             /* ======================================================== */
             /* BUYER FORM: PERSONAL INFORMATION ONLY                   */
@@ -461,6 +610,277 @@ export default function DashboardProfilePage() {
             {isSaving ? 'Updating Profile...' : isBuyer ? 'Save Personal Profile' : 'Save Profile Changes'}
           </button>
         </form>
+
+          {/* PASSWORD & SECURITY CARD */}
+          <div className="bg-white rounded-[28px] border border-[#EAEFF6] p-7 sm:p-8 shadow-[0_4px_20px_rgba(11,31,58,0.03)]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9] mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-blue-50 text-[#0A6CFF] flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-[17px] font-bold text-[#0B1F3A]">Password & Security</h2>
+                  <p className="text-[12.5px] text-[#5B6B82]">
+                    Reset or change password for account <strong className="text-[#0B1F3A]">{corporateEmail || company?.email || 'your account'}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Mode Tabs: Old Password vs Email Verification Code */}
+            <div className="flex rounded-2xl bg-[#F3F6FB] p-1 mb-5 border border-[#EAEFF6] max-w-md">
+              <button
+                type="button"
+                onClick={() => {
+                  setPwdMode('old_password');
+                  setPwdError(null);
+                  setPwdSuccess(null);
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl text-[12.5px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  pwdMode === 'old_password'
+                    ? 'bg-white text-[#0B1F3A] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B1F3A]'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Current Password</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPwdMode('code');
+                  setPwdError(null);
+                  setPwdSuccess(null);
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl text-[12.5px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                  pwdMode === 'code'
+                    ? 'bg-white text-[#0B1F3A] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B1F3A]'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Email Verification Code</span>
+              </button>
+            </div>
+
+            {/* Status alerts */}
+            {pwdError && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-[13px] text-red-700">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span>{pwdError}</span>
+              </div>
+            )}
+
+            {pwdSuccess && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-[13px] text-emerald-800">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>{pwdSuccess}</span>
+              </div>
+            )}
+
+            {/* Password Form */}
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              {pwdMode === 'old_password' ? (
+                /* METHOD 1: CURRENT / OLD PASSWORD */
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                      Current password *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showOldPwd ? 'text' : 'password'}
+                        required
+                        value={oldPassword}
+                        onChange={(e) => setOldPassword(e.target.value)}
+                        placeholder="Enter your current password"
+                        className="w-full px-4 py-2.5 pr-11 text-[14px] bg-white border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOldPwd(!showOldPwd)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                        title={showOldPwd ? 'Hide' : 'Show'}
+                      >
+                        {showOldPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                        New password *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPwd ? 'text' : 'password'}
+                          required
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Min 6 characters"
+                          className="w-full px-4 py-2.5 pr-11 text-[14px] bg-white border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPwd(!showNewPwd)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                          title={showNewPwd ? 'Hide' : 'Show'}
+                        >
+                          {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                        Confirm new password *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPwd ? 'text' : 'password'}
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Confirm new password"
+                          className="w-full px-4 py-2.5 pr-11 text-[14px] bg-white border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                          title={showConfirmPwd ? 'Hide' : 'Show'}
+                        >
+                          {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isUpdatingPwd || !oldPassword || !newPassword || newPassword !== confirmPassword}
+                    className="py-3 px-6 rounded-full bg-[#0B1F3A] hover:bg-[#08172b] text-white font-bold text-[13px] shadow-xs cursor-pointer transition disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {isUpdatingPwd ? 'Updating password...' : 'Update Password using Old Password'}
+                  </button>
+                </div>
+              ) : (
+                /* METHOD 2: EMAIL VERIFICATION CODE */
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6]">
+                    <div>
+                      <div className="text-[12px] font-bold text-[#8A9BB0] uppercase tracking-wider">
+                        Registered email
+                      </div>
+                      <div className="text-[14px] font-bold text-[#0B1F3A] mt-0.5">
+                        {corporateEmail || company?.email}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendPwdCode}
+                      disabled={isSendingPwdCode || pwdCountdown > 0}
+                      className="px-5 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] transition shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shrink-0"
+                    >
+                      {isSendingPwdCode ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Sending code...</span>
+                        </>
+                      ) : pwdCountdown > 0 ? (
+                        <span>Resend in {pwdCountdown}s</span>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{pwdCodeSent ? 'Resend code' : 'Send verification code'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {pwdCodeSent && (
+                    <div className="space-y-4 pt-2">
+                      <div>
+                        <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                          6-digit verification code from email *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          value={pwdCode}
+                          onChange={(e) => setPwdCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="e.g. 849201"
+                          className="w-full max-w-[220px] px-4 py-2.5 text-[18px] tracking-[0.25em] text-center font-mono font-bold bg-[#F8FAFC] border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] focus:outline-none focus:border-[#0A6CFF] transition"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                            New password *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showNewPwd ? 'text' : 'password'}
+                              required
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="Min 6 characters"
+                              className="w-full px-4 py-2.5 pr-11 text-[14px] bg-white border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewPwd(!showNewPwd)}
+                              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                              title={showNewPwd ? 'Hide' : 'Show'}
+                            >
+                              {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                            Confirm new password *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showConfirmPwd ? 'text' : 'password'}
+                              required
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="Confirm new password"
+                              className="w-full px-4 py-2.5 pr-11 text-[14px] bg-white border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                              title={showConfirmPwd ? 'Hide' : 'Show'}
+                            >
+                              {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUpdatingPwd || !pwdCode || !newPassword || newPassword !== confirmPassword}
+                        className="py-3 px-6 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] shadow-xs cursor-pointer transition disabled:opacity-60 flex items-center justify-center gap-2"
+                      >
+                        {isUpdatingPwd ? 'Verifying & resetting...' : 'Confirm & Reset Password with Code'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
 
         {/* RIGHT COLUMN: Live Preview Card (4 Cols) */}
         <div className="lg:col-span-4">

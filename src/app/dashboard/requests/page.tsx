@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
 
 export default function BuyerRequestsPage() {
   const { company, role } = useAuth();
@@ -32,9 +33,18 @@ export default function BuyerRequestsPage() {
   const [receivedQuotes, setReceivedQuotes] = useState<ReceivedWtbQuote[]>([]);
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [createWtbOpen, setCreateWtbOpen] = useState(false);
 
   const buyerName = company?.contact_name || company?.email?.split('@')[0] || 'Buyer';
   const buyerCompanyName = company?.name || `${buyerName} Enterprise`;
+
+  const refreshRequests = () => {
+    if (company?.email) {
+      getBuyerWtbRequests(company.email).then((data) => {
+        setWtbList(data);
+      });
+    }
+  };
 
   // Load WTB requests and received quotes
   useEffect(() => {
@@ -103,13 +113,14 @@ export default function BuyerRequestsPage() {
           </p>
         </div>
 
-        <Link
-          href="/requests/new"
-          className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-5 py-2.5 rounded-full transition flex items-center gap-2 self-start sm:self-auto shadow-xs"
+        <button
+          type="button"
+          onClick={() => setCreateWtbOpen(true)}
+          className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-5 py-2.5 rounded-full transition flex items-center gap-2 self-start sm:self-auto shadow-xs cursor-pointer"
         >
           <PlusCircle className="w-4 h-4" />
           <span>+ Post New WTB Request</span>
-        </Link>
+        </button>
       </div>
 
       {/* Metrics Row */}
@@ -173,13 +184,14 @@ export default function BuyerRequestsPage() {
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="font-bold text-[#0B1F3A] text-base">No WTB requests found</h3>
             <p className="text-xs text-slate-400 mt-1 mb-4">Post a procurement request to receive quotes from verified distributors.</p>
-            <Link
-              href="/requests/new"
-              className="bg-[#0A6CFF] text-white font-bold text-xs px-4 py-2 rounded-full inline-flex items-center gap-1.5"
+            <button
+              type="button"
+              onClick={() => setCreateWtbOpen(true)}
+              className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-xs px-4 py-2 rounded-full inline-flex items-center gap-1.5 cursor-pointer"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>Create Request</span>
-            </Link>
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -351,6 +363,13 @@ export default function BuyerRequestsPage() {
           </div>
         )}
       </div>
+
+      {/* Uniform Create WTB Modal */}
+      <CreateWtbModal
+        isOpen={createWtbOpen}
+        onClose={() => setCreateWtbOpen(false)}
+        onSuccess={refreshRequests}
+      />
     </div>
   );
 }

@@ -191,20 +191,12 @@ function LoginFormContent() {
                   <label className="text-[14px] font-bold text-[#0B1F3A]">
                     Password
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('forgot_password');
-                      setForgotError(null);
-                      setForgotSuccess(false);
-                      if (identifier.includes('@')) {
-                        setForgotEmail(identifier);
-                      }
-                    }}
+                  <Link
+                    href={identifier.includes('@') ? `/reset-password?email=${encodeURIComponent(identifier)}` : '/reset-password'}
                     className="text-[14px] font-bold text-[#0A6CFF] hover:underline"
                   >
                     Forgot password?
-                  </button>
+                  </Link>
                 </div>
                 <div className="relative">
                   <input

@@ -2,53 +2,63 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Check, Sparkles, ShieldCheck } from 'lucide-react';
 
 export function PricingSection() {
   const tiers = [
     {
       name: 'Bronze',
-      subtitle: 'For traders testing the marketplace.',
+      subtitle: 'For verified European businesses testing the board.',
       price: 'Free',
-      period: '',
+      period: 'forever',
       isFeatured: false,
+      badge: 'Standard Access',
       features: [
-        'Up to 15 active listings',
-        '10 WTB quotes per month',
-        'Direct buyer messaging',
-        'Verified seller badge',
+        'Unified account: Buy & Sell simultaneously',
+        'Up to 15 active trading board listings',
+        '10 WTB quotes & lead unlocks per month',
+        'Direct member-to-member messaging',
+        'Official Verified Member badge',
+        '0% transaction commission on all deals',
       ],
-      ctaText: 'Start with Bronze',
-      href: '/register?tier=bronze&role=seller',
+      ctaText: 'Start Free with Bronze',
+      href: '/register?tier=bronze',
     },
     {
       name: 'Silver',
-      subtitle: 'For active wholesalers moving steady volume.',
+      subtitle: 'For active European wholesalers moving steady volume.',
       price: '£79',
       period: '/ month',
       isFeatured: true,
+      badge: 'Recommended',
       features: [
-        'Up to 50 active listings',
-        '25 WTB quotes per month',
-        'Full CSV catalog upload',
-        'Automated niche WTB alerts',
+        'Unified account: Buy & Sell simultaneously',
+        'Up to 50 active trading board listings',
+        '25 WTB quotes & lead unlocks per month',
+        'Full CSV catalog & wholesale stock upload',
+        'Automated niche WTB & inventory alerts',
+        '0% transaction commission on all deals',
       ],
       ctaText: 'Activate Silver',
-      href: '/register?tier=silver&role=seller',
+      href: '/register?tier=silver',
     },
     {
       name: 'Gold',
-      subtitle: 'For high-volume distributors and liquidators.',
+      subtitle: 'For high-volume distributors and enterprise sourcing desks.',
       price: '£179',
       period: '/ month',
       isFeatured: false,
+      badge: 'Enterprise Volume',
       features: [
-        'Unlimited active listings',
-        '50 WTB quotes per month',
-        'Hot listing spotlight badge',
-        'Priority review within 4 hours',
+        'Unified account: Buy & Sell simultaneously',
+        'Unlimited active trading board listings',
+        'Unlimited WTB quotes & contact unlocks',
+        'Live board spotlight & top listing placement',
+        'Priority review within 4h & account manager',
+        '0% transaction commission on all deals',
       ],
       ctaText: 'Activate Gold',
-      href: '/register?tier=gold&role=seller',
+      href: '/register?tier=gold',
     },
   ];
 
@@ -57,14 +67,15 @@ export function PricingSection() {
       <div className="max-w-[1160px] mx-auto px-5 sm:px-8">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF] block mb-2.5">
-            MEMBERSHIP
-          </span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0A6CFF] text-[13px] font-bold mb-3 border border-blue-100">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>UNIFIED COMMERCIAL MEMBERSHIP</span>
+          </div>
           <h2 className="text-[32px] lg:text-[42px] leading-[1.1] font-extrabold text-[#0B1F3A] tracking-[-0.025em]">
-            Simple monthly plans. Zero commission.
+            Transparent monthly plans. 0% commission.
           </h2>
-          <p className="mt-3 text-[15px] text-[#5B6B82]">
-            Straightforward pricing for sellers. Commercial buyers always join and trade for free.
+          <p className="mt-3 text-[15px] sm:text-[16px] text-[#5B6B82] leading-relaxed">
+            Every verified business account has full dual capabilities to both source (WTB) and sell wholesale stock. Trade directly with vetted European partners with zero hidden fees.
           </p>
         </div>
 
@@ -81,11 +92,11 @@ export function PricingSection() {
                   <div>
                     {/* Tier Name */}
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-[20px] font-bold text-white">
+                      <h3 className="text-[22px] font-bold text-white">
                         {tier.name}
                       </h3>
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#00C2FF] bg-[#00C2FF]/15 px-3 py-1 rounded-full">
-                        Recommended
+                        {tier.badge}
                       </span>
                     </div>
 
@@ -95,7 +106,7 @@ export function PricingSection() {
                     </p>
 
                     {/* Price */}
-                    <div className="my-8 flex items-baseline gap-2">
+                    <div className="my-7 flex items-baseline gap-2">
                       <span className="text-[48px] font-extrabold text-white leading-none tracking-tight">
                         {tier.price}
                       </span>
@@ -106,11 +117,11 @@ export function PricingSection() {
                       )}
                     </div>
 
-                    {/* 4 Bullets with small cyan dots */}
-                    <ul className="space-y-4 mb-10">
+                    {/* Bullets with small cyan dots */}
+                    <ul className="space-y-3.5 mb-10">
                       {tier.features.map((feature, i) => (
-                        <li key={i} className="flex items-center gap-3 text-[15px] text-[#D3DEEE]">
-                          <span className="w-2 h-2 rounded-full bg-[#00C2FF] shrink-0" />
+                        <li key={i} className="flex items-start gap-3 text-[14.5px] text-[#D3DEEE]">
+                          <span className="w-2 h-2 rounded-full bg-[#00C2FF] shrink-0 mt-2" />
                           <span>{feature}</span>
                         </li>
                       ))}
@@ -128,7 +139,7 @@ export function PricingSection() {
               );
             }
 
-            // Standard Plans: Bronze & Gold (White background, 1.5px border, small blue dots)
+            // Standard Plans: Bronze & Gold
             return (
               <div
                 key={tier.name}
@@ -136,9 +147,14 @@ export function PricingSection() {
               >
                 <div>
                   {/* Tier Name */}
-                  <h3 className="text-[20px] font-bold text-[#0B1F3A] mb-2">
-                    {tier.name}
-                  </h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[22px] font-bold text-[#0B1F3A]">
+                      {tier.name}
+                    </h3>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] bg-slate-100 px-3 py-1 rounded-full">
+                      {tier.badge}
+                    </span>
+                  </div>
 
                   {/* Subtitle */}
                   <p className="text-[14px] text-[#5B6B82] leading-relaxed min-h-[42px]">
@@ -146,7 +162,7 @@ export function PricingSection() {
                   </p>
 
                   {/* Price */}
-                  <div className="my-8 flex items-baseline gap-2">
+                  <div className="my-7 flex items-baseline gap-2">
                     <span className="text-[48px] font-extrabold text-[#0B1F3A] leading-none tracking-tight">
                       {tier.price}
                     </span>
@@ -157,11 +173,11 @@ export function PricingSection() {
                     )}
                   </div>
 
-                  {/* 4 Bullets with small blue dots */}
-                  <ul className="space-y-4 mb-10">
+                  {/* Bullets with small blue dots */}
+                  <ul className="space-y-3.5 mb-10">
                     {tier.features.map((feature, i) => (
-                      <li key={i} className="flex items-center gap-3 text-[15px] text-[#41536D]">
-                        <span className="w-2 h-2 rounded-full bg-[#0A6CFF] shrink-0" />
+                      <li key={i} className="flex items-start gap-3 text-[14.5px] text-[#41536D]">
+                        <span className="w-2 h-2 rounded-full bg-[#0A6CFF] shrink-0 mt-2" />
                         <span>{feature}</span>
                       </li>
                     ))}
@@ -171,7 +187,7 @@ export function PricingSection() {
                 {/* Button */}
                 <Link
                   href={tier.href}
-                  className="w-full min-h-[48px] rounded-full border border-[#E3E9F2] bg-white hover:bg-[#F3F6FB] hover:border-[#0B1F3A] text-[#0B1F3A] font-bold text-[15px] flex items-center justify-center transition-colors"
+                  className="w-full min-h-[48px] rounded-full border border-[#CBD5E1] bg-white hover:bg-[#F3F6FB] hover:border-[#0B1F3A] text-[#0B1F3A] font-bold text-[15px] flex items-center justify-center transition-colors"
                 >
                   {tier.ctaText}
                 </Link>
@@ -181,9 +197,17 @@ export function PricingSection() {
         </div>
 
         {/* Caption */}
-        <p className="mt-12 text-center text-[13px] text-[#5B6B82]">
-          Billed directly via Wise Business transfer in GBP, EUR, or USD with verified proforma receipt.
-        </p>
+        <div className="mt-12 text-center text-[13px] text-[#5B6B82] max-w-xl mx-auto space-y-1">
+          <p>
+            Official invoices issued by the <strong>B2B LINK Membership Team</strong>. Billed directly via Wise Business transfer in GBP, EUR, or USD with verified proforma receipt.
+          </p>
+          <p className="text-slate-400">
+            Need custom enterprise volume or multi-seat procurement licenses? Contact{' '}
+            <a href="mailto:membership@b2blink.eu" className="text-[#0A6CFF] font-medium hover:underline">
+              membership@b2blink.eu
+            </a>
+          </p>
+        </div>
       </div>
     </section>
   );

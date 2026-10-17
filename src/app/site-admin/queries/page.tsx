@@ -44,11 +44,11 @@ export default function SiteAdminCustomerQueriesPage() {
       const res = await fetch('/api/admin/queries', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.queries) && data.queries.length > 0) {
+        if (Array.isArray(data.queries)) {
           setQueries(data.queries);
           // Sync into local storage for offline resilience
           try {
-            localStorage.setItem('b2b_customer_queries_v1', JSON.stringify(data.queries));
+            localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(data.queries));
           } catch {
             // ignore
           }
@@ -78,10 +78,10 @@ export default function SiteAdminCustomerQueriesPage() {
 
   const handleOpenQuery = (q: CustomerQuery) => {
     setSelectedQuery(q);
-    setReplySubject(`Re: B2B LINK Support Desk - ${q.topic.toUpperCase()} Inquiry`);
+    setReplySubject('Response from B2B LINK Support');
     setReplyText(
       q.reply_text ||
-        `Dear ${q.name},\n\nThank you for reaching out to the B2B LINK Support & Compliance Desk regarding your inquiry on ${q.company}.\n\n\n\nBest regards,\nB2B LINK European Desk\nadmin@b2blink.co.uk`
+        `Thank you for contacting B2B LINK.\n\nOur Support Team has reviewed your enquiry regarding ${q.company}.\n\n`
     );
   };
 

@@ -64,7 +64,8 @@ export default function DashboardMarketplacePage() {
         }
         // Merge any locally added seller products if not yet returned from API
         try {
-          const raw = localStorage.getItem('b2b_seller_listings_real_v2');
+          localStorage.removeItem('b2b_seller_listings_real_v2');
+          const raw = localStorage.getItem('b2b_seller_listings_v3');
           if (raw) {
             const localListings = JSON.parse(raw);
             if (Array.isArray(localListings)) {

@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LiveInventorySection } from '@/components/landing/LiveInventorySection';
+import { LiveTradingBoard } from '@/components/landing/LiveTradingBoard';
 import { PricingSection } from '@/components/landing/PricingSection';
 
 export default function HomePage() {
@@ -60,7 +60,7 @@ export default function HomePage() {
             </Link>
 
             <Link
-              href="/requests/new"
+              href="/requests?create=true"
               className="w-full sm:w-auto min-h-[48px] px-8 rounded-full border-2 border-white/80 hover:bg-white/10 text-white font-bold text-[15px] inline-flex items-center justify-center transition-colors"
             >
               Post a buyer request
@@ -85,8 +85,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 2. LISTINGS SLIDER (Soft #F3F6FB Background) */}
-      <LiveInventorySection />
+      {/* 2. LIVE TRADING BOARD (Soft #F3F6FB Background) */}
+      <LiveTradingBoard />
 
       {/* 3. TWO WAYS IN SECTION (White Background) */}
       <section className="bg-white py-[72px] lg:py-[104px]">
@@ -181,7 +181,7 @@ export default function HomePage() {
 
               <div>
                 <Link
-                  href="/requests/new"
+                  href="/requests?create=true"
                   className="w-full sm:w-auto min-h-[48px] px-8 rounded-full bg-[#0B1F3A] hover:bg-[#07162C] text-white font-bold text-[15px] inline-flex items-center justify-center transition-colors shadow-xs"
                 >
                   Post a WTB request
@@ -218,7 +218,7 @@ export default function HomePage() {
             </Link>
 
             <Link
-              href="/requests/new"
+              href="/requests?create=true"
               className="w-full sm:w-auto min-h-[48px] px-8 rounded-full border-2 border-white/80 hover:bg-white/10 text-white font-bold text-[15px] inline-flex items-center justify-center transition-colors"
             >
               Post a buyer request

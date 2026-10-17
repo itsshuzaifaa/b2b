@@ -17,6 +17,7 @@ export interface WtbInput {
   targetQuantity: number;
   targetPrice: number;
   barcodeOrSku?: string;
+  deliveryDeadline?: string;
   notes?: string;
 }
 
@@ -90,21 +91,30 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       return { success: false, error: 'No valid category found for WTB request.' };
     }
 
-    // 3. Insert into wtb_requests table
+    // 3. Resolve valid UUID for buyer_user_id if present
+    const rawUserId = data.buyerUserId || data.buyerCompanyId;
+    const isUuid = rawUserId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawUserId) : false;
+    const buyerUserId = isUuid ? rawUserId : null;
+
+    const matchedCategory = dbCategories?.find((c) => c.id === resolvedCategoryId);
+    const resolvedCategorySlug = matchedCategory?.slug || data.categorySlug || 'general';
+
+    // 4. Insert into wtb_requests table
     const { data: insertedWtb, error: insertError } = await admin
       .from('wtb_requests')
       .insert({
-        buyer_company_id: data.buyerCompanyId || null,
+        buyer_user_id: buyerUserId,
         buyer_name: data.buyerName.trim(),
         buyer_email: data.buyerEmail.trim().toLowerCase(),
         buyer_phone: data.buyerPhone?.trim() || null,
         buyer_company: data.buyerCompany?.trim() || null,
         category_id: resolvedCategoryId,
-        category_slug: data.categorySlug || 'electronics',
+        category_slug: resolvedCategorySlug,
         product_name: data.productName.trim(),
         barcode_or_sku: data.barcodeOrSku?.trim() || null,
         target_quantity: data.targetQuantity,
         target_price: data.targetPrice,
+        delivery_deadline: data.deliveryDeadline || null,
         notes: data.notes?.trim() || null,
         status: 'open',
       })

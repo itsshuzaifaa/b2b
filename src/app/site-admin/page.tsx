@@ -10,6 +10,7 @@ import {
   getCustomerQueries,
   updateAccountApproval,
   broadcastMessageToAllSellers,
+  isAccountDeleted,
   type AdminClientAccount,
   type AdminPaymentRecord,
   type CustomerQuery,
@@ -48,11 +49,14 @@ export default function SiteAdminOverviewPage() {
 
   const loadData = async () => {
     try {
-      const res = await fetch('/api/admin/accounts');
+      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (data.accounts && data.accounts.length > 0) {
-          setAccounts(data.accounts);
+        if (Array.isArray(data.accounts)) {
+          const cleanAccounts = data.accounts.filter(
+            (a: AdminClientAccount) => !isAccountDeleted(a.id, a.email)
+          );
+          setAccounts(cleanAccounts);
         } else {
           setAccounts(getAdminAccounts());
         }
@@ -70,7 +74,7 @@ export default function SiteAdminOverviewPage() {
       const qRes = await fetch('/api/admin/queries', { cache: 'no-store' });
       if (qRes.ok) {
         const qData = await qRes.json();
-        if (Array.isArray(qData.queries) && qData.queries.length > 0) {
+        if (Array.isArray(qData.queries)) {
           setQueries(qData.queries);
         }
       }
@@ -97,7 +101,13 @@ export default function SiteAdminOverviewPage() {
   };
 
   const handleVerifyAccountQuick = async (acc: AdminClientAccount) => {
+    // Optimistic AJAX state update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+    );
     updateAccountApproval(acc.id, 'approved');
+    showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`);
+
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
@@ -111,7 +121,6 @@ export default function SiteAdminOverviewPage() {
         }),
       });
     } catch {}
-    showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`);
     loadData();
   };
 

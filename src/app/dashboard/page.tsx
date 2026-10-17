@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { QuotationModal } from '@/components/modals/QuotationModal';
 import { CsvImportModal } from '@/components/dashboard/CsvImportModal';
 import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
+import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
 import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -50,6 +51,7 @@ export default function OverviewPage() {
   // Modals state
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [createWtbOpen, setCreateWtbOpen] = useState(false);
   const [selectedWtbForQuote, setSelectedWtbForQuote] = useState<WtbRequest | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<InquiryItem | null>(null);
 
@@ -82,7 +84,8 @@ export default function OverviewPage() {
     // 3. Listings Count strictly scoped to this company
     let localCount = 0;
     try {
-      const raw = localStorage.getItem('b2b_seller_listings_real_v2');
+      localStorage.removeItem('b2b_seller_listings_real_v2');
+      const raw = localStorage.getItem('b2b_seller_listings_v3');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -177,13 +180,14 @@ export default function OverviewPage() {
 
         {/* Dual Buy & Sell Action Buttons */}
         <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
-          <Link
-            href="/requests/new"
-            className="bg-white hover:bg-slate-50 text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs"
+          <button
+            type="button"
+            onClick={() => setCreateWtbOpen(true)}
+            className="bg-white hover:bg-slate-50 text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 text-[#0A6CFF]" />
             <span>Post WTB Request</span>
-          </Link>
+          </button>
 
           <button
             type="button"
@@ -416,13 +420,14 @@ export default function OverviewPage() {
                   <p className="text-[12px] text-[#5B6B82] mt-0.5">
                     Post your procurement requirements to receive direct supplier offers.
                   </p>
-                  <Link
-                    href="/requests/new"
-                    className="mt-3 inline-flex items-center gap-1 text-[12px] font-bold text-[#0A6CFF] hover:underline"
+                  <button
+                    type="button"
+                    onClick={() => setCreateWtbOpen(true)}
+                    className="mt-3 inline-flex items-center gap-1 text-[12px] font-bold text-[#0A6CFF] hover:underline cursor-pointer"
                   >
                     <span>+ Post New Request</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </Link>
+                  </button>
                 </div>
               ) : (
                 wtbList.slice(0, 3).map((req) => (
@@ -462,13 +467,14 @@ export default function OverviewPage() {
           </div>
 
           <div className="mt-4 pt-3 border-t border-[#F1F5F9]">
-            <Link
-              href="/requests/new"
-              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition"
+            <button
+              type="button"
+              onClick={() => setCreateWtbOpen(true)}
+              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 text-[#0A6CFF]" />
               <span>Broadcast a Want-To-Buy Request</span>
-            </Link>
+            </button>
           </div>
         </div>
       </div>
@@ -497,6 +503,13 @@ export default function OverviewPage() {
           onSuccess={() => setSelectedWtbForQuote(null)}
         />
       )}
+
+      {/* UNIFORM CREATE WTB MODAL */}
+      <CreateWtbModal
+        isOpen={createWtbOpen}
+        onClose={() => setCreateWtbOpen(false)}
+        onSuccess={loadData}
+      />
     </>
   );
 }

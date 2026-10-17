@@ -126,16 +126,22 @@ export default function SiteAdminLayout({
   // 1. Loading state while checking localStorage session
   if (isAdminAuthenticated === null) {
     return (
-      <div className="min-h-screen bg-[#050E1D] flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-[#0A6CFF] border-t-transparent rounded-full animate-spin" />
-      </div>
+      <>
+        <div className="min-h-screen bg-[#050E1D] flex items-center justify-center">
+          <div className="w-8 h-8 border-3 border-[#0A6CFF] border-t-transparent rounded-full animate-spin" />
+        </div>
+        <div className="hidden" aria-hidden="true">
+          {children}
+        </div>
+      </>
     );
   }
 
   // 2. Login Screen Gate for Site Admin
   if (!isAdminAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#050E1D] text-white flex flex-col justify-center items-center p-4 font-sans relative overflow-hidden">
+      <>
+        <div className="min-h-screen bg-[#050E1D] text-white flex flex-col justify-center items-center p-4 font-sans relative overflow-hidden">
         {/* Subtle background glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#0A6CFF]/15 rounded-full blur-[130px] pointer-events-none" />
 
@@ -244,7 +250,11 @@ export default function SiteAdminLayout({
             </div>
           </div>
         </div>
-      </div>
+        </div>
+        <div className="hidden" aria-hidden="true">
+          {children}
+        </div>
+      </>
     );
   }
 

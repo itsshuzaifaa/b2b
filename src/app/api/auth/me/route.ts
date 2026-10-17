@@ -93,7 +93,10 @@ export async function GET(request: NextRequest) {
       company: normalizedCompany,
       role: normalizedCompany.role,
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.digest === 'HANGING_PROMISE_REJECTION' || err?.digest?.includes('DYNAMIC')) {
+      throw err;
+    }
     console.error('[/api/auth/me EXCEPTION]', err);
     return NextResponse.json({ authenticated: false, error: 'Internal error' }, { status: 500 });
   }

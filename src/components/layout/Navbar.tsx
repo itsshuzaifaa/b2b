@@ -6,16 +6,29 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { Menu, X } from 'lucide-react';
+import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
+import { AuthGateModal } from '@/components/modals/AuthGateModal';
 
 export function Navbar() {
   const pathname = usePathname();
   const { role, isLoggedIn } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [createWtbOpen, setCreateWtbOpen] = useState(false);
+  const [authGateOpen, setAuthGateOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const handlePostWtbClick = () => {
+    setMobileMenuOpen(false);
+    if (!isLoggedIn) {
+      setAuthGateOpen(true);
+    } else {
+      setCreateWtbOpen(true);
+    }
+  };
 
   const showAuthenticatedNav = mounted && isLoggedIn;
 
@@ -26,12 +39,14 @@ export function Navbar() {
   const navLinks = [
     { label: 'Marketplace', href: '/marketplace' },
     { label: 'Buyer requests', href: '/requests' },
-    { label: 'Membership', href: '/#membership' },
+    { label: 'About us', href: '/about' },
+    { label: 'Membership', href: '/membership' },
     { label: 'Contact', href: '/contact' },
   ];
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
+    <>
+      <header className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
       {/* Floating 80% Bar attached to top */}
       <div className="w-[94%] sm:w-[88%] lg:w-[80%] max-w-[1160px] h-[64px] bg-white/96 backdrop-blur-md shadow-[0_8px_30px_rgba(11,31,58,0.06)] rounded-t-none rounded-b-[32px] border-b border-x border-[#EAEFF6] px-6 sm:px-8 flex items-center justify-between pointer-events-auto transition-all">
         {/* Brand Logo */}
@@ -48,7 +63,7 @@ export function Navbar() {
         </Link>
 
         {/* Center Navigation Links: 15px, weight 500 */}
-        <nav className="hidden md:flex items-center gap-7 lg:gap-9">
+        <nav className="hidden md:flex items-center gap-5 lg:gap-7">
           {navLinks.map((link) => {
             const isActive =
               link.href === '/'
@@ -75,12 +90,13 @@ export function Navbar() {
         <div className="hidden sm:flex items-center gap-6">
           {showAuthenticatedNav ? (
             <>
-              <Link
-                href="/requests/new"
-                className="text-[15px] font-medium text-[#41536D] hover:text-[#0B1F3A] transition-colors whitespace-nowrap"
+              <button
+                type="button"
+                onClick={handlePostWtbClick}
+                className="text-[15px] font-medium text-[#41536D] hover:text-[#0B1F3A] transition-colors whitespace-nowrap cursor-pointer"
               >
                 Post a WTB request
-              </Link>
+              </button>
               <Link
                 href={role === 'admin' ? '/site-admin' : '/dashboard'}
                 className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[15px] font-bold px-5 py-2 rounded-full transition-colors shadow-xs whitespace-nowrap"
@@ -137,13 +153,13 @@ export function Navbar() {
           <div className="pt-4 border-t border-[#EAEFF6] flex flex-col gap-2.5">
             {showAuthenticatedNav ? (
               <>
-                <Link
-                  href="/requests/new"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full text-center border border-[#E3E9F2] text-[#0B1F3A] py-2.5 rounded-full text-[15px] font-medium hover:bg-[#F3F6FB]"
+                <button
+                  type="button"
+                  onClick={handlePostWtbClick}
+                  className="w-full text-center border border-[#E3E9F2] text-[#0B1F3A] py-2.5 rounded-full text-[15px] font-medium hover:bg-[#F3F6FB] cursor-pointer"
                 >
                   Post a WTB request
-                </Link>
+                </button>
                 <Link
                   href={role === 'admin' ? '/site-admin' : '/dashboard'}
                   onClick={() => setMobileMenuOpen(false)}
@@ -173,6 +189,21 @@ export function Navbar() {
           </div>
         </div>
       )}
-    </header>
+      </header>
+
+      {/* Uniform Create WTB Modal */}
+      <CreateWtbModal
+        isOpen={createWtbOpen}
+        onClose={() => setCreateWtbOpen(false)}
+      />
+
+      {/* Auth Gate Modal when visitor is not logged in */}
+      <AuthGateModal
+        isOpen={authGateOpen}
+        onClose={() => setAuthGateOpen(false)}
+        title="Verified Wholesale Access Required"
+        subtitle="Sign in or create a free commercial account to post verified Want-To-Buy requests with 0% commission."
+      />
+    </>
   );
 }

@@ -38,10 +38,10 @@ export function Footer() {
               <p>Sepapaja 6, Tallinn 15551, Harjumaa, Estonia</p>
               <p>
                 <a
-                  href="mailto:jeff@b2blink.com"
+                  href="mailto:support@b2blink.eu"
                   className="text-[#00C2FF] hover:underline"
                 >
-                  jeff@b2blink.com
+                  support@b2blink.eu
                 </a>
               </p>
             </div>
@@ -71,26 +71,49 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Column 3: Company */}
+          {/* Column 3: Company & Legal */}
           <div>
             <h5 className="text-[13px] font-bold uppercase tracking-[0.12em] text-white mb-4">
-              Company
+              Company &amp; Legal
             </h5>
             <ul className="space-y-2.5 text-[14px]">
               <li>
-                <Link href="/#about" className="text-[#D3DEEE] hover:text-white transition-colors">
+                <Link href="/about" className="text-[#D3DEEE] hover:text-white transition-colors">
                   About the network
-                </Link>
-              </li>
-              <li>
-                <Link href="/#guidelines" className="text-[#D3DEEE] hover:text-white transition-colors">
-                  Vetting standards
                 </Link>
               </li>
               <li>
                 <Link href="/contact" className="text-[#D3DEEE] hover:text-white transition-colors">
                   Contact desk
                 </Link>
+              </li>
+              <li>
+                <Link href="/terms" className="text-[#D3DEEE] hover:text-white transition-colors">
+                  Terms &amp; Conditions
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="text-[#D3DEEE] hover:text-white transition-colors">
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/cookies" className="text-[#D3DEEE] hover:text-white transition-colors">
+                  Cookie Policy
+                </Link>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('b2b_open_cookie_preferences'));
+                    }
+                  }}
+                  className="text-[#00C2FF] hover:underline text-left cursor-pointer"
+                >
+                  Cookie Settings
+                </button>
               </li>
             </ul>
           </div>
@@ -101,9 +124,33 @@ export function Footer() {
           <p>
             &copy; 2026 B2B LINK OÜ. Europe&apos;s verified wholesale trading and Want-To-Buy demand network. 0% transaction commission.
           </p>
-          <p className="text-[12px] text-[#5B6B82]">
-            Parties are responsible for their own due diligence.
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[12px] text-[#8A9BB0]">
+            <Link href="/terms" className="hover:text-white transition-colors">
+              Terms &amp; Conditions
+            </Link>
+            <span>&bull;</span>
+            <Link href="/privacy" className="hover:text-white transition-colors">
+              Privacy Policy
+            </Link>
+            <span>&bull;</span>
+            <Link href="/cookies" className="hover:text-white transition-colors">
+              Cookie Policy
+            </Link>
+            <span>&bull;</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('b2b_open_cookie_preferences'));
+                }
+              }}
+              className="hover:text-white transition-colors cursor-pointer"
+            >
+              Cookie Preferences
+            </button>
+            <span>&bull;</span>
+            <span className="text-[#5B6B82]">Parties conduct their own due diligence.</span>
+          </div>
         </div>
       </div>
     </footer>
