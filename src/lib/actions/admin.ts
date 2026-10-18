@@ -28,11 +28,19 @@ export async function updateSellerVetting(
     // 1. Fetch current company
     const { data: companyData, error: fetchError } = await admin
       .from('companies')
-      .select('id, name, contact_name, email, approval_status')
+      .select('id, company_name, contact_name, contact_email, approval_status')
       .eq('id', companyId)
       .single();
 
-    const company = (companyData as Pick<Company, 'id' | 'name' | 'contact_name' | 'email' | 'approval_status'> | null) ?? null;
+    const company = companyData
+      ? {
+          id: companyData.id,
+          name: companyData.company_name,
+          contact_name: companyData.contact_name,
+          email: companyData.contact_email,
+          approval_status: companyData.approval_status,
+        }
+      : null;
 
     if (fetchError || !company) {
       const mockComp = MOCK_COMPANIES.find((c) => c.id === companyId);
@@ -62,21 +70,24 @@ export async function updateSellerVetting(
 
     // 3. Dispatch Decision Notification Email
     if (company.email) {
+      const compName = company.name || 'Valued Member';
+      const contName = company.contact_name || compName;
+
       if (status === 'approved') {
         await sendAccountApprovalEmail(company.email, {
-          companyName: company.name,
-          contactName: company.contact_name || company.name,
+          companyName: compName,
+          contactName: contName,
         });
       } else {
         await sendAccountSuspensionEmail(company.email, {
-          companyName: company.name,
-          contactName: company.contact_name || company.name,
+          companyName: compName,
+          contactName: contName,
           reason: notes?.trim() || 'Verification documents incomplete or criteria not met.',
         });
       }
 
       await sendVettingDecisionEmail(company.email, {
-        companyName: company.name,
+        companyName: compName,
         decision: status,
         notes: notes?.trim(),
         companyId: company.id,
@@ -162,14 +173,12 @@ export async function toggleProductHot(
         id,
         is_hot,
         company_id,
-        company:companies(id, membership_tier)
+        company:companies(id, tier)
       `)
       .eq('id', productId)
       .single();
 
-    const product = (productData as unknown as (Pick<Product, 'id' | 'is_hot' | 'company_id'> & {
-      company: Pick<Company, 'id' | 'membership_tier'>;
-    }) | null) ?? null;
+    const product = (productData as any) ?? null;
 
     if (productError || !product) {
       const mockProd = MOCK_PRODUCTS.find((p) => p.id === productId);
@@ -182,8 +191,8 @@ export async function toggleProductHot(
 
     // 2. Validate Gold Tier requirement when activating hot status
     if (isHot) {
-      const sellerTier = product.company?.membership_tier;
-      if (sellerTier && !TIER_LIMITS[sellerTier]?.hotListings) {
+      const sellerTier = product.company?.tier || product.company?.membership_tier;
+      if (sellerTier && !(TIER_LIMITS as any)[sellerTier]?.hotListings) {
         return {
           success: false,
           error: 'Hot listings are only available for Gold tier members. Please upgrade your membership to activate.',

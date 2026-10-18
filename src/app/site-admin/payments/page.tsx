@@ -183,7 +183,7 @@ export default function SiteAdminPaymentsPage() {
               {activePaidSubs.length} Active
             </div>
             <p className="text-[12px] text-[#0A6CFF] font-semibold mt-1.5">
-              MRR: £{mrr.toFixed(2)}/mo &bull; Silver &amp; Gold Tiers
+              MRR: €{mrr.toFixed(2)}/mo &bull; Silver &amp; Gold Tiers
             </p>
           </div>
         </div>
@@ -200,7 +200,7 @@ export default function SiteAdminPaymentsPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              £{thisMonthTotal.toFixed(2)}
+              €{thisMonthTotal.toFixed(2)}
             </div>
             <p className="text-[12px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -221,7 +221,7 @@ export default function SiteAdminPaymentsPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              £{totalSettled.toFixed(2)}
+              €{totalSettled.toFixed(2)}
             </div>
             <p className="text-[12px] text-[#5B6B82] font-medium mt-1.5">
               Total lifetime card checkout volume
@@ -339,7 +339,7 @@ export default function SiteAdminPaymentsPage() {
                       <td className="py-4 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-[14px] text-[#0B1F3A]">
-                            £{pay.amount_gbp.toFixed(2)} GBP
+                            €{pay.amount_gbp.toFixed(2)} EUR
                           </span>
                         </div>
                       </td>
@@ -446,7 +446,7 @@ export default function SiteAdminPaymentsPage() {
                 <div className="flex justify-between pt-2 border-t border-[#EAEFF6]">
                   <span className="font-bold text-[#0B1F3A]">Amount Paid:</span>
                   <span className="text-[18px] font-black text-[#0A6CFF]">
-                    £{selectedPayment.amount_gbp.toFixed(2)} GBP
+                    €{selectedPayment.amount_gbp.toFixed(2)} EUR
                   </span>
                 </div>
               </div>

@@ -37,6 +37,9 @@ import {
   Check,
   FileSpreadsheet,
   MoreVertical,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Package,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
@@ -49,9 +52,11 @@ export default function SiteAdminUsersPage() {
   // Modals
   const [selectedDossier, setSelectedDossier] = useState<AdminClientAccount | null>(null);
   const [deleteConfirmAccount, setDeleteConfirmAccount] = useState<AdminClientAccount | null>(null);
+  const [clearLotsConfirmAccount, setClearLotsConfirmAccount] = useState<AdminClientAccount | null>(null);
   const [editingTierAccount, setEditingTierAccount] = useState<AdminClientAccount | null>(null);
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
   const [bulkCsvAccount, setBulkCsvAccount] = useState<AdminClientAccount | null>(null);
+  const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -200,6 +205,42 @@ export default function SiteAdminUsersPage() {
     }
 
     // 3. Re-sync via AJAX in background
+    loadData();
+  };
+
+  const handleClearCatalogLots = async (acc: AdminClientAccount) => {
+    // Optimistic UI update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, listings_count: 0 } : a))
+    );
+    setClearLotsConfirmAccount(null);
+    showNotice(`Cleared all catalog lots for "${acc.name}".`);
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_listings', companyId: acc.id }),
+      });
+      await fetch(`/api/products?companyId=${encodeURIComponent(acc.id)}`, {
+        method: 'DELETE',
+      });
+      // Also update local storage if any
+      const rawUser = localStorage.getItem('b2b_seller_listings_v3');
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (Array.isArray(parsed)) {
+            localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => p.company_id !== acc.id)));
+          }
+        } catch {}
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+      }
+    } catch {
+      showNotice(`Failed to clear catalog lots for ${acc.name}.`);
+    }
     loadData();
   };
 
@@ -476,15 +517,33 @@ export default function SiteAdminUsersPage() {
                             </button>
                           )}
 
-                          {/* Upload Bulk CSV Quick Action */}
-                          <button
-                            type="button"
-                            onClick={() => setBulkCsvAccount(acc)}
-                            title="Upload Bulk CSV for this seller"
-                            className="p-2 rounded-xl text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
-                          >
-                            <FileSpreadsheet className="w-4 h-4" />
-                          </button>
+                          {/* Upload Bulk CSV Quick Actions: WTS & WTB */}
+                          <div className="flex items-center gap-0.5 bg-[#F1F5F9] p-0.5 rounded-xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkCsvMode('WTS');
+                                setBulkCsvAccount(acc);
+                              }}
+                              title="Upload WTS (Sell Offers) CSV"
+                              className="px-2 py-1 rounded-lg text-[#0A6CFF] hover:bg-white text-[11px] font-black transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                              <span>WTS</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkCsvMode('WTB');
+                                setBulkCsvAccount(acc);
+                              }}
+                              title="Upload WTB (Buy Requirements) CSV"
+                              className="px-2 py-1 rounded-lg text-[#16A34A] hover:bg-white text-[11px] font-black transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ArrowDownLeft className="w-3.5 h-3.5" />
+                              <span>WTB</span>
+                            </button>
+                          </div>
 
                           {/* Message Button */}
                           <button
@@ -519,19 +578,33 @@ export default function SiteAdminUsersPage() {
 
                             {openMenuId === acc.id && (
                               <div
-                                className="absolute right-0 top-full mt-1 w-52 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setOpenMenuId(null);
+                                    setBulkCsvMode('WTS');
+                                    setBulkCsvAccount(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
+                                  <span>Upload WTS (Sell Offers) CSV</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setBulkCsvMode('WTB');
                                     setBulkCsvAccount(acc);
                                   }}
                                   className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
                                 >
-                                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                                  <span>Upload Bulk CSV</span>
+                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                                  <span>Upload WTB (Buy Requirements) CSV</span>
                                 </button>
 
                                 <button
@@ -558,6 +631,20 @@ export default function SiteAdminUsersPage() {
                                   <Edit className="w-4 h-4 text-[#5B6B82]" />
                                   <span>Change Membership Tier</span>
                                 </button>
+
+                                {acc.listings_count > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuId(null);
+                                      setClearLotsConfirmAccount(acc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition cursor-pointer"
+                                  >
+                                    <Package className="w-4 h-4 text-amber-600" />
+                                    <span>Clear All Lots ({acc.listings_count})</span>
+                                  </button>
+                                )}
 
                                 <div className="my-1 border-t border-slate-100" />
 
@@ -699,12 +786,27 @@ export default function SiteAdminUsersPage() {
                   onClick={() => {
                     const target = selectedDossier;
                     setSelectedDossier(null);
+                    setBulkCsvMode('WTS');
+                    setBulkCsvAccount(target);
+                  }}
+                  className="bg-blue-50 text-[#0A6CFF] hover:bg-blue-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Upload WTS (Sell)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    setBulkCsvMode('WTB');
                     setBulkCsvAccount(target);
                   }}
                   className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Upload Bulk CSV</span>
+                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Upload WTB (Buy)</span>
                 </button>
 
                 <button
@@ -826,11 +928,46 @@ export default function SiteAdminUsersPage() {
         </div>
       )}
 
+      {/* CLEAR ALL CATALOG LOTS CONFIRMATION MODAL */}
+      {clearLotsConfirmAccount && (
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] p-7 max-w-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+              <Package className="w-6 h-6" />
+            </div>
+            <h3 className="text-[19px] font-black text-[#0B1F3A] text-center">
+              Clear All Catalog Lots?
+            </h3>
+            <p className="text-[13px] text-[#5B6B82] text-center mt-1.5 leading-relaxed">
+              Are you sure you want to delete all <strong>{clearLotsConfirmAccount.listings_count} catalog lots</strong> for <strong>{clearLotsConfirmAccount.name}</strong>? This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setClearLotsConfirmAccount(null)}
+                className="px-5 py-2.5 rounded-full bg-slate-100 text-[#0B1F3A] font-semibold text-[13px] hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleClearCatalogLots(clearLotsConfirmAccount)}
+                className="px-6 py-2.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[13px] shadow-xs transition cursor-pointer"
+              >
+                Yes, Clear All Lots
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ADMIN BULK CSV MODAL */}
       <AdminBulkCsvModal
         isOpen={Boolean(bulkCsvAccount)}
         onClose={() => setBulkCsvAccount(null)}
         account={bulkCsvAccount}
+        initialMode={bulkCsvMode}
         onSuccess={handleBulkCsvSuccess}
       />
     </>

@@ -302,7 +302,7 @@ export function UpgradeMembershipModal({
                       <span className="text-xs font-bold text-slate-500">Popular</span>
                     </div>
                     <div className="flex items-baseline gap-1 mb-4">
-                      <span className="text-3xl font-extrabold text-[#0B1F3A]">£79</span>
+                      <span className="text-3xl font-extrabold text-[#0B1F3A]">€79</span>
                       <span className="text-xs font-bold text-[#5B6B82]">/ month</span>
                     </div>
 
@@ -334,7 +334,7 @@ export function UpgradeMembershipModal({
                     }}
                     className="mt-5 w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#0A6CFF] hover:bg-[#0857cf] text-white transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <span>Select Silver (£79/mo)</span>
+                    <span>Select Silver (€79/mo)</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -361,7 +361,7 @@ export function UpgradeMembershipModal({
                     <Sparkles className="w-4 h-4 text-amber-500" />
                   </div>
                   <div className="flex items-baseline gap-1 mb-4">
-                    <span className="text-3xl font-extrabold text-[#0B1F3A]">£179</span>
+                    <span className="text-3xl font-extrabold text-[#0B1F3A]">€179</span>
                     <span className="text-xs font-bold text-[#5B6B82]">/ month</span>
                   </div>
 
@@ -397,7 +397,7 @@ export function UpgradeMembershipModal({
                   }}
                   className="mt-5 w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-[#0B1F3A] hover:bg-[#152a4a] text-white transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>Select Gold (£179/mo)</span>
+                  <span>Select Gold (€179/mo)</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -446,7 +446,7 @@ export function UpgradeMembershipModal({
                 Confirm & Activate {planPricing.name}
               </h3>
               <p className="text-xs text-[#5B6B82] mt-1">
-                Verify your payment method. Billed £{planPricing.price}/month recurring. Cancel anytime.
+                Verify your payment method. Billed €{planPricing.price}/month recurring. Cancel anytime.
               </p>
             </div>
 
@@ -483,7 +483,7 @@ export function UpgradeMembershipModal({
               </div>
               <div className="text-right">
                 <div className="text-2xl font-black text-[#0B1F3A]">
-                  £{planPricing.price}
+                  €{planPricing.price}
                 </div>
                 <div className="text-[11px] text-[#5B6B82] font-medium">per month</div>
               </div>
@@ -655,7 +655,7 @@ export function UpgradeMembershipModal({
             <div className="border-t border-[#EAEFF6] pt-4">
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-[#5B6B82]">Due Today:</span>
-                <span className="font-extrabold text-[#0B1F3A]">£{planPricing.price}.00 GBP</span>
+                <span className="font-extrabold text-[#0B1F3A]">€{planPricing.price}.00 EUR</span>
               </div>
               <div className="flex items-center justify-between text-[11px] text-[#8A9BB0] mb-4">
                 <span>VAT Reverse Charge:</span>
@@ -675,7 +675,7 @@ export function UpgradeMembershipModal({
                 ) : (
                   <>
                     <Lock className="w-4 h-4" />
-                    <span>Pay £{planPricing.price}.00 & Upgrade to {selectedTier.toUpperCase()}</span>
+                    <span>Pay €{planPricing.price}.00 & Upgrade to {selectedTier.toUpperCase()}</span>
                   </>
                 )}
               </button>

@@ -151,6 +151,19 @@ export default function DashboardLayout({
     (effectiveApprovalStatus === 'suspended' || effectiveApprovalStatus === 'rejected')
   );
 
+  // Auto-dispatch KYC Document Request email if account is pending verification and not yet dispatched
+  useEffect(() => {
+    if (company?.email && isPendingVerification) {
+      fetch('/api/auth/dispatch-kyc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: company.email }),
+      }).catch((err) => {
+        console.warn('[DASHBOARD KYC DISPATCH NOTICE]', err);
+      });
+    }
+  }, [company?.email, isPendingVerification]);
+
   // Lead unlock stats for unified counter
   const [remainingUnlocks, setRemainingUnlocks] = useState<number>(2);
   const [unlockedCount, setUnlockedCount] = useState<number>(0);

@@ -264,7 +264,7 @@ export function LiveInventorySection() {
                       <div className="flex items-end justify-between px-2 mb-4">
                         <div>
                           <span className="text-[22px] font-extrabold text-[#0B1F3A] leading-none block">
-                            £{item.unit_price.toFixed(2)}
+                            €{item.unit_price.toFixed(2)}
                           </span>
                           <span className="text-[13px] text-[#5B6B82] mt-1 block">
                             per piece

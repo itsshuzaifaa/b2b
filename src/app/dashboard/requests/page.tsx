@@ -155,7 +155,7 @@ export default function BuyerRequestsPage() {
             Procurement Value
           </div>
           <div className="text-[28px] font-black text-[#0B1F3A]">
-            £{totalProcurementValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            €{totalProcurementValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </div>
           <div className="text-[12px] text-[#5B6B82] font-medium mt-1">
             Aggregated target batch value
@@ -236,12 +236,12 @@ export default function BuyerRequestsPage() {
                           Target: <strong className="text-[#0B1F3A]">{req.target_quantity.toLocaleString()} units</strong>
                         </div>
                         <div>
-                          Target Price: <strong className="text-[#0A6CFF]">£{req.target_price.toFixed(2)} / unit</strong>
+                          Target Price: <strong className="text-[#0A6CFF]">€{req.target_price.toFixed(2)} / unit</strong>
                         </div>
                         <div>
                           Total Budget:{' '}
                           <strong className="text-[#0B1F3A]">
-                            £{(req.target_quantity * req.target_price).toLocaleString()}
+                            €{(req.target_quantity * req.target_price).toLocaleString()}
                           </strong>
                         </div>
                         {req.barcode_or_sku && (
@@ -311,13 +311,13 @@ export default function BuyerRequestsPage() {
 
                                 <div className="flex flex-wrap items-center gap-4 text-[13px] text-[#5B6B82]">
                                   <div>
-                                    Offered Price: <strong className="text-[#0A6CFF] font-bold">£{q.offeredPrice.toFixed(2)}</strong> / unit
+                                    Offered Price: <strong className="text-[#0A6CFF] font-bold">€{q.offeredPrice.toFixed(2)}</strong> / unit
                                   </div>
                                   <div>
                                     Quantity: <strong className="text-[#0B1F3A]">{q.offeredQuantity.toLocaleString()} units</strong>
                                   </div>
                                   <div>
-                                    Total Value: <strong className="text-[#0B1F3A]">£{q.totalPrice.toLocaleString()}</strong>
+                                    Total Value: <strong className="text-[#0B1F3A]">€{q.totalPrice.toLocaleString()}</strong>
                                   </div>
                                   <div>
                                     Lead Time: <strong className="text-[#0B1F3A]">{q.leadTimeDays} business days</strong>
@@ -342,7 +342,7 @@ export default function BuyerRequestsPage() {
 
                                 {q.sellerEmail && (
                                   <a
-                                    href={`mailto:${q.sellerEmail}?subject=Re: Quotation for ${encodeURIComponent(q.productName)}&body=Hello ${encodeURIComponent(q.sellerCompanyName)},%0D%0A%0D%0AThank you for your quotation for ${encodeURIComponent(q.productName)} (£${q.offeredPrice} for ${q.offeredQuantity} units).%0D%0A%0D%0AWe would like to proceed with the following terms:`}
+                                    href={`mailto:${q.sellerEmail}?subject=Re: Quotation for ${encodeURIComponent(q.productName)}&body=Hello ${encodeURIComponent(q.sellerCompanyName)},%0D%0A%0D%0AThank you for your quotation for ${encodeURIComponent(q.productName)} (€${q.offeredPrice} for ${q.offeredQuantity} units).%0D%0A%0D%0AWe would like to proceed with the following terms:`}
                                     className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] text-[12px] font-semibold px-3.5 py-2 rounded-full transition"
                                     title="Send direct email to supplier"
                                   >

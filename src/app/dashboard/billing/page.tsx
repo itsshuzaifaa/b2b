@@ -392,7 +392,7 @@ function BillingContent() {
               </div>
               <div className="text-left sm:text-right shrink-0">
                 <span className="text-[32px] font-black text-[#0B1F3A]">
-                  £{TIER_PRICING[currentTier].price}
+                  €{TIER_PRICING[currentTier].price}
                 </span>
                 <span className="text-[14px] text-[#5B6B82] font-medium">/month</span>
               </div>
@@ -663,7 +663,7 @@ function BillingContent() {
                     <td className="px-5 py-4 font-mono font-bold text-[#0A6CFF]">{p.invoice_number}</td>
                     <td className="px-4 py-4 text-[#5B6B82]">{p.created_at}</td>
                     <td className="px-4 py-4 font-medium">{p.plan_or_service}</td>
-                    <td className="px-4 py-4 font-extrabold">£{p.amount_gbp.toFixed(2)}</td>
+                    <td className="px-4 py-4 font-extrabold">€{p.amount_gbp.toFixed(2)}</td>
                     <td className="px-4 py-4 text-[#5B6B82]">{p.payment_method}</td>
                     <td className="px-4 py-4">
                       <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -706,7 +706,7 @@ function BillingContent() {
             </h3>
             <p className="text-[13px] text-[#5B6B82] mt-1 mb-5">
               {pendingPlanTier
-                ? `Enter your card details to activate ${TIER_PRICING[pendingPlanTier].name} (£${TIER_PRICING[pendingPlanTier].price}/month). Billed monthly, cancel anytime.`
+                ? `Enter your card details to activate ${TIER_PRICING[pendingPlanTier].name} (€${TIER_PRICING[pendingPlanTier].price}/month). Billed monthly, cancel anytime.`
                 : 'Securely save a business credit or debit card for recurring membership.'}
             </p>
 
@@ -720,7 +720,7 @@ function BillingContent() {
                   </span>
                 </div>
                 <div className="text-[15px] font-black text-[#0A6CFF]">
-                  £{TIER_PRICING[pendingPlanTier].price}
+                  €{TIER_PRICING[pendingPlanTier].price}
                   <span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
                 </div>
               </div>
@@ -843,7 +843,7 @@ function BillingContent() {
                   type="submit"
                   className="w-1/2 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] transition cursor-pointer shadow-xs"
                 >
-                  {pendingPlanTier ? `Pay £${TIER_PRICING[pendingPlanTier].price} & Activate Plan` : 'Save Card'}
+                  {pendingPlanTier ? `Pay €${TIER_PRICING[pendingPlanTier].price} & Activate Plan` : 'Save Card'}
                 </button>
               </div>
             </form>
@@ -956,7 +956,7 @@ function BillingContent() {
                   <div className="text-[12px] text-[#5B6B82]">50 active listings &bull; CSV uploads &bull; 25 quotes/mo</div>
                 </div>
                 <div className="font-black text-[16px] text-[#0B1F3A]">
-                  £79<span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
+                  €79<span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
                 </div>
               </div>
 
@@ -974,7 +974,7 @@ function BillingContent() {
                   <div className="text-[12px] text-[#5B6B82]">Unlimited listings &bull; Spotlight badges &bull; 50 quotes/mo</div>
                 </div>
                 <div className="font-black text-[16px] text-[#0B1F3A]">
-                  £179<span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
+                  €179<span className="text-[12px] font-normal text-[#5B6B82]">/mo</span>
                 </div>
               </div>
             </div>
@@ -1061,7 +1061,7 @@ function BillingContent() {
               </div>
               <div className="flex justify-between border-t border-[#F0F4FA] pt-3 text-[15px] font-black">
                 <span>Total Settled:</span>
-                <span className="text-[#0A6CFF]">£{selectedReceipt.amount_gbp.toFixed(2)} GBP</span>
+                <span className="text-[#0A6CFF]">€{selectedReceipt.amount_gbp.toFixed(2)} EUR</span>
               </div>
             </div>
 

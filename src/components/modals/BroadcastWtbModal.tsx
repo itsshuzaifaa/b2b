@@ -288,7 +288,7 @@ export function BroadcastWtbModal({
           </div>
 
           <h2 className="text-[22px] sm:text-[24px] font-black tracking-tight text-white leading-snug">
-            Broadcast WTB Request to All Members
+            Broadcast Buy (WTB) Request to All Members
           </h2>
           <p className="text-[13px] text-[#A7BFDE] mt-1 max-w-xl">
             Transmit your sourcing demand instantly across the internal network. All verified wholesale traders receive notification in their messages desk.
@@ -421,7 +421,7 @@ export function BroadcastWtbModal({
                                 </span>
                                 <span>·</span>
                                 <span>
-                                  Target Price: <strong className="text-[#16A34A]">£{wtb.target_price.toFixed(2)}</strong>
+                                  Target Price: <strong className="text-[#16A34A]">€{wtb.target_price.toFixed(2)}</strong>
                                 </span>
                                 {wtb.barcode_or_sku && (
                                   <>
@@ -517,7 +517,7 @@ export function BroadcastWtbModal({
 
                     <div>
                       <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                        Target Price (£ / unit) <span className="text-red-500">*</span>
+                        Target Price (€ / unit) <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"

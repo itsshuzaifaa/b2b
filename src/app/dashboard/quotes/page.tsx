@@ -255,7 +255,7 @@ export default function DashboardQuotesPage() {
 
                     {/* Your Price */}
                     <td className="py-4 px-6 font-bold text-[#0B1F3A]">
-                      £{sq.yourPrice.toFixed(2)}
+                      €{sq.yourPrice.toFixed(2)}
                     </td>
 
                     {/* Quantity */}
@@ -379,7 +379,7 @@ export default function DashboardQuotesPage() {
                 <div>
                   <span className="text-[11px] font-bold text-[#8A9BB0] uppercase">Target Price</span>
                   <p className="text-[16px] font-extrabold text-[#0B1F3A]">
-                    £{selectedRequestDetails.requestTargetPrice?.toFixed(2) || selectedRequestDetails.yourPrice.toFixed(2)}
+                    €{selectedRequestDetails.requestTargetPrice?.toFixed(2) || selectedRequestDetails.yourPrice.toFixed(2)}
                   </p>
                 </div>
                 <div>
@@ -411,7 +411,7 @@ export default function DashboardQuotesPage() {
                 <div className="flex items-center justify-between text-[13px]">
                   <span className="text-[#8A9BB0] font-semibold">Your Quote Bid:</span>
                   <span className="font-extrabold text-[#0B1F3A]">
-                    £{selectedRequestDetails.yourPrice.toFixed(2)} / unit · {selectedRequestDetails.quantity.toLocaleString()} units
+                    €{selectedRequestDetails.yourPrice.toFixed(2)} / unit · {selectedRequestDetails.quantity.toLocaleString()} units
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[13px] mt-1">
@@ -432,7 +432,7 @@ export default function DashboardQuotesPage() {
                   selectedRequestDetails.buyerContact || selectedRequestDetails.buyer || 'Buyer'
                 )},%0D%0A%0D%0ARegarding your procurement request for ${encodeURIComponent(
                   selectedRequestDetails.product
-                )}, Nordic Electro Wholesale Ltd is pleased to quote:%0D%0A%0D%0AUnit Price: £${selectedRequestDetails.yourPrice.toFixed(
+                )}, Nordic Electro Wholesale Ltd is pleased to quote:%0D%0A%0D%0AUnit Price: €${selectedRequestDetails.yourPrice.toFixed(
                   2
                 )}%0D%0AQuantity Offered: ${selectedRequestDetails.quantity} units%0D%0ALead Time: ${
                   selectedRequestDetails.leadTimeDays || 3
@@ -485,7 +485,7 @@ export default function DashboardQuotesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Your Price (£)
+                    Your Price (€)
                   </label>
                   <input
                     type="number"
@@ -658,7 +658,7 @@ export default function DashboardQuotesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Price Quoted (£)
+                    Price Quoted (€)
                   </label>
                   <input
                     type="number"

@@ -350,8 +350,8 @@ export function updateAccountTier(
         membership_tier: newTier,
         total_spend_or_sales:
           acc.role === 'seller'
-            ? `£${newTier === 'gold' ? '179' : newTier === 'silver' ? '79' : '0'}/mo Membership`
-            : '£0 (Free Buyer Access)',
+            ? `€${newTier === 'gold' ? '179' : newTier === 'silver' ? '79' : '0'}/mo Membership`
+            : '€0 (Free Buyer Access)',
       };
     }
     return acc;
@@ -637,12 +637,45 @@ export function saveAdminListings(listings: AdminModeratedListing[]) {
 
 export function suspendListing(productId: string, reason?: string): boolean {
   const listings = getAdminListings();
+  const defaultReason = reason || 'Suspended by admin for commercial compliance check.';
   const updated = listings.map((l) =>
     l.id === productId
-      ? { ...l, moderation_status: 'suspended' as const, moderation_reason: reason || 'Suspended by admin for commercial compliance check.' }
+      ? { ...l, moderation_status: 'suspended' as const, moderation_reason: defaultReason }
       : l
   );
   saveAdminListings(updated);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: productId, status: 'suspended', reason: defaultReason }),
+    }).catch(() => {});
+  }
+
+  return true;
+}
+
+export function suspendListings(productIds: string[], reason?: string): boolean {
+  if (!productIds.length) return true;
+  const idSet = new Set(productIds);
+  const listings = getAdminListings();
+  const defaultReason = reason || 'Suspended by admin for commercial compliance check.';
+  const updated = listings.map((l) =>
+    idSet.has(l.id)
+      ? { ...l, moderation_status: 'suspended' as const, moderation_reason: defaultReason }
+      : l
+  );
+  saveAdminListings(updated);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: productIds, status: 'suspended', reason: defaultReason }),
+    }).catch(() => {});
+  }
+
   return true;
 }
 
@@ -654,6 +687,15 @@ export function reinstateListing(productId: string): boolean {
       : l
   );
   saveAdminListings(updated);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: productId, status: 'active' }),
+    }).catch(() => {});
+  }
+
   return true;
 }
 
@@ -680,6 +722,46 @@ export function deleteListing(productId: string): boolean {
       }
       window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
       window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+
+      fetch(`/api/products?id=${encodeURIComponent(productId)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+    } catch {}
+  }
+  return true;
+}
+
+export function deleteListings(productIds: string[]): boolean {
+  if (!productIds.length) return true;
+  const idSet = new Set(productIds);
+  const listings = getAdminListings();
+  const updated = listings.filter((l) => !idSet.has(l.id));
+  saveAdminListings(updated);
+
+  if (typeof window !== 'undefined') {
+    try {
+      const rawUser = localStorage.getItem('b2b_seller_listings_v3');
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => !idSet.has(p.id))));
+        }
+      }
+      const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
+      if (rawWtb) {
+        const parsed = JSON.parse(rawWtb);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: any) => !idSet.has(w.id))));
+        }
+      }
+      window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+      window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+
+      fetch('/api/products', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: productIds }),
+      }).catch(() => {});
     } catch {}
   }
   return true;

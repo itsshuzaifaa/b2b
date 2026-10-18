@@ -95,7 +95,7 @@ export function ProductSlider() {
                   <div className="text-right">
                     <span className="text-[10px] text-slate-400 block -mb-0.5">Wholesale</span>
                     <span className="text-sm font-extrabold text-[#00D2FF]">
-                      £{product.unit_price.toFixed(2)}
+                      €{product.unit_price.toFixed(2)}
                     </span>
                   </div>
                 </div>

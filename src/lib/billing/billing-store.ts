@@ -686,7 +686,7 @@ export function processRegistrationCardCheckout(params: {
         account_status: 'active',
         created_at: new Date().toISOString(),
         listings_count: 0,
-        total_spend_or_sales: `£${pricing.price}/mo Membership`,
+        total_spend_or_sales: `€${pricing.price}/mo Membership`,
         verified_documents: false,
       };
       saveAdminAccounts([newAccount, ...existingAccounts]);

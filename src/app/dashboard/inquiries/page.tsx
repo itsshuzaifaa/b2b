@@ -263,7 +263,7 @@ function InquiriesContent() {
       return;
     }
     if (presetType === 'quote') {
-      const priceStr = activeConv.productPrice ? `£${activeConv.productPrice.toFixed(2)}` : 'our agreed trade price';
+      const priceStr = activeConv.productPrice ? `€${activeConv.productPrice.toFixed(2)}` : 'our agreed trade price';
       setReplyText(`We can fulfill this trade order at ${priceStr} per unit. Proforma invoice can be issued immediately.`);
     } else if (presetType === 'stock') {
       setReplyText('Yes, full quantity is in stock and ready for immediate global pallet collection / dispatch.');
@@ -619,8 +619,8 @@ function InquiriesContent() {
                           {isAdminDesk
                             ? 'Official direct support & platform advisory channel'
                             : isMemberBroadcast
-                            ? `${activeConv.broadcastDetails?.title || activeConv.productTitle} · ${activeConv.broadcastDetails?.quantity || activeConv.productMoq} units · £${(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}`
-                            : `${activeConv.productTitle}${activeConv.productPrice ? ` · £${activeConv.productPrice.toFixed(2)}` : ''}`}
+                            ? `${activeConv.broadcastDetails?.title || activeConv.productTitle} · ${activeConv.broadcastDetails?.quantity || activeConv.productMoq} units · €${(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}`
+                            : `${activeConv.productTitle}${activeConv.productPrice ? ` · €${activeConv.productPrice.toFixed(2)}` : ''}`}
                         </p>
                       </div>
                     </div>
@@ -710,7 +710,7 @@ function InquiriesContent() {
                           {broadcastKind === 'wtb' ? 'Target Price' : 'Unit Price'}
                         </span>
                         <strong className="text-[14px] font-bold text-[#0B1F3A] mt-0.5 block">
-                          £{(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}
+                          €{(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}
                         </strong>
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
@@ -724,7 +724,7 @@ function InquiriesContent() {
                       <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                         <span className="text-[11px] text-[#64748B] block font-medium">Total Lot Value</span>
                         <strong className="text-[14px] font-bold text-[#0A6CFF] mt-0.5 block">
-                          £{(
+                          €{(
                             (activeConv.broadcastDetails?.quantity || activeConv.productMoq || 0) *
                             (activeConv.broadcastDetails?.price || activeConv.productPrice || 0)
                           ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

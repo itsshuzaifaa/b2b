@@ -157,8 +157,8 @@ export async function GET() {
           listings_count: listingCounts[c.id] || 0,
           total_spend_or_sales:
             c.role === 'seller'
-              ? `£${effectiveTier === 'gold' ? '179' : effectiveTier === 'silver' ? '79' : '0'}/mo Membership`
-              : '£0 (Free Buyer Access)',
+              ? `€${effectiveTier === 'gold' ? '179' : effectiveTier === 'silver' ? '79' : '0'}/mo Membership`
+              : '€0 (Free Buyer Access)',
           verified_documents: true,
         };
       });
@@ -406,6 +406,16 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json({ success: true, action: 'deleted', companyId, email });
+    }
+
+    if (action === 'clear_listings' || action === 'clear_lots') {
+      try {
+        const admin = createAdminClient();
+        await admin.from('products').delete().eq('company_id', companyId);
+      } catch (err) {
+        console.warn('[ADMIN CLEAR LISTINGS ERROR]', err);
+      }
+      return NextResponse.json({ success: true, action: 'cleared_listings', companyId });
     }
 
     return NextResponse.json({ error: 'Invalid action specified' }, { status: 400 });

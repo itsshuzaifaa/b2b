@@ -37,6 +37,9 @@ import {
   Check,
   FileSpreadsheet,
   MoreVertical,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Package,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
@@ -49,9 +52,11 @@ export default function AdminUsersPage() {
   // Modals
   const [selectedDossier, setSelectedDossier] = useState<AdminClientAccount | null>(null);
   const [deleteConfirmAccount, setDeleteConfirmAccount] = useState<AdminClientAccount | null>(null);
+  const [clearLotsConfirmAccount, setClearLotsConfirmAccount] = useState<AdminClientAccount | null>(null);
   const [editingTierAccount, setEditingTierAccount] = useState<AdminClientAccount | null>(null);
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
   const [bulkCsvAccount, setBulkCsvAccount] = useState<AdminClientAccount | null>(null);
+  const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -92,8 +97,19 @@ export default function AdminUsersPage() {
     setTimeout(() => setFeedback(null), 3000);
   };
 
+  const handleBulkCsvSuccess = (count: number) => {
+    showNotice(`Successfully uploaded and published ${count} listings for ${bulkCsvAccount?.name}`);
+    loadData();
+  };
+
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
+    // Optimistic AJAX state update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+    );
     updateAccountApproval(acc.id, 'approved');
+    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
+
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
@@ -107,13 +123,26 @@ export default function AdminUsersPage() {
         }),
       });
     } catch {}
-    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched.`);
     loadData();
   };
 
   const handleToggleSuspend = async (acc: AdminClientAccount) => {
-    if (acc.account_status === 'suspended') {
+    const isCurrentlySuspended = acc.account_status === 'suspended';
+    const newStatus = isCurrentlySuspended ? 'active' : 'suspended';
+    const newApproval = isCurrentlySuspended ? 'approved' : 'rejected';
+
+    // Optimistic AJAX state update
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === acc.id
+          ? { ...a, account_status: newStatus, approval_status: newApproval }
+          : a
+      )
+    );
+
+    if (isCurrentlySuspended) {
       unsuspendAccount(acc.id);
+      showNotice(`Account "${acc.name}" reactivated. Welcome notice dispatched.`);
       try {
         await fetch('/api/admin/accounts', {
           method: 'POST',
@@ -127,9 +156,9 @@ export default function AdminUsersPage() {
           }),
         });
       } catch {}
-      showNotice(`Account "${acc.name}" has been reactivated.`);
     } else {
       suspendAccount(acc.id);
+      showNotice(`Account "${acc.name}" suspended. Suspension notice dispatched to ${acc.email}.`);
       try {
         await fetch('/api/admin/accounts', {
           method: 'POST',
@@ -143,52 +172,110 @@ export default function AdminUsersPage() {
           }),
         });
       } catch {}
-      showNotice(`Account "${acc.name}" has been suspended. Suspension notice dispatched.`);
     }
     loadData();
   };
 
-  const handleDelete = async (id: string) => {
-    const acc = accounts.find((a) => a.id === id);
-    if (acc?.role === 'admin' || acc?.email?.toLowerCase() === 'admin@b2blink.eu') {
+  const handleDelete = async (acc: AdminClientAccount) => {
+    if (acc.role === 'admin' || acc.email?.toLowerCase() === 'admin@b2blink.eu') {
       showNotice('Admin accounts cannot be deleted or removed.');
       setDeleteConfirmAccount(null);
       return;
     }
 
-    deleteAccount(id, acc?.email);
+    // 1. Optimistic AJAX UI update immediately - NO hard reload
+    setAccounts((prev) => prev.filter((a) => a.id !== acc.id && a.email !== acc.email));
     setDeleteConfirmAccount(null);
-    showNotice('Account successfully removed from platform.');
+    deleteAccount(acc.id, acc.email);
+    showNotice(`Account "${acc.name}" permanently deleted.`);
 
+    // 2. AJAX call to API to delete from database
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'delete',
-          companyId: id,
-          email: acc?.email,
+          companyId: acc.id,
+          email: acc.email,
         }),
       });
     } catch (err) {
-      console.warn('Delete error:', err);
+      console.warn('AJAX delete error:', err);
     }
 
+    // 3. Re-sync via AJAX in background
     loadData();
   };
 
-  const handleSaveTier = (e: React.FormEvent) => {
+  const handleClearCatalogLots = async (acc: AdminClientAccount) => {
+    // Optimistic UI update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, listings_count: 0 } : a))
+    );
+    setClearLotsConfirmAccount(null);
+    showNotice(`Cleared all catalog lots for "${acc.name}".`);
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_listings', companyId: acc.id }),
+      });
+      await fetch(`/api/products?companyId=${encodeURIComponent(acc.id)}`, {
+        method: 'DELETE',
+      });
+      // Also update local storage if any
+      const rawUser = localStorage.getItem('b2b_seller_listings_v3');
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (Array.isArray(parsed)) {
+            localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => p.company_id !== acc.id)));
+          }
+        } catch {}
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+      }
+    } catch {
+      showNotice(`Failed to clear catalog lots for ${acc.name}.`);
+    }
+    loadData();
+  };
+
+  const handleSaveTier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTierAccount) return;
-    updateAccountTier(editingTierAccount.id, selectedTier);
+    const targetAccount = editingTierAccount;
+    const newTier = selectedTier;
     setEditingTierAccount(null);
-    showNotice(`Membership tier updated to ${selectedTier.toUpperCase()} for ${editingTierAccount.name}`);
+
+    // Optimistic AJAX update
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === targetAccount.id ? { ...a, membership_tier: newTier } : a))
+    );
+    updateAccountTier(targetAccount.id, newTier, targetAccount.email);
+    showNotice(`Membership tier updated to ${newTier.toUpperCase()} for ${targetAccount.name}`);
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_tier',
+          companyId: targetAccount.id,
+          email: targetAccount.email,
+          tier: newTier,
+        }),
+      });
+    } catch {}
     loadData();
   };
 
   const filteredAccounts = useMemo(() => {
     return accounts.filter((acc) => {
-      // Admin accounts cannot be listed or managed in the client accounts directory
+      // Admin accounts cannot be listed or shown in the client accounts directory
       if (acc.role === 'admin' || acc.email?.toLowerCase() === 'admin@b2blink.eu') {
         return false;
       }
@@ -207,7 +294,7 @@ export default function AdminUsersPage() {
       if (roleFilter === 'seller') return acc.role === 'seller';
       if (roleFilter === 'buyer') return acc.role === 'buyer';
       if (roleFilter === 'suspended') return acc.account_status === 'suspended';
-      if (roleFilter === 'pending') return acc.approval_status === 'pending';
+      if (roleFilter === 'pending') return acc.approval_status === 'pending' || acc.approval_status === 'pending_verification';
 
       return true;
     });
@@ -219,7 +306,7 @@ export default function AdminUsersPage() {
   const sellerCount = clientAccounts.filter((a) => a.role === 'seller').length;
   const buyerCount = clientAccounts.filter((a) => a.role === 'buyer').length;
   const suspendedCount = clientAccounts.filter((a) => a.account_status === 'suspended').length;
-  const pendingCount = clientAccounts.filter((a) => a.approval_status === 'pending').length;
+  const pendingCount = clientAccounts.filter((a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification').length;
 
   return (
     <>
@@ -250,7 +337,7 @@ export default function AdminUsersPage() {
 
       {/* Filter Tabs & Search Controls */}
       <div className="mt-6 space-y-4">
-        {/* Pills */}
+        {/* Pills: Keep only All, Pending, and Suspended with shortened names */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           <button
             type="button"
@@ -261,51 +348,30 @@ export default function AdminUsersPage() {
                 : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
             }`}
           >
-            All Accounts ({accounts.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('seller')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              roleFilter === 'seller'
-                ? 'bg-[#0B1F3A] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
-            }`}
-          >
-            Wholesale Sellers ({sellerCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setRoleFilter('buyer')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
-              roleFilter === 'buyer'
-                ? 'bg-[#0B1F3A] text-white shadow-xs'
-                : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
-            }`}
-          >
-            Verified Buyers ({buyerCount})
+            All ({accounts.length})
           </button>
           <button
             type="button"
             onClick={() => setRoleFilter('pending')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
               roleFilter === 'pending'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50'
             }`}
           >
-            Pending KYC ({pendingCount})
+            <span>Pending ({pendingCount})</span>
           </button>
           <button
             type="button"
             onClick={() => setRoleFilter('suspended')}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer ${
+            className={`px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
               roleFilter === 'suspended'
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
             }`}
           >
-            Suspended ({suspendedCount})
+            <Ban className="w-3.5 h-3.5" />
+            <span>Suspended ({suspendedCount})</span>
           </button>
         </div>
 
@@ -315,7 +381,7 @@ export default function AdminUsersPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search company, contact person, email, or VAT..."
+            placeholder="Search company, contact person, or email..."
             className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-white border border-[#EAEFF6] rounded-full text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
           />
           <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -348,7 +414,6 @@ export default function AdminUsersPage() {
               ) : (
                 filteredAccounts.map((acc) => {
                   const isSuspended = acc.account_status === 'suspended';
-                  const isPending = acc.approval_status === 'pending';
 
                   return (
                     <tr key={acc.id} className="hover:bg-[#F8FAFC]/70 transition group">
@@ -401,7 +466,7 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
 
-                      {/* Contact */}
+                      {/* Contact - Requirement 02: Real name shown */}
                       <td className="py-4 px-6 text-[#5B6B82]">
                         <div className="font-bold text-[#0B1F3A] text-[13px]">{acc.contact_name}</div>
                         <div className="text-[12px] text-[#0A6CFF]">{acc.email}</div>
@@ -414,7 +479,7 @@ export default function AdminUsersPage() {
                             <Ban className="w-3 h-3" />
                             <span>Suspended</span>
                           </span>
-                        ) : isPending ? (
+                        ) : acc.approval_status === 'pending' || acc.approval_status === 'pending_verification' ? (
                           <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                             <span>Pending KYC</span>
@@ -422,7 +487,7 @@ export default function AdminUsersPage() {
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-200">
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Active / KYC OK</span>
+                            <span>Active / Verified</span>
                           </span>
                         )}
                       </td>
@@ -440,7 +505,7 @@ export default function AdminUsersPage() {
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Verify Button for Pending Accounts */}
-                          {isPending && (
+                          {(acc.approval_status === 'pending' || acc.approval_status === 'pending_verification') && (
                             <button
                               type="button"
                               onClick={() => handleVerifyAccount(acc)}
@@ -452,20 +517,38 @@ export default function AdminUsersPage() {
                             </button>
                           )}
 
-                          {/* Upload Bulk CSV Quick Action */}
-                          <button
-                            type="button"
-                            onClick={() => setBulkCsvAccount(acc)}
-                            title="Upload Bulk CSV for this seller"
-                            className="p-2 rounded-xl text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
-                          >
-                            <FileSpreadsheet className="w-4 h-4" />
-                          </button>
+                          {/* Upload Bulk CSV Quick Actions: WTS & WTB */}
+                          <div className="flex items-center gap-0.5 bg-[#F1F5F9] p-0.5 rounded-xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkCsvMode('WTS');
+                                setBulkCsvAccount(acc);
+                              }}
+                              title="Upload WTS (Sell Offers) CSV"
+                              className="px-2 py-1 rounded-lg text-[#0A6CFF] hover:bg-white text-[11px] font-black transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                              <span>WTS</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkCsvMode('WTB');
+                                setBulkCsvAccount(acc);
+                              }}
+                              title="Upload WTB (Buy Requirements) CSV"
+                              className="px-2 py-1 rounded-lg text-[#16A34A] hover:bg-white text-[11px] font-black transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ArrowDownLeft className="w-3.5 h-3.5" />
+                              <span>WTB</span>
+                            </button>
+                          </div>
 
                           {/* Message Button */}
                           <button
                             type="button"
-                            onClick={() => router.push(`/admin/messages?to=${acc.id}`)}
+                            onClick={() => router.push(`/site-admin/messages?to=${acc.id}`)}
                             title="Open direct message thread"
                             className="p-2 rounded-xl text-slate-400 hover:text-[#0A6CFF] hover:bg-slate-100 transition cursor-pointer"
                           >
@@ -476,7 +559,7 @@ export default function AdminUsersPage() {
                           <button
                             type="button"
                             onClick={() => setSelectedDossier(acc)}
-                            title="View KYC & client dossier"
+                            title="View client dossier"
                             className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
                           >
                             <Eye className="w-4 h-4" />
@@ -495,19 +578,33 @@ export default function AdminUsersPage() {
 
                             {openMenuId === acc.id && (
                               <div
-                                className="absolute right-0 top-full mt-1 w-52 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setOpenMenuId(null);
+                                    setBulkCsvMode('WTS');
+                                    setBulkCsvAccount(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
+                                  <span>Upload WTS (Sell Offers) CSV</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setBulkCsvMode('WTB');
                                     setBulkCsvAccount(acc);
                                   }}
                                   className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
                                 >
-                                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                                  <span>Upload Bulk CSV</span>
+                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                                  <span>Upload WTB (Buy Requirements) CSV</span>
                                 </button>
 
                                 <button
@@ -534,6 +631,20 @@ export default function AdminUsersPage() {
                                   <Edit className="w-4 h-4 text-[#5B6B82]" />
                                   <span>Change Membership Tier</span>
                                 </button>
+
+                                {acc.listings_count > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuId(null);
+                                      setClearLotsConfirmAccount(acc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition cursor-pointer"
+                                  >
+                                    <Package className="w-4 h-4 text-amber-600" />
+                                    <span>Clear All Lots ({acc.listings_count})</span>
+                                  </button>
+                                )}
 
                                 <div className="my-1 border-t border-slate-100" />
 
@@ -675,12 +786,13 @@ export default function AdminUsersPage() {
                   onClick={() => {
                     const target = selectedDossier;
                     setSelectedDossier(null);
+                    setBulkCsvMode('WTS');
                     setBulkCsvAccount(target);
                   }}
-                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                  className="bg-blue-50 text-[#0A6CFF] hover:bg-blue-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Upload Bulk CSV</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Upload WTS (Sell)</span>
                 </button>
 
                 <button
@@ -688,7 +800,21 @@ export default function AdminUsersPage() {
                   onClick={() => {
                     const target = selectedDossier;
                     setSelectedDossier(null);
-                    router.push(`/admin/messages?to=${target.id}`);
+                    setBulkCsvMode('WTB');
+                    setBulkCsvAccount(target);
+                  }}
+                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Upload WTB (Buy)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    router.push(`/site-admin/messages?to=${target.id}`);
                   }}
                   className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
@@ -704,7 +830,7 @@ export default function AdminUsersPage() {
       {/* EDIT TIER MODAL */}
       {editingTierAccount && (
         <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-w-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6]">
+          <div className="bg-white rounded-[32px] p-7 max-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6]">
             <h3 className="text-[17px] font-bold text-[#0B1F3A]">
               Modify Membership Tier
             </h3>
@@ -792,7 +918,7 @@ export default function AdminUsersPage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(deleteConfirmAccount.id)}
+                onClick={() => handleDelete(deleteConfirmAccount)}
                 className="px-6 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-[13px] shadow-xs transition cursor-pointer"
               >
                 Yes, Delete Account
@@ -802,16 +928,47 @@ export default function AdminUsersPage() {
         </div>
       )}
 
+      {/* CLEAR ALL CATALOG LOTS CONFIRMATION MODAL */}
+      {clearLotsConfirmAccount && (
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] p-7 max-w-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+              <Package className="w-6 h-6" />
+            </div>
+            <h3 className="text-[19px] font-black text-[#0B1F3A] text-center">
+              Clear All Catalog Lots?
+            </h3>
+            <p className="text-[13px] text-[#5B6B82] text-center mt-1.5 leading-relaxed">
+              Are you sure you want to delete all <strong>{clearLotsConfirmAccount.listings_count} catalog lots</strong> for <strong>{clearLotsConfirmAccount.name}</strong>? This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setClearLotsConfirmAccount(null)}
+                className="px-5 py-2.5 rounded-full bg-slate-100 text-[#0B1F3A] font-semibold text-[13px] hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleClearCatalogLots(clearLotsConfirmAccount)}
+                className="px-6 py-2.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[13px] shadow-xs transition cursor-pointer"
+              >
+                Yes, Clear All Lots
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ADMIN BULK CSV MODAL */}
       <AdminBulkCsvModal
-        isOpen={!!bulkCsvAccount}
+        isOpen={Boolean(bulkCsvAccount)}
         onClose={() => setBulkCsvAccount(null)}
         account={bulkCsvAccount}
-        onSuccess={(count) => {
-          setFeedback(`Successfully uploaded and published ${count} listings for ${bulkCsvAccount?.name}`);
-          setTimeout(() => setFeedback(null), 3000);
-          loadData();
-        }}
+        initialMode={bulkCsvMode}
+        onSuccess={handleBulkCsvSuccess}
       />
     </>
   );

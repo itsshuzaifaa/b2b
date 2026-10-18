@@ -27,7 +27,7 @@ export function PricingSection() {
     {
       name: 'Silver',
       subtitle: 'For active global wholesalers moving steady volume.',
-      price: '£79',
+      price: '€79',
       period: '/ month',
       isFeatured: true,
       badge: 'Recommended',
@@ -45,7 +45,7 @@ export function PricingSection() {
     {
       name: 'Gold',
       subtitle: 'For high-volume distributors and enterprise sourcing desks.',
-      price: '£179',
+      price: '€179',
       period: '/ month',
       isFeatured: false,
       badge: 'Enterprise Volume',

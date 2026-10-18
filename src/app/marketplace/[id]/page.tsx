@@ -268,7 +268,7 @@ function ProductDetailContent() {
                   <span className="text-[14px] font-semibold text-[#5B6B82]">Wholesale Unit Price:</span>
                   <div className="text-right">
                     <span className="text-[32px] font-extrabold text-[#0B1F3A] leading-none block">
-                      £{product.unit_price.toFixed(2)}
+                      €{product.unit_price.toFixed(2)}
                     </span>
                     <span className="text-[12px] text-[#5B6B82] mt-1 block">ex VAT / per piece</span>
                   </div>

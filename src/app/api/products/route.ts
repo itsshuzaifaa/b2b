@@ -18,12 +18,14 @@ export async function GET(req: NextRequest) {
       .neq('id', '00000000-0000-4000-a000-000000000001') // exclude system anchor product
       .order('created_at', { ascending: false });
 
+    const showAll = searchParams.get('all') === 'true' || searchParams.get('admin') === 'true';
+
     if (productId) {
       dbQuery = dbQuery.eq('id', productId);
     }
     if (companyId) {
       dbQuery = dbQuery.eq('company_id', companyId);
-    } else if (!productId) {
+    } else if (!productId && !showAll) {
       dbQuery = dbQuery.eq('status', 'active');
     }
 
@@ -182,19 +184,81 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Product ID is required' }, { status: 400 });
-    }
+    const idsParam = searchParams.get('ids');
+    const companyIdParam = searchParams.get('companyId');
 
     const admin = createAdminClient();
-    const { error } = await admin.from('products').delete().eq('id', id);
+
+    if (companyIdParam) {
+      const { error, count } = await admin.from('products').delete().eq('company_id', companyIdParam);
+      if (error) throw error;
+      return NextResponse.json({ success: true, count });
+    }
+
+    let idsToDelete: string[] = [];
+    if (idsParam) {
+      idsToDelete = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
+    } else if (id) {
+      idsToDelete = [id.trim()];
+    } else {
+      try {
+        const body = await req.json();
+        if (body?.companyId) {
+          const { error, count } = await admin.from('products').delete().eq('company_id', body.companyId);
+          if (error) throw error;
+          return NextResponse.json({ success: true, count });
+        }
+        if (Array.isArray(body?.ids)) {
+          idsToDelete = body.ids.map((s: any) => String(s).trim()).filter(Boolean);
+        } else if (body?.id) {
+          idsToDelete = [String(body.id).trim()];
+        }
+      } catch {}
+    }
+
+    if (!idsToDelete.length) {
+      return NextResponse.json({ success: false, error: 'Product ID or IDs required' }, { status: 400 });
+    }
+
+    const { error } = await admin.from('products').delete().in('id', idsToDelete);
 
     if (error) throw error;
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, count: idsToDelete.length });
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Failed to delete product' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { ids, id, status = 'suspended' } = body || {};
+
+    let targetIds: string[] = [];
+    if (Array.isArray(ids)) {
+      targetIds = ids.map((s: any) => String(s).trim()).filter(Boolean);
+    } else if (id) {
+      targetIds = [String(id).trim()];
+    }
+
+    if (!targetIds.length) {
+      return NextResponse.json({ success: false, error: 'Product ID or IDs required' }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from('products')
+      .update({ status, updated_at: new Date().toISOString() })
+      .in('id', targetIds);
+
+    if (error) throw error;
+    return NextResponse.json({ success: true, count: targetIds.length });
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : 'Failed to update products' },
       { status: 500 }
     );
   }

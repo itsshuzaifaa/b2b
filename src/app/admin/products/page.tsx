@@ -92,7 +92,7 @@ export default function AdminProductsPage() {
                     <td className="px-4 py-4 font-semibold text-slate-800">
                       {p.company?.name || 'Verified Wholesaler'}
                     </td>
-                    <td className="px-4 py-4 font-bold text-[#16a34a]">£{p.unit_price.toFixed(2)}</td>
+                    <td className="px-4 py-4 font-bold text-[#16a34a]">€{p.unit_price.toFixed(2)}</td>
                     <td className="px-4 py-4">
                       {p.is_hot ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-[#00D2FF] bg-[#0B132B] px-2.5 py-0.5 rounded-full border border-[#00D2FF]">

@@ -52,12 +52,12 @@ export async function POST(request: NextRequest) {
       try {
         const { data: comp } = await admin
           .from('companies')
-          .select('contact_name, name')
+          .select('contact_name, company_name')
           .ilike('contact_email', rawEmail)
           .maybeSingle();
 
         if (comp) {
-          contactName = comp.contact_name || comp.name;
+          contactName = comp.contact_name || comp.company_name;
         }
       } catch {
         // ignore

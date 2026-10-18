@@ -50,8 +50,8 @@ function InquiryDialogContent({
     `Hello ${supplierName},\n\nI am contacting you regarding your wholesale stock of "${product.title}" listed on B2B LINK.\n\n` +
       `Our Requirements:\n` +
       `- Target Quantity: ${targetQuantity} units (MOQ: ${product.moq})\n` +
-      `- Proposed Unit Price: £${parsedPrice.toFixed(2)} GBP\n` +
-      `- Estimated Deal Value: £${estimatedTotal} GBP\n` +
+      `- Proposed Unit Price: €${parsedPrice.toFixed(2)} EUR\n` +
+      `- Estimated Deal Value: €${estimatedTotal} EUR\n` +
       `- Lead Time Requested: ${leadTimeDays} business days\n\n` +
       `${notes ? `Additional Terms / Notes:\n${notes}\n\n` : ''}` +
       `Please let us know your current availability and payment/dispatch terms.\n\n` +
@@ -60,7 +60,7 @@ function InquiryDialogContent({
   );
 
   const handleDirectChat = () => {
-    const defaultMsg = `Hi, I am interested in ordering ${targetQuantity} units of "${product.title}" at £${parsedPrice.toFixed(2)} / unit. Lead time: ${leadTimeDays} days. ${notes ? `Notes: ${notes}` : ''}`;
+    const defaultMsg = `Hi, I am interested in ordering ${targetQuantity} units of "${product.title}" at €${parsedPrice.toFixed(2)} / unit. Lead time: ${leadTimeDays} days. ${notes ? `Notes: ${notes}` : ''}`;
     const conv = startMarketplaceInquiry(
       product,
       company,
@@ -97,7 +97,7 @@ function InquiryDialogContent({
         buyerCompanyId: company?.id,
         targetQuantity,
         offeredPrice: parsedPrice,
-        message: notes || `Inquiry for ${targetQuantity} units at £${parsedPrice.toFixed(2)} / unit. Lead time: ${leadTimeDays} business days.`,
+        message: notes || `Inquiry for ${targetQuantity} units at €${parsedPrice.toFixed(2)} / unit. Lead time: ${leadTimeDays} business days.`,
       });
 
       if (res.success) {
@@ -107,7 +107,7 @@ function InquiryDialogContent({
           company?.contact_name || company?.name || 'Commercial Buyer',
           company?.email || '',
           company?.phone || '',
-          notes || `Commercial Inquiry: ${targetQuantity} units at £${parsedPrice.toFixed(2)} / unit.`
+          notes || `Commercial Inquiry: ${targetQuantity} units at €${parsedPrice.toFixed(2)} / unit.`
         );
         setCreatedConvId(conv.id);
         setIsSuccess(true);
@@ -152,7 +152,7 @@ function InquiryDialogContent({
           </div>
           <div>
             <span className="text-[#8A9BB0]">Listed Wholesale Price:</span>{' '}
-            <span className="font-bold text-[#0A6CFF]">£{product.unit_price.toFixed(2)} / unit</span>
+            <span className="font-bold text-[#0A6CFF]">€{product.unit_price.toFixed(2)} / unit</span>
           </div>
           {product.quantity_available && (
             <div className="text-[12px]">
@@ -255,11 +255,11 @@ function InquiryDialogContent({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                    Offered Unit Price (£ GBP) <span className="text-red-500">*</span>
+                    Offered Unit Price (€ EUR) <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
-                      £
+                      €
                     </span>
                     <input
                       type="number"
@@ -330,7 +330,7 @@ function InquiryDialogContent({
               <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EEF2F6] flex items-center justify-between text-[13px]">
                 <span className="text-[#5B6B82]">Estimated Total Deal Value:</span>
                 <span className="text-[17px] font-black text-[#0B1F3A]">
-                  £{Number(estimatedTotal).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  €{Number(estimatedTotal).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 

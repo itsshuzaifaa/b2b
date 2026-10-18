@@ -95,7 +95,7 @@ export async function importProductsFromCsv({
   // 1. Verify Company & Vetting Status
   const { data: company, error: companyError } = await client
     .from('companies')
-    .select('id, name, membership_tier, approval_status')
+    .select('id, company_name, tier, approval_status')
     .eq('id', companyId)
     .single();
 
@@ -118,7 +118,7 @@ export async function importProductsFromCsv({
   }
 
   // 2. Verify Membership Tier Permissions
-  const tier: MembershipTier = company.membership_tier;
+  const tier: MembershipTier = ((company as any).tier || (company as any).membership_tier || 'bronze') as MembershipTier;
   if (tier === 'bronze') {
     return {
       success: false,

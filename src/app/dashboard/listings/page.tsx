@@ -497,7 +497,7 @@ export default function ListingsPage() {
                       </span>
                     </td>
                     <td className="py-3.5 px-5 font-bold text-[#0B1F3A] whitespace-nowrap">
-                      £{item.unitPrice.toFixed(2)}
+                      €{item.unitPrice.toFixed(2)}
                     </td>
                     <td className="py-3.5 px-5 font-medium text-[#5B6B82] whitespace-nowrap">
                       {item.available.toLocaleString()} u
@@ -800,7 +800,7 @@ export default function ListingsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Unit Price (£ / €) *
+                      Unit Price (€) *
                     </label>
                     <input
                       type="number"
@@ -914,7 +914,7 @@ export default function ListingsPage() {
                 <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-center justify-between text-[13px]">
                   <span className="text-[#8A9BB0] font-semibold">Total Lot Wholesale Value:</span>
                   <span className="font-extrabold text-[#0B1F3A]">
-                    £{((parseFloat(formPrice) || 0) * (parseInt(formAvailable, 10) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    €{((parseFloat(formPrice) || 0) * (parseInt(formAvailable, 10) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
 

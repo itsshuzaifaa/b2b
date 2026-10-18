@@ -4,10 +4,10 @@ import { createAdminClient } from '@/lib/supabase/server';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { companyId, products } = body;
+    const { companyId, email, companyName, tier, products } = body;
 
-    if (!companyId) {
-      return NextResponse.json({ success: false, error: 'Seller company ID is required.' }, { status: 400 });
+    if (!companyId && !email && !companyName) {
+      return NextResponse.json({ success: false, error: 'Seller company identifier or email is required.' }, { status: 400 });
     }
     if (!Array.isArray(products) || products.length === 0) {
       return NextResponse.json({ success: false, error: 'No products provided for import.' }, { status: 400 });
@@ -15,74 +15,217 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    // Ensure company exists & is approved
-    let effectiveCompanyId = companyId;
-    const { data: comp } = await admin
-      .from('companies')
-      .select('id, approval_status, name')
-      .eq('id', companyId)
-      .maybeSingle();
+    // 1. Resolve target company in Supabase by ID, user_id, contact_email, or company_name
+    let comp: any = null;
 
-    if (!comp) {
-      const { data: anySeller } = await admin.from('companies').select('id').limit(1).maybeSingle();
-      if (anySeller) {
-        effectiveCompanyId = anySeller.id;
-      }
-    } else if (comp.approval_status !== 'approved') {
-      await admin.from('companies').update({ approval_status: 'approved' }).eq('id', companyId);
+    if (companyId) {
+      const { data } = await admin
+        .from('companies')
+        .select('id, user_id, approval_status, company_name, tier, contact_email')
+        .or(`id.eq.${companyId},user_id.eq.${companyId}`)
+        .maybeSingle();
+      comp = data;
     }
 
-    // Fetch categories to map category slugs or IDs
+    if (!comp && email) {
+      const { data } = await admin
+        .from('companies')
+        .select('id, user_id, approval_status, company_name, tier, contact_email')
+        .ilike('contact_email', email.trim())
+        .maybeSingle();
+      comp = data;
+    }
+
+    if (!comp && companyName) {
+      const { data } = await admin
+        .from('companies')
+        .select('id, user_id, approval_status, company_name, tier, contact_email')
+        .ilike('company_name', companyName.trim())
+        .maybeSingle();
+      comp = data;
+    }
+
+    // 2. If company still doesn't exist, auto-create it with Gold tier (or specified tier)
+    if (!comp) {
+      const targetTier = (tier || 'gold').toLowerCase();
+      const { data: createdComp, error: createError } = await admin
+        .from('companies')
+        .insert({
+          company_name: companyName || 'Wholesale Supplier',
+          contact_email: email || null,
+          role: 'seller',
+          approval_status: 'approved',
+          tier: targetTier,
+          updated_at: new Date().toISOString(),
+        })
+        .select('id, user_id, approval_status, company_name, tier, contact_email')
+        .maybeSingle();
+
+      if (createError) {
+        console.error('[AUTO CREATE COMPANY ERROR]', createError);
+      }
+      comp = createdComp;
+    }
+
+    if (!comp?.id) {
+      return NextResponse.json(
+        { success: false, error: 'Could not resolve or create target seller company.' },
+        { status: 404 }
+      );
+    }
+
+    const effectiveCompanyId = comp.id;
+
+    // 3. Ensure company is approved & sync tier to Gold if account is Gold
+    const targetTier = (tier || comp.tier || 'gold').toLowerCase();
+    const updates: Record<string, any> = {};
+
+    if (comp.approval_status !== 'approved') {
+      updates.approval_status = 'approved';
+    }
+    // If the account being uploaded to is Gold, or if uploading > 50 products, ensure company row reflects Gold to satisfy tier quota trigger
+    if ((targetTier === 'gold' || products.length > 50) && comp.tier !== 'gold') {
+      updates.tier = 'gold';
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString();
+      await admin.from('companies').update(updates).eq('id', effectiveCompanyId);
+    }
+
+    // 4. Fetch categories to map category slugs or IDs
     const { data: dbCategories } = await admin.from('categories').select('id, slug, name');
     const defaultCategoryId = dbCategories?.[0]?.id;
 
-    const preparedRows = products.map((item: any) => {
-      let catId = item.categoryId;
-      if (!catId && item.category) {
-        const itemCatLower = String(item.category).toLowerCase();
-        const match = dbCategories?.find(
-          (c) =>
-            c.slug.toLowerCase() === itemCatLower ||
-            c.name.toLowerCase() === itemCatLower ||
-            itemCatLower.includes(c.slug.toLowerCase())
-        );
-        if (match) catId = match.id;
+    const isUuid = (val?: string | null) =>
+      Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val));
+
+    // 5. Partition rows into SELL listings (products) and BUY requirements (wtb_requests)
+    const sellProducts = products.filter((p: any) => String(p.type || 'SELL').toUpperCase() !== 'BUY');
+    const buyProducts = products.filter((p: any) => String(p.type || '').toUpperCase() === 'BUY');
+
+    let insertedSellCount = 0;
+    let insertedBuyCount = 0;
+
+    // 6. Insert SELL products if any
+    if (sellProducts.length > 0) {
+      const preparedRows = sellProducts.map((item: any, idx: number) => {
+        let catId = item.categoryId;
+        if (!catId && item.category) {
+          const itemCatLower = String(item.category).toLowerCase();
+          const match = dbCategories?.find(
+            (c) =>
+              c.slug.toLowerCase() === itemCatLower ||
+              c.name.toLowerCase() === itemCatLower ||
+              itemCatLower.includes(c.slug.toLowerCase())
+          );
+          if (match) catId = match.id;
+        }
+        if (!catId) catId = defaultCategoryId;
+
+        const rawBarcode = item.barcodeOrSku?.trim() || item.ean?.trim() || item.itemCode?.trim();
+        const safeBarcode = rawBarcode && rawBarcode !== 'n/a' ? rawBarcode : `SKU-${Date.now()}-${idx}`;
+
+        return {
+          company_id: effectiveCompanyId,
+          category_id: catId,
+          title: item.title?.trim() || `Wholesale Item ${idx + 1}`,
+          description: item.description?.trim() || `${item.brand || ''} ${item.title || ''}`.trim() || 'Wholesale Lot',
+          barcode_or_sku: safeBarcode,
+          unit_price: Number(item.unitPrice) || 0,
+          quantity_available: Number(item.quantityAvailable ?? item.available) || 0,
+          moq: Number(item.moq) || 1,
+          currency: 'EUR',
+          status: 'active',
+          is_hot: Boolean(item.isHot),
+          image_urls:
+            Array.isArray(item.images) && item.images.length > 0
+              ? item.images
+              : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      const { data: inserted, error: insertError } = await admin
+        .from('products')
+        .insert(preparedRows as any)
+        .select('id');
+
+      if (insertError) {
+        console.error('[ADMIN BULK CSV SELL INSERT ERROR]', insertError.message);
+        return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
       }
-      if (!catId) catId = defaultCategoryId;
 
-      return {
-        company_id: effectiveCompanyId,
-        category_id: catId,
-        title: item.title?.trim(),
-        description: item.description?.trim() || `${item.brand || ''} ${item.title || ''}`.trim(),
-        barcode_or_sku: item.barcodeOrSku?.trim() || item.ean?.trim() || null,
-        unit_price: Number(item.unitPrice) || 0,
-        quantity_available: Number(item.quantityAvailable ?? item.available) || 0,
-        moq: Number(item.moq) || 1,
-        status: 'active',
-        is_hot: Boolean(item.isHot),
-        image_urls:
-          Array.isArray(item.images) && item.images.length > 0
-            ? item.images
-            : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    });
+      insertedSellCount = inserted ? inserted.length : preparedRows.length;
+    }
 
-    const { data: inserted, error: insertError } = await admin
-      .from('products')
-      .insert(preparedRows as any)
-      .select('id');
+    // 7. Insert BUY requirements if any
+    if (buyProducts.length > 0) {
+      const preparedWtbRows = buyProducts.map((item: any, idx: number) => {
+        let catId = item.categoryId;
+        let catSlug = 'general';
+        if (!catId && item.category) {
+          const itemCatLower = String(item.category).toLowerCase();
+          const match = dbCategories?.find(
+            (c) =>
+              c.slug.toLowerCase() === itemCatLower ||
+              c.name.toLowerCase() === itemCatLower ||
+              itemCatLower.includes(c.slug.toLowerCase())
+          );
+          if (match) {
+            catId = match.id;
+            catSlug = match.slug;
+          }
+        }
+        if (!catId) {
+          catId = defaultCategoryId;
+          catSlug = dbCategories?.[0]?.slug || 'general';
+        }
 
-    if (insertError) {
-      console.error('[ADMIN BULK CSV INSERT ERROR]', insertError.message);
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+        const rawBarcode = item.barcodeOrSku?.trim() || item.ean?.trim() || item.itemCode?.trim();
+        const safeBarcode = rawBarcode && rawBarcode !== 'n/a' ? rawBarcode : null;
+        const buyerCompanyId = isUuid(effectiveCompanyId) ? effectiveCompanyId : null;
+        const buyerUserId = comp.user_id && isUuid(comp.user_id) ? comp.user_id : buyerCompanyId;
+
+        return {
+          buyer_company_id: buyerCompanyId,
+          buyer_user_id: buyerUserId,
+          buyer_company: comp.company_name || companyName || 'Verified Procurement Partner',
+          buyer_name: comp.contact_name || comp.company_name || 'Procurement Desk',
+          buyer_email: comp.contact_email || email || 'procurement@b2blink.eu',
+          buyer_phone: comp.phone || null,
+          category_id: catId,
+          category_slug: catSlug,
+          product_name: item.title?.trim() || `Procurement Request ${idx + 1}`,
+          barcode_or_sku: safeBarcode,
+          target_quantity: Number(item.quantityAvailable ?? item.available ?? item.targetQuantity) || 1,
+          target_price: Number(item.unitPrice ?? item.targetPrice) || 0,
+          notes: item.description?.trim() || `${item.brand || ''} ${item.title || ''} | Condition: ${item.condition || 'New'} | Delivery: ${item.location || 'EU'}`.trim(),
+          status: 'open',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      const { data: insertedWtb, error: insertWtbError } = await admin
+        .from('wtb_requests')
+        .insert(preparedWtbRows as any)
+        .select('id');
+
+      if (insertWtbError) {
+        console.error('[ADMIN BULK CSV BUY INSERT ERROR]', insertWtbError.message);
+        return NextResponse.json({ success: false, error: insertWtbError.message }, { status: 500 });
+      }
+
+      insertedBuyCount = insertedWtb ? insertedWtb.length : preparedWtbRows.length;
     }
 
     return NextResponse.json({
       success: true,
-      count: inserted ? inserted.length : preparedRows.length,
+      count: insertedSellCount + insertedBuyCount,
+      sellCount: insertedSellCount,
+      buyCount: insertedBuyCount,
     });
   } catch (err) {
     console.error('[ADMIN BULK CSV EXCEPTION]', err);

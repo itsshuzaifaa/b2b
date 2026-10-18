@@ -911,7 +911,7 @@ function RegisterContent() {
                   </p>
 
                   <div className="mb-6 flex items-baseline gap-1.5 pb-5 border-b border-slate-100">
-                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">£0</span>
+                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">€0</span>
                     <span className="text-[13px] font-semibold text-slate-500">/ month (Free)</span>
                   </div>
 
@@ -1019,7 +1019,7 @@ function RegisterContent() {
                   </p>
 
                   <div className="mb-6 flex items-baseline gap-1.5 pb-5 border-b border-slate-100">
-                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">£79</span>
+                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">€79</span>
                     <span className="text-[13px] font-semibold text-slate-500">/ month</span>
                   </div>
 
@@ -1130,7 +1130,7 @@ function RegisterContent() {
                   </p>
 
                   <div className="mb-6 flex items-baseline gap-1.5 pb-5 border-b border-slate-100">
-                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">£179</span>
+                    <span className="text-[36px] font-black text-[#0B1F3A] leading-none">€179</span>
                     <span className="text-[13px] font-semibold text-slate-500">/ month</span>
                   </div>
 

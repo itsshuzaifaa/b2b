@@ -142,7 +142,7 @@ export default function OverviewPage() {
   const handleOpenBroadcastWtb = () => {
     if (currentTier !== 'gold') {
       setUpgradeModalConfig({
-        title: 'Gold Tier Exclusive: Broadcast WTB Request',
+        title: 'Gold Tier Exclusive: Broadcast Buy (WTB) Request',
         subtitle: 'Internal network broadcasting is exclusively available to Gold members. Upgrade to instantly broadcast your Want-To-Buy procurement requests to all verified members across the platform.',
         goldOnly: true,
       });
@@ -155,7 +155,7 @@ export default function OverviewPage() {
   const handleOpenBroadcastWts = () => {
     if (currentTier !== 'gold') {
       setUpgradeModalConfig({
-        title: 'Gold Tier Exclusive: Broadcast WTS Offer',
+        title: 'Gold Tier Exclusive: Broadcast Sell (WTS)',
         subtitle: 'Internal network broadcasting is exclusively available to Gold members. Upgrade to instantly broadcast your Want-To-Sell wholesale stock lots to all verified members across the platform.',
         goldOnly: true,
       });
@@ -487,7 +487,7 @@ export default function OverviewPage() {
                           {req.product_name}
                         </h4>
                         <div className="text-[12px] text-[#5B6B82] mt-0.5">
-                          Target: <strong className="text-[#0B1F3A]">{req.target_quantity} units</strong> · £{req.target_price.toFixed(2)}/unit
+                          Target: <strong className="text-[#0B1F3A]">{req.target_quantity} units</strong> · €{req.target_price.toFixed(2)}/unit
                         </div>
                       </div>
                       <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border border-emerald-200 shrink-0">
@@ -519,7 +519,7 @@ export default function OverviewPage() {
               className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer border border-slate-200/60"
             >
               <PlusCircle className="w-4 h-4 text-[#0A6CFF] shrink-0" />
-              <span className="truncate">Broadcast WTB Request</span>
+              <span className="truncate">Broadcast Buy (WTB) Request</span>
               {currentTier !== 'gold' && (
                 <span className="ml-auto text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">
                   Gold
@@ -532,7 +532,7 @@ export default function OverviewPage() {
               className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer border border-slate-200/60"
             >
               <Package className="w-4 h-4 text-[#10B981] shrink-0" />
-              <span className="truncate">Broadcast WTS</span>
+              <span className="truncate">Broadcast Sell (WTS)</span>
               {currentTier !== 'gold' && (
                 <span className="ml-auto text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">
                   Gold

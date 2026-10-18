@@ -56,7 +56,7 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
         moq,
         unit_price,
         company_id,
-        company:companies(id, name, contact_name, email)
+        company:companies(id, company_name, contact_name, contact_email)
       `)
       .eq('id', data.productId)
       .single();
@@ -80,14 +80,14 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
       return { success: false, error: 'Target product listing not found.' };
     }
 
-    const product = productData as unknown as Pick<Product, 'id' | 'title' | 'moq' | 'unit_price' | 'company_id'> & {
-      company: Pick<Company, 'id' | 'name' | 'contact_name' | 'email'>;
-    };
+    const rawCompany = (productData as any)?.company;
+    const sellerEmail = rawCompany?.contact_email || rawCompany?.email;
+    const sellerName = rawCompany?.contact_name || rawCompany?.company_name || rawCompany?.name;
 
-    if (data.targetQuantity < product.moq) {
+    if (data.targetQuantity < productData.moq) {
       return {
         success: false,
-        error: `Target quantity (${data.targetQuantity}) is below the minimum order quantity (MOQ: ${product.moq}).`,
+        error: `Target quantity (${data.targetQuantity}) is below the minimum order quantity (MOQ: ${productData.moq}).`,
       };
     }
 
@@ -95,8 +95,8 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
     const { data: insertedInquiry, error: insertError } = await admin
       .from('product_inquiries')
       .insert({
-        product_id: product.id,
-        seller_company_id: product.company_id,
+        product_id: productData.id,
+        seller_company_id: productData.company_id,
         buyer_company_id: data.buyerCompanyId || null,
         buyer_name: data.buyerName.trim(),
         buyer_email: data.buyerEmail.trim().toLowerCase(),
@@ -113,13 +113,13 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
     }
 
     // 4. Trigger email to seller
-    if (product.company?.email) {
-      await sendNewInquiryEmail(product.company.email, {
-        sellerName: product.company.contact_name || product.company.name,
+    if (sellerEmail) {
+      await sendNewInquiryEmail(sellerEmail, {
+        sellerName: sellerName || 'Wholesale Supplier',
         buyerName: data.buyerName.trim(),
         buyerEmail: data.buyerEmail.trim(),
         buyerPhone: data.buyerPhone?.trim(),
-        productTitle: product.title,
+        productTitle: productData.title,
         targetQuantity: data.targetQuantity,
         offeredPrice: data.offeredPrice,
         message: data.message.trim(),

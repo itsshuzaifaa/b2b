@@ -896,7 +896,7 @@ export function membershipUpgradeEmail(props: MembershipUpgradeEmailProps): { su
 
     <div style="background-color: ${isGold ? '#FFFBEB' : '#EFF6FF'}; border: 1px solid ${isGold ? '#FDE68A' : '#BFDBFE'}; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
       <p style="font-size: 14px; line-height: 1.5; color: ${isGold ? '#92400E' : '#1E40AF'}; margin: 0; font-weight: 700;">
-        Plan: ${tierName} • £${props.price}/month • Auto-renewing monthly via card ending in ${props.cardLast4 || '4242'}
+        Plan: ${tierName} • €${props.price}/month • Auto-renewing monthly via card ending in ${props.cardLast4 || '4242'}
       </p>
     </div>
 
@@ -1123,5 +1123,96 @@ export function customerQueryReplyEmail(props: CustomerQueryReplyEmailProps): {
 }
 
 export const customerSupportReplyEmail = customerQueryReplyEmail;
+
+export interface NewInAppMessageEmailProps {
+  recipientName: string;
+  senderName: string;
+  senderCompany?: string;
+  senderRole?: 'buyer' | 'seller' | 'admin' | string;
+  messageText: string;
+  subjectOrProduct?: string;
+  actionUrl: string;
+}
+
+/**
+ * 13. In-App Message Notification
+ * Trigger Event: Sent when a user receives a message on their in-app messaging
+ * Recipient: The user (buyer, seller, or admin) receiving the message
+ * Subject: You have a new message from [Sender Name]
+ */
+export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
+  subject: string;
+  html: string;
+} {
+  const subject = `You have a new message from ${props.senderName || 'B2B LINK Member'}`;
+  const nameGreeting = props.recipientName ? `Hello ${props.recipientName},` : 'Hello,';
+
+  // Format message text with line breaks preserved and safe HTML escaping
+  const formattedMessage = (props.messageText || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/\n/g, '<br />');
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      You have a new message
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      You have received a new message in your B2B LINK in-app messaging center from <strong>${props.senderName}</strong>${props.senderCompany ? ` (<em>${props.senderCompany}</em>)` : ''}.
+    </p>
+
+    ${
+      props.subjectOrProduct
+        ? `
+      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 4px;">
+          Regarding / Context:
+        </div>
+        <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">
+          ${props.subjectOrProduct}
+        </div>
+      </div>
+    `
+        : ''
+    }
+
+    <!-- Message Bubble -->
+    <div style="margin-bottom: 24px;">
+      <div style="font-size: 12px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+        Message content:
+      </div>
+      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 18px 20px; font-size: 14px; line-height: 1.7; color: #1E293B;">
+        ${formattedMessage}
+      </div>
+    </div>
+
+    <p style="font-size: 13.5px; color: #5B6B82; line-height: 1.6; margin: 0 0 16px 0;">
+      Please reply directly through your B2B LINK in-app messaging desk to keep your chat history synchronized, secure, and accessible on both desktop and mobile.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Notification Desk</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'You have a new message',
+      'IN-APP MESSAGE',
+      content,
+      props.actionUrl,
+      'View & Reply to Message'
+    ),
+  };
+}
+
 
 

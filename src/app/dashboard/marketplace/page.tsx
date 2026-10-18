@@ -390,7 +390,7 @@ export default function DashboardMarketplacePage() {
                   <div className="flex items-end justify-between">
                     <div>
                       <div className="text-[20px] font-extrabold text-[#0B1F3A] leading-none">
-                        £{product.unit_price.toFixed(2)}
+                        €{product.unit_price.toFixed(2)}
                       </div>
                       <div className="text-[11px] text-[#8A9BB0] mt-1">
                         MOQ: <strong className="text-[#0A6CFF] font-bold">{product.moq} pcs</strong> ·{' '}
@@ -495,7 +495,7 @@ export default function DashboardMarketplacePage() {
                   <div>
                     <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Unit Price</span>
                     <p className="text-[17px] font-extrabold text-[#0B1F3A]">
-                      £{activeMessageProduct.unit_price.toFixed(2)}
+                      €{activeMessageProduct.unit_price.toFixed(2)}
                     </p>
                   </div>
                   <div className="text-right">

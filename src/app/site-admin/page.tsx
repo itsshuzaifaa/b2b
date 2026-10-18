@@ -205,7 +205,7 @@ export default function SiteAdminOverviewPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              £{totalCompletedGbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+              €{totalCompletedGbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-[12px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -330,7 +330,7 @@ export default function SiteAdminOverviewPage() {
 
                   <div className="text-right shrink-0">
                     <div className="font-black text-[14px] sm:text-[15px] text-[#0B1F3A]">
-                      £{pay.amount_gbp.toFixed(2)} GBP
+                      €{pay.amount_gbp.toFixed(2)} EUR
                     </div>
                     <div className="text-[11px] text-[#8A9BB0] mt-0.5">{pay.created_at}</div>
                   </div>

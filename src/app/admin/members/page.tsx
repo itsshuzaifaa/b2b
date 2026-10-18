@@ -113,8 +113,8 @@ export default function AdminMembersPage() {
                         className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0066FF]"
                       >
                         <option value="bronze">Bronze (Free / 15)</option>
-                        <option value="silver">Silver (£79 / 50)</option>
-                        <option value="gold">Gold VIP (£179 / Unlimited)</option>
+                        <option value="silver">Silver (€79 / 50)</option>
+                        <option value="gold">Gold VIP (€179 / Unlimited)</option>
                       </select>
                     </td>
                   </tr>

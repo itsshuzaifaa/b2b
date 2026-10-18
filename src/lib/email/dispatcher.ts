@@ -28,6 +28,8 @@ import {
   type MembershipUpgradeEmailProps,
   customerQueryReplyEmail,
   type CustomerQueryReplyEmailProps,
+  newInAppMessageEmail,
+  type NewInAppMessageEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
@@ -107,7 +109,7 @@ export async function sendNewInquiryEmail(
   props: Omit<NewInquiryEmailProps, 'actionUrl'> & { inquiryId?: string }
 ): Promise<SendEmailResult> {
   const baseUrl = await getDynamicAppUrl();
-  const actionUrl = `${baseUrl}/dashboard/seller/inquiries${props.inquiryId ? `/${props.inquiryId}` : ''}`;
+  const actionUrl = `${baseUrl}/dashboard/inquiries${props.inquiryId ? `?id=${props.inquiryId}` : ''}`;
   const { subject, html } = newInquiryEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -438,4 +440,43 @@ export async function sendCustomerQueryReplyEmail(
     replyTo: 'admin@b2blink.co.uk',
   });
 }
+
+export interface SendNewInAppMessageEmailParams {
+  toEmail: string;
+  recipientName: string;
+  senderName: string;
+  senderCompany?: string;
+  senderRole?: 'buyer' | 'seller' | 'admin' | string;
+  messageText: string;
+  subjectOrProduct?: string;
+  conversationId: string;
+  isAdmin?: boolean;
+}
+
+/**
+ * Dispatches an In-App Message email notification when a user receives a new message.
+ */
+export async function sendNewInAppMessageEmail(
+  params: SendNewInAppMessageEmailParams
+): Promise<SendEmailResult> {
+  const baseUrl = await getDynamicAppUrl();
+  const targetPath = params.isAdmin ? '/site-admin/messages' : '/dashboard/inquiries';
+  const actionUrl = `${baseUrl}${targetPath}?id=${params.conversationId}`;
+  const { subject, html } = newInAppMessageEmail({
+    recipientName: params.recipientName,
+    senderName: params.senderName,
+    senderCompany: params.senderCompany,
+    senderRole: params.senderRole,
+    messageText: params.messageText,
+    subjectOrProduct: params.subjectOrProduct,
+    actionUrl,
+  });
+  return sendEmail({
+    to: params.toEmail,
+    subject,
+    html,
+    replyTo: 'notifications@b2blink.eu',
+  });
+}
+
 

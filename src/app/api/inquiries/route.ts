@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { ChatMessage, InquiryConversation } from '@/lib/messaging/messaging-store';
+import { sendNewInAppMessageEmail } from '@/lib/email/dispatcher';
 
 interface RawInquiryRow {
   id: string;
@@ -320,6 +321,145 @@ async function getSystemProductId(supabase: any): Promise<string> {
   }
 }
 
+/**
+ * Helper to dispatch an email notification to the recipient of an in-app message.
+ * Handles Admin -> User, User -> Admin Desk, and Buyer <-> Seller trade messaging.
+ */
+async function notifyInAppMessageRecipient({
+  supabase,
+  threadRow,
+  message,
+  conversationId,
+}: {
+  supabase: ReturnType<typeof createAdminClient>;
+  threadRow: any;
+  message: ChatMessage;
+  conversationId: string;
+}) {
+  try {
+    const isAdminDesk = threadRow.status === 'admin_desk';
+    const isSenderAdmin =
+      message.senderRole === 'admin' ||
+      message.senderId === 'admin-desk' ||
+      message.senderId === 'facbb93f-080f-480f-b54b-8ef26664da86';
+
+    // 1. Fetch seller company details
+    let sellerEmail = threadRow.seller_company?.contact_email || threadRow.seller_company?.email;
+    let sellerContactName = threadRow.seller_company?.contact_name;
+    let sellerCompanyName = threadRow.seller_company?.company_name;
+
+    if (!sellerEmail && threadRow.seller_company_id) {
+      const { data: comp } = await supabase
+        .from('companies')
+        .select('contact_email, email, contact_name, company_name')
+        .eq('id', threadRow.seller_company_id)
+        .maybeSingle();
+      if (comp) {
+        sellerEmail = comp.contact_email || comp.email;
+        if (comp.contact_name) sellerContactName = comp.contact_name;
+        if (comp.company_name) sellerCompanyName = comp.company_name;
+      }
+    }
+
+    // 2. Fetch buyer details
+    let buyerEmail = threadRow.buyer_email;
+    let buyerContactName = threadRow.buyer_name;
+    let buyerCompanyName = threadRow.buyer_company;
+
+    if (!buyerEmail && threadRow.buyer_company_id) {
+      const { data: bComp } = await supabase
+        .from('companies')
+        .select('contact_email, email, contact_name, company_name')
+        .eq('id', threadRow.buyer_company_id)
+        .maybeSingle();
+      if (bComp) {
+        buyerEmail = bComp.contact_email || bComp.email;
+        if (bComp.contact_name) buyerContactName = bComp.contact_name;
+        if (bComp.company_name) buyerCompanyName = bComp.company_name;
+      }
+    }
+
+    // 3. Product or subject title
+    let subjectOrProduct: string = 'Wholesale Trading & Inquiry Desk';
+    if (threadRow.products?.title) {
+      subjectOrProduct = threadRow.products.title;
+    } else if (threadRow.buyer_company?.startsWith('[WTB') || threadRow.buyer_company?.startsWith('[WTS')) {
+      subjectOrProduct = threadRow.buyer_company;
+    } else if (isAdminDesk) {
+      subjectOrProduct = 'B2B LINK Support & Compliance Desk';
+    }
+
+    // 4. Resolve recipient and sender details
+    let targetEmail: string | null = null;
+    let targetName: string = 'Valued Member';
+    let targetIsAdmin = false;
+    let senderName = message.senderName || 'Trade Partner';
+    let senderCompany: string | undefined = undefined;
+
+    if (isSenderAdmin) {
+      // Admin is sending -> user receives
+      targetEmail = sellerEmail || buyerEmail;
+      targetName = sellerContactName || sellerCompanyName || buyerContactName || 'Valued Member';
+      senderName = message.senderName || 'Jeff Vetting Director (B2B LINK Desk)';
+      senderCompany = 'B2B LINK OÜ (Platform Desk)';
+      targetIsAdmin = false;
+    } else if (isAdminDesk) {
+      // User is sending to Admin Desk -> Admin receives
+      targetEmail = process.env.ADMIN_NOTIFICATION_EMAIL || 'admin@b2blink.eu';
+      targetName = 'B2B LINK Admin Desk';
+      senderName = message.senderName || sellerContactName || buyerContactName || 'Platform Member';
+      senderCompany = sellerCompanyName || buyerCompanyName || 'Member Organization';
+      targetIsAdmin = true;
+    } else {
+      // Trade chat between buyer & seller
+      const isSenderSeller =
+        message.senderRole === 'seller' ||
+        message.senderId === threadRow.seller_company_id ||
+        (sellerEmail && message.senderId?.toLowerCase() === sellerEmail.toLowerCase());
+
+      if (isSenderSeller) {
+        // Seller sent -> Buyer receives
+        targetEmail = buyerEmail;
+        targetName = buyerContactName || buyerCompanyName || 'Commercial Buyer';
+        senderName = message.senderName || sellerContactName || 'Wholesale Supplier';
+        senderCompany = sellerCompanyName || 'Verified Supplier';
+        targetIsAdmin = false;
+      } else {
+        // Buyer sent -> Seller receives
+        targetEmail = sellerEmail;
+        targetName = sellerContactName || sellerCompanyName || 'Wholesale Supplier';
+        senderName = message.senderName || buyerContactName || 'Commercial Buyer';
+        senderCompany = buyerCompanyName || 'Verified Buyer';
+        targetIsAdmin = false;
+      }
+    }
+
+    // 5. Safety check: Never email the sender themselves, and ensure email is valid
+    if (targetEmail && targetEmail.includes('@')) {
+      const cleanTarget = targetEmail.trim().toLowerCase();
+      const cleanSenderId = (message.senderId || '').trim().toLowerCase();
+
+      // Ensure sender is not receiving their own email notification
+      if (cleanTarget !== cleanSenderId) {
+        await sendNewInAppMessageEmail({
+          toEmail: targetEmail.trim(),
+          recipientName: targetName,
+          senderName,
+          senderCompany,
+          senderRole: message.senderRole,
+          messageText: message.text,
+          subjectOrProduct,
+          conversationId,
+          isAdmin: targetIsAdmin,
+        });
+        console.log(`[IN-APP MESSAGE EMAIL NOTIFICATION SENT] To: ${targetEmail} | From: ${senderName} | Thread: ${conversationId}`);
+      }
+    }
+  } catch (err) {
+    console.error('[IN-APP MESSAGE NOTIFICATION WARNING]', err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -409,6 +549,14 @@ export async function POST(req: NextRequest) {
           .eq('id', thread.id);
 
         const updatedRow = { ...thread, message: JSON.stringify(msgs) };
+
+        void notifyInAppMessageRecipient({
+          supabase,
+          threadRow: updatedRow,
+          message: newChatMessage,
+          conversationId: thread.id,
+        });
+
         return NextResponse.json({
           success: true,
           message: newChatMessage,
@@ -455,6 +603,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: insertErr?.message || 'Failed to create thread' }, { status: 500 });
       }
 
+      void notifyInAppMessageRecipient({
+        supabase,
+        threadRow: newRow,
+        message: newChatMessage,
+        conversationId: newRow.id,
+      });
+
       return NextResponse.json({
         success: true,
         message: newChatMessage,
@@ -469,13 +624,60 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Missing conversationId or message text' }, { status: 400 });
       }
 
-      const { data: row, error: fetchErr } = await supabase
+      let resolvedThreadId = conversationId;
+      let { data: row, error: fetchErr } = await supabase
         .from('product_inquiries')
-        .select('*')
-        .eq('id', conversationId)
-        .single();
+        .select(`
+          id,
+          product_id,
+          seller_company_id,
+          buyer_company_id,
+          buyer_name,
+          buyer_email,
+          buyer_phone,
+          buyer_company,
+          status,
+          message,
+          created_at,
+          products:products(id, title, unit_price, moq, image_urls),
+          seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+        `)
+        .eq('id', resolvedThreadId)
+        .maybeSingle();
 
-      if (fetchErr || !row) {
+      if (!row && typeof resolvedThreadId === 'string' && resolvedThreadId.startsWith('conv-')) {
+        const parts = resolvedThreadId.split('-');
+        if (parts.length >= 2) {
+          const candidateProdId = parts[1];
+          const { data: fallbackRow } = await supabase
+            .from('product_inquiries')
+            .select(`
+              id,
+              product_id,
+              seller_company_id,
+              buyer_company_id,
+              buyer_name,
+              buyer_email,
+              buyer_phone,
+              buyer_company,
+              status,
+              message,
+              created_at,
+              products:products(id, title, unit_price, moq, image_urls),
+              seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+            `)
+            .eq('product_id', candidateProdId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (fallbackRow) {
+            row = fallbackRow;
+            resolvedThreadId = fallbackRow.id;
+          }
+        }
+      }
+
+      if (!row) {
         return NextResponse.json({ success: false, error: 'Conversation not found' }, { status: 404 });
       }
 
@@ -498,7 +700,7 @@ export async function POST(req: NextRequest) {
         .update({
           message: JSON.stringify(existingMessages),
         })
-        .eq('id', conversationId);
+        .eq('id', resolvedThreadId);
 
       if (updateErr) {
         return NextResponse.json({ success: false, error: updateErr.message }, { status: 500 });
@@ -508,6 +710,14 @@ export async function POST(req: NextRequest) {
         ...(row as unknown as RawInquiryRow),
         message: JSON.stringify(existingMessages),
       };
+
+      // Dispatch in-app message email notification to recipient
+      void notifyInAppMessageRecipient({
+        supabase,
+        threadRow: updatedRow,
+        message: newChatMessage,
+        conversationId: resolvedThreadId,
+      });
 
       const conversation = rowToConversation(updatedRow);
 
@@ -678,8 +888,8 @@ export async function POST(req: NextRequest) {
       const statusValue = kind === 'wtb' ? 'broadcast_wtb' : 'broadcast_wts';
 
       const initialMsgText = kind === 'wtb'
-        ? `📢 INTERNAL WTB BROADCAST\nProduct: ${title}\nTarget Quantity: ${quantity} units\nTarget Price: £${Number(price).toFixed(2)}/unit\nTotal Estimated Value: £${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/SKU: ${barcode || 'N/A'}\nNotes: ${notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
-        : `📢 INTERNAL WTS BROADCAST\nProduct: ${title}\nBrand: ${brand || 'Generic'}\nCondition: ${condition || 'New'}\nAvailable Quantity: ${quantity} pcs\nUnit Price: £${Number(price).toFixed(2)}/pc\nMinimum Order (MOQ): ${moq || 1} pcs\nTotal Lot Value: £${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/EAN: ${barcode || 'N/A'}\nDescription: ${notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
+        ? `📢 INTERNAL WTB BROADCAST\nProduct: ${title}\nTarget Quantity: ${quantity} units\nTarget Price: €${Number(price).toFixed(2)}/unit\nTotal Estimated Value: €${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/SKU: ${barcode || 'N/A'}\nNotes: ${notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
+        : `📢 INTERNAL WTS BROADCAST\nProduct: ${title}\nBrand: ${brand || 'Generic'}\nCondition: ${condition || 'New'}\nAvailable Quantity: ${quantity} pcs\nUnit Price: €${Number(price).toFixed(2)}/pc\nMinimum Order (MOQ): ${moq || 1} pcs\nTotal Lot Value: €${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/EAN: ${barcode || 'N/A'}\nDescription: ${notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
 
       const broadcastDetails = {
         itemType: kind,
@@ -845,6 +1055,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: insertErr?.message || 'Contact admin failed' }, { status: 500 });
       }
 
+      // Notify Admin Desk of new in-app support message
+      void notifyInAppMessageRecipient({
+        supabase,
+        threadRow: newRow,
+        message: initialChatMessage,
+        conversationId: newRow.id,
+      });
+
       return NextResponse.json({
         success: true,
         conversation: rowToConversation(newRow as unknown as RawInquiryRow),
@@ -926,6 +1144,14 @@ export async function POST(req: NextRequest) {
       if (insertErr || !newRow) {
         return NextResponse.json({ success: false, error: insertErr?.message || 'Failed to record inquiry' }, { status: 500 });
       }
+
+      // Notify seller of new in-app inquiry message
+      void notifyInAppMessageRecipient({
+        supabase,
+        threadRow: newRow,
+        message: initialChatMessage,
+        conversationId: newRow.id,
+      });
 
       return NextResponse.json({
         success: true,

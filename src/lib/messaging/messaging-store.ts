@@ -449,8 +449,8 @@ export async function broadcastMemberOpportunity(
 ): Promise<InquiryConversation | null> {
   const broadcastId = `broadcast-${input.broadcastKind}-${Date.now()}`;
   const initialMsgText = input.broadcastKind === 'wtb'
-    ? `📢 INTERNAL WTB BROADCAST\nProduct: ${input.title}\nTarget Quantity: ${input.quantity} units\nTarget Price: £${input.price.toFixed(2)}/unit\nTotal Estimated Value: £${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/SKU: ${input.barcode || 'N/A'}\nNotes: ${input.notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
-    : `📢 INTERNAL WTS BROADCAST\nProduct: ${input.title}\nBrand: ${input.brand || 'Generic'}\nCondition: ${input.condition || 'New'}\nAvailable Quantity: ${input.quantity} pcs\nUnit Price: £${input.price.toFixed(2)}/pc\nMinimum Order (MOQ): ${input.moq || 1} pcs\nTotal Lot Value: £${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/EAN: ${input.barcode || 'N/A'}\nDescription: ${input.notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
+    ? `📢 INTERNAL WTB BROADCAST\nProduct: ${input.title}\nTarget Quantity: ${input.quantity} units\nTarget Price: €${input.price.toFixed(2)}/unit\nTotal Estimated Value: €${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/SKU: ${input.barcode || 'N/A'}\nNotes: ${input.notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
+    : `📢 INTERNAL WTS BROADCAST\nProduct: ${input.title}\nBrand: ${input.brand || 'Generic'}\nCondition: ${input.condition || 'New'}\nAvailable Quantity: ${input.quantity} pcs\nUnit Price: €${input.price.toFixed(2)}/pc\nMinimum Order (MOQ): ${input.moq || 1} pcs\nTotal Lot Value: €${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/EAN: ${input.barcode || 'N/A'}\nDescription: ${input.notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
 
   const details: BroadcastDetails = {
     itemType: input.broadcastKind,
@@ -997,9 +997,9 @@ export function dispatchWtbLeadToBuyerDashboard({
     messageText = `💼 Official Wholesale Quotation Received from ${sellerCompany.name}\n\n` +
       `Regarding your WTB Request: "${wtbRequest.product_name}"\n\n` +
       `Commercial Offer Details:\n` +
-      `• Offered Unit Price: £${resolvedPrice.toFixed(2)} / unit\n` +
+      `• Offered Unit Price: €${resolvedPrice.toFixed(2)} / unit\n` +
       `• Offered Quantity: ${resolvedQty.toLocaleString()} units\n` +
-      `• Total Deal Value: £${resolvedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+      `• Total Deal Value: €${resolvedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
       `• Estimated Dispatch Lead Time: ${resolvedLeadTime} business days\n` +
       (quoteDetails?.notes ? `• Commercial Notes: "${quoteDetails.notes}"\n\n` : '\n') +
       `Supplier Information:\n` +
@@ -1024,7 +1024,7 @@ export function dispatchWtbLeadToBuyerDashboard({
     // actionType === 'unlocked'
     messageText = `🏢 Supplier Lead Connected: ${sellerCompany.name}\n\n` +
       `Hello ${wtbRequest.buyer_name},\n\n` +
-      `Verified supplier ${sellerCompany.name} has reviewed your WTB request for "${wtbRequest.product_name}" (${wtbRequest.target_quantity.toLocaleString()} units at target £${wtbRequest.target_price.toFixed(2)}), unlocked your buyer details, and initiated communication.\n\n` +
+      `Verified supplier ${sellerCompany.name} has reviewed your WTB request for "${wtbRequest.product_name}" (${wtbRequest.target_quantity.toLocaleString()} units at target €${wtbRequest.target_price.toFixed(2)}), unlocked your buyer details, and initiated communication.\n\n` +
       `Supplier Profile:\n` +
       `• Company: ${sellerCompany.name}\n` +
       `• Representative: ${sellerCompany.contact_name || 'Sales Desk'}\n` +

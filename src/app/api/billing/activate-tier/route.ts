@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    let updatedCompany = null;
+    let updatedCompany: any = null;
     const updatePayload: Record<string, any> = {
       tier,
       updated_at: new Date().toISOString(),
@@ -32,35 +32,43 @@ export async function POST(req: NextRequest) {
       updatePayload.approval_status = 'pending';
     }
 
+    // 1. Try finding and updating company by companyId / user_id
     if (companyId) {
-      const { data, error } = await admin
-        .from('companies')
-        .update(updatePayload)
-        .or(`id.eq.${companyId},user_id.eq.${companyId}`)
-        .select('id, user_id, contact_email, tier, approval_status, name, company_name, contact_name')
-        .maybeSingle();
+      try {
+        const { data, error } = await admin
+          .from('companies')
+          .update(updatePayload)
+          .or(`id.eq.${companyId},user_id.eq.${companyId}`)
+          .select('id, user_id, contact_email, tier, approval_status, company_name, contact_name')
+          .maybeSingle();
 
-      if (!error && data) {
-        updatedCompany = data;
+        if (!error && data) {
+          updatedCompany = data;
+        }
+      } catch (err) {
+        console.warn('[ACTIVATE TIER UPDATE BY ID WARNING]', err);
       }
     }
 
+    // 2. Try updating by contact_email if not updated yet
     if (!updatedCompany && email) {
-      const { data, error } = await admin
-        .from('companies')
-        .update(updatePayload)
-        .ilike('contact_email', email)
-        .select('id, user_id, contact_email, tier, approval_status, name, company_name, contact_name')
-        .maybeSingle();
+      try {
+        const { data, error } = await admin
+          .from('companies')
+          .update(updatePayload)
+          .ilike('contact_email', email)
+          .select('id, user_id, contact_email, tier, approval_status, company_name, contact_name')
+          .maybeSingle();
 
-      if (error) {
-        console.error('[ACTIVATE TIER ERROR]', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        if (!error && data) {
+          updatedCompany = data;
+        }
+      } catch (err) {
+        console.warn('[ACTIVATE TIER UPDATE BY EMAIL WARNING]', err);
       }
-      updatedCompany = data;
     }
 
-    // Sync tier in Supabase Auth user_metadata
+    // 3. Sync tier in Supabase Auth user_metadata
     let targetUser: any = null;
     const targetUserId = updatedCompany?.user_id || (companyId && companyId.length > 20 ? companyId : null);
     if (targetUserId) {
@@ -109,13 +117,53 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Dispatch dedicated Membership Upgrade Confirmation Email
+    // 4. If company row still not found, check by targetUser.id or create it
+    if (!updatedCompany) {
+      try {
+        if (targetUser?.id) {
+          const { data: byUser } = await admin
+            .from('companies')
+            .update(updatePayload)
+            .eq('user_id', targetUser.id)
+            .select('id, user_id, contact_email, tier, approval_status, company_name, contact_name')
+            .maybeSingle();
+          if (byUser) {
+            updatedCompany = byUser;
+          }
+        }
+
+        if (!updatedCompany && email) {
+          const newCompanyName = companyName || targetUser?.user_metadata?.company_name || 'Member Company';
+          const newContactName = contactName || targetUser?.user_metadata?.contact_name || 'Member';
+          const { data: newComp } = await admin
+            .from('companies')
+            .insert({
+              user_id: targetUser?.id || null,
+              contact_email: email,
+              company_name: newCompanyName,
+              contact_name: newContactName,
+              tier,
+              role: targetUser?.user_metadata?.role || 'seller',
+              approval_status: isSignup ? 'pending' : 'approved',
+              updated_at: new Date().toISOString(),
+            })
+            .select('id, user_id, contact_email, tier, approval_status, company_name, contact_name')
+            .maybeSingle();
+          if (newComp) {
+            updatedCompany = newComp;
+          }
+        }
+      } catch (createErr) {
+        console.warn('[ACTIVATE TIER COMPANY AUTO-CREATE NOTICE]', createErr);
+      }
+    }
+
+    // 5. Dispatch dedicated Membership Upgrade Confirmation Email
     if (email && (tier === 'silver' || tier === 'gold') && !isSignup) {
       const pricing = tier === 'gold' ? 179 : 79;
       const effectiveCompName =
         companyName ||
         updatedCompany?.company_name ||
-        updatedCompany?.name ||
         targetUser?.user_metadata?.company_name ||
         'Wholesale Trading Partner';
       const effectiveContName =

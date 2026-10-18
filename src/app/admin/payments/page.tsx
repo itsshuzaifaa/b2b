@@ -162,7 +162,7 @@ export default function AdminPaymentsPage() {
             Total Completed Fees
           </span>
           <div className="text-[26px] font-black text-[#0B1F3A] mt-1 leading-none">
-            £{totalVolumeGbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+            €{totalVolumeGbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
           </div>
           <p className="text-[12px] text-[#5B6B82] mt-1.5">
             {completedList.length} verified transactions
@@ -290,7 +290,7 @@ export default function AdminPaymentsPage() {
 
                       {/* Amount */}
                       <td className="py-4 px-6 font-black text-[#0B1F3A] text-[15px]">
-                        £{pay.amount_gbp.toFixed(2)}
+                        €{pay.amount_gbp.toFixed(2)}
                       </td>
 
                       {/* Status */}
@@ -387,7 +387,7 @@ export default function AdminPaymentsPage() {
                 <div>
                   <span className="text-[11px] font-bold uppercase text-[#8A9BB0]">Amount Settled</span>
                   <div className="text-[24px] font-black text-[#0B1F3A] mt-0.5">
-                    £{selectedReceipt.amount_gbp.toFixed(2)} GBP
+                    €{selectedReceipt.amount_gbp.toFixed(2)} EUR
                   </div>
                 </div>
                 <span className="text-[11px] font-extrabold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -470,7 +470,7 @@ export default function AdminPaymentsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1.5">
-                    Amount (£ GBP) *
+                    Amount (€ EUR) *
                   </label>
                   <input
                     type="number"

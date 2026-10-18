@@ -154,7 +154,7 @@ function QuotationDialogContent({
           </div>
           <div>
             <span className="text-[#8A9BB0]">Buyer Target Price:</span>{' '}
-            <span className="font-bold text-[#0A6CFF]">£{wtbRequest.target_price.toFixed(2)} / unit</span>
+            <span className="font-bold text-[#0A6CFF]">€{wtbRequest.target_price.toFixed(2)} / unit</span>
           </div>
           {wtbRequest.barcode_or_sku && (
             <div className="font-mono text-[11px] bg-white border border-[#E2E8F0] px-2.5 py-1 rounded-lg text-[#0B1F3A]">
@@ -233,7 +233,7 @@ function QuotationDialogContent({
 
                 {wtbRequest.buyer_email && (
                   <a
-                    href={`mailto:${wtbRequest.buyer_email}?subject=Quote for ${encodeURIComponent(wtbRequest.product_name)} [B2B LINK]&body=Dear ${encodeURIComponent(wtbRequest.buyer_name)},%0D%0A%0D%0ARegarding your WTB request for ${encodeURIComponent(wtbRequest.product_name)} (${wtbRequest.target_quantity} units at target £${wtbRequest.target_price}):%0D%0A%0D%0AOur Offer Details:%0D%0A- Offered Price: £${unitPrice || wtbRequest.target_price}%0D%0A- Available Quantity: ${quantityOffered}%0D%0A- Lead Time: ${leadTimeDays} business days%0D%0A- Notes: ${encodeURIComponent(notes || 'Official distributor lot.')}%0D%0A%0D%0APlease let us know if you would like to proceed.%0D%0A%0D%0ABest regards`}
+                    href={`mailto:${wtbRequest.buyer_email}?subject=Quote for ${encodeURIComponent(wtbRequest.product_name)} [B2B LINK]&body=Dear ${encodeURIComponent(wtbRequest.buyer_name)},%0D%0A%0D%0ARegarding your WTB request for ${encodeURIComponent(wtbRequest.product_name)} (${wtbRequest.target_quantity} units at target €${wtbRequest.target_price}):%0D%0A%0D%0AOur Offer Details:%0D%0A- Offered Price: €${unitPrice || wtbRequest.target_price}%0D%0A- Available Quantity: ${quantityOffered}%0D%0A- Lead Time: ${leadTimeDays} business days%0D%0A- Notes: ${encodeURIComponent(notes || 'Official distributor lot.')}%0D%0A%0D%0APlease let us know if you would like to proceed.%0D%0A%0D%0ABest regards`}
                     onClick={() => {
                       if (company) {
                         dispatchWtbLeadToBuyerDashboard({
@@ -262,10 +262,10 @@ function QuotationDialogContent({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[13px] font-semibold text-[#0B1F3A] mb-1.5">
-                    Offered Unit Price (£ GBP) <span className="text-red-500">*</span>
+                    Offered Unit Price (€ EUR) <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-2.5 text-[#8A9BB0] text-[15px] font-medium">£</span>
+                    <span className="absolute left-3.5 top-2.5 text-[#8A9BB0] text-[15px] font-medium">€</span>
                     <input
                       type="number"
                       step="0.01"
@@ -328,7 +328,7 @@ function QuotationDialogContent({
               <div className="bg-[#F1F5F9] p-4 rounded-[16px] flex items-center justify-between text-[13px]">
                 <span className="text-[#5B6B82] font-medium">Estimated Total Deal Value:</span>
                 <span className="font-extrabold text-[#0B1F3A] text-[16px]">
-                  £
+                  €
                   {((parseFloat(unitPrice) || 0) * (quantityOffered || 0)).toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,

@@ -353,13 +353,20 @@ function VerifyEmailContent() {
           email,
           companyId,
           tier: selectedTier,
+          companyName: companyName || cardholderName,
+          contactName: contactName || cardholderName,
+          cardLast4: cleanCard.slice(-4),
+          isSignup: true,
         }),
       });
 
       const activateData = await activateRes.json();
       if (!activateRes.ok) {
         setDeclineCount((prev) => prev + 1);
-        setPaymentDeclineNotice(activateData.error || 'Your card was declined by your bank. Please check your card details or try a different card.');
+        const errorText = activateData.error && !activateData.error.includes('column') && !activateData.error.includes('does not exist')
+          ? activateData.error
+          : 'Your card was declined by your bank or card issuer. Please try a different card.';
+        setPaymentDeclineNotice(errorText);
         setProcessingPayment(false);
         return;
       }
@@ -405,7 +412,7 @@ function VerifyEmailContent() {
     }
   };
 
-  const planPriceGbp = selectedTier === 'silver' ? '£79' : '£179';
+  const planPriceEur = selectedTier === 'silver' ? '€79' : '€179';
   const planName = selectedTier === 'silver' ? 'Silver Membership' : 'Gold VIP Membership';
 
   return (
@@ -616,7 +623,7 @@ function VerifyEmailContent() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-[26px] font-black text-white leading-none">
-                    {planPriceGbp}
+                    {planPriceEur}
                   </div>
                   <div className="text-[11px] text-blue-200 font-medium">/ month</div>
                 </div>
@@ -797,7 +804,7 @@ function VerifyEmailContent() {
                   ) : (
                     <>
                       <Lock className="w-3.5 h-3.5" />
-                      <span>Pay &amp; Activate {planName} ({planPriceGbp})</span>
+                      <span>Pay &amp; Activate {planName} ({planPriceEur})</span>
                     </>
                   )}
                 </button>
@@ -855,7 +862,7 @@ function VerifyEmailContent() {
             </h1>
 
             <div className="text-[22px] font-black text-[#0A6CFF] my-2">
-              {planPriceGbp}.00 GBP
+              {planPriceEur}.00 EUR
             </div>
 
             <p className="text-[13px] text-[#5B6B82] max-w-sm mx-auto mb-4 leading-relaxed">
