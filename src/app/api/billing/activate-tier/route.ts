@@ -18,29 +18,40 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    let query = admin.from('companies').update({
-      tier: tier,
-      membership_tier: tier,
-      updated_at: new Date().toISOString(),
-    });
+    let updatedCompany = null;
 
     if (companyId) {
-      query = query.eq('id', companyId);
-    } else {
-      query = query.eq('contact_email', email);
+      const { data, error } = await admin
+        .from('companies')
+        .update({ tier })
+        .eq('id', companyId)
+        .select('id, contact_email, tier')
+        .maybeSingle();
+
+      if (!error && data) {
+        updatedCompany = data;
+      }
     }
 
-    const { data, error } = await query.select('id, contact_email, tier').maybeSingle();
+    if (!updatedCompany && email) {
+      const { data, error } = await admin
+        .from('companies')
+        .update({ tier })
+        .eq('contact_email', email)
+        .select('id, contact_email, tier')
+        .maybeSingle();
 
-    if (error) {
-      console.error('[ACTIVATE TIER ERROR]', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) {
+        console.error('[ACTIVATE TIER ERROR]', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      updatedCompany = data;
     }
 
     return NextResponse.json({
       success: true,
       tier,
-      company: data,
+      company: updatedCompany,
     });
   } catch (err) {
     console.error('[ACTIVATE TIER EXCEPTION]', err);
