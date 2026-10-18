@@ -196,15 +196,98 @@ export function unsuspendAccount(companyId: string): boolean {
 }
 
 export function deleteAccount(companyId: string, email?: string | null): boolean {
-  markAccountAsDeleted(companyId);
-  if (email) {
-    markAccountAsDeleted(email);
-  }
   const current = getAdminAccounts();
+  const targetAcc = current.find(
+    (a) => a.id === companyId || (email && a.email?.toLowerCase() === email.toLowerCase())
+  );
+  const effectiveEmail = email || targetAcc?.email;
+
+  markAccountAsDeleted(companyId);
+  if (effectiveEmail) {
+    markAccountAsDeleted(effectiveEmail);
+  }
+
   const updated = current.filter(
-    (acc) => acc.id !== companyId && (!email || acc.email.toLowerCase() !== email.toLowerCase())
+    (acc) => acc.id !== companyId && (!effectiveEmail || acc.email.toLowerCase() !== effectiveEmail.toLowerCase())
   );
   saveAdminAccounts(updated);
+
+  // CASCADE DELETE ALL LISTINGS & WTB REQUESTS FOR THIS ACCOUNT
+  if (typeof window !== 'undefined') {
+    try {
+      // 1. Purge from LISTINGS_STORAGE_KEY (b2b_admin_listings_v5)
+      const rawAdminListings = localStorage.getItem(LISTINGS_STORAGE_KEY);
+      if (rawAdminListings) {
+        const parsed = JSON.parse(rawAdminListings);
+        if (Array.isArray(parsed)) {
+          const remaining = parsed.filter(
+            (l: any) =>
+              l.company_id !== companyId &&
+              l.companyId !== companyId &&
+              (!effectiveEmail || l.seller_email?.toLowerCase() !== effectiveEmail.toLowerCase()) &&
+              (!effectiveEmail || l.contactEmail?.toLowerCase() !== effectiveEmail.toLowerCase())
+          );
+          localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(remaining));
+        }
+      }
+
+      // 2. Purge from user seller listings (b2b_seller_listings_v3)
+      const rawUserSell = localStorage.getItem('b2b_seller_listings_v3');
+      if (rawUserSell) {
+        const parsed = JSON.parse(rawUserSell);
+        if (Array.isArray(parsed)) {
+          const remaining = parsed.filter(
+            (l: any) =>
+              l.company_id !== companyId &&
+              l.companyId !== companyId &&
+              (!effectiveEmail || l.seller_email?.toLowerCase() !== effectiveEmail.toLowerCase()) &&
+              (!effectiveEmail || l.contactEmail?.toLowerCase() !== effectiveEmail.toLowerCase())
+          );
+          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(remaining));
+        }
+      }
+
+      // 3. Purge from user WTB requests (b2b_user_wtb_requests_v2)
+      const rawUserWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
+      if (rawUserWtb) {
+        const parsed = JSON.parse(rawUserWtb);
+        if (Array.isArray(parsed)) {
+          const remaining = parsed.filter(
+            (w: any) =>
+              w.company_id !== companyId &&
+              w.companyId !== companyId &&
+              w.buyerCompanyId !== companyId &&
+              (!effectiveEmail || w.contactEmail?.toLowerCase() !== effectiveEmail.toLowerCase()) &&
+              (!effectiveEmail || w.buyerEmail?.toLowerCase() !== effectiveEmail.toLowerCase())
+          );
+          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(remaining));
+        }
+      }
+
+      // 4. Purge from payments records (PAYMENTS_STORAGE_KEY)
+      const rawPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
+      if (rawPayments) {
+        const parsed = JSON.parse(rawPayments);
+        if (Array.isArray(parsed)) {
+          const remaining = parsed.filter(
+            (p: any) =>
+              p.company_id !== companyId &&
+              (!effectiveEmail || p.contact_email?.toLowerCase() !== effectiveEmail.toLowerCase())
+          );
+          localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(remaining));
+        }
+      }
+    } catch (err) {
+      console.error('Error cascading account deletion:', err);
+    }
+
+    // Broadcast across all tabs and components
+    window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+    window.dispatchEvent(new CustomEvent('b2b_listing_created'));
+    window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+    window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+  }
+
   return true;
 }
 
@@ -434,15 +517,16 @@ export function getAdminListings(): AdminModeratedListing[] {
       if (Array.isArray(parsed)) {
         const combined = [...parsed, ...formattedUserItems];
         const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
-        return unique;
+        return unique.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
       }
     }
 
     const mergedInitial = Array.from(
       new Map([...formattedUserItems, ...INITIAL_LISTINGS].map((item) => [item.id, item])).values()
     );
-    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(mergedInitial));
-    return mergedInitial;
+    const cleanInitial = mergedInitial.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(cleanInitial));
+    return cleanInitial;
   } catch {
     // ignore
   }

@@ -46,9 +46,34 @@ export interface InquiryConversation {
   messages: ChatMessage[];
 }
 
-const STORAGE_KEY = 'b2b_live_inquiries_real_v2';
+const STORAGE_KEY = 'b2b_live_inquiries_real_v3';
 const EVENT_KEY = 'b2b_inquiry_update';
 const NEW_MESSAGE_EVENT = 'b2b_inquiry_new_message';
+
+// Purge legacy contaminated cache from previous test accounts
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('b2b_live_inquiries_real_v2');
+    localStorage.removeItem('b2b_live_inquiries_real_v1');
+    localStorage.removeItem('b2b_live_inquiries_v1');
+    localStorage.removeItem('b2b_inquiries');
+    localStorage.removeItem('b2b_mock_inquiries');
+  } catch {
+    // ignore
+  }
+}
+
+export function clearUserMessagingCache() {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('b2b_live_inquiries_real_v2');
+      window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: [] }));
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export const mySentMessageIds = new Set<string>();
 
@@ -125,14 +150,12 @@ export function getStoredConversations(): InquiryConversation[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      void syncWithSupabase();
       return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
     }
-    void syncWithSupabase();
     return [];
   } catch {
     return [];
@@ -196,21 +219,20 @@ export async function syncWithSupabase(role?: string, companyId?: string, email?
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.conversations)) {
-        // Merge server conversations with locally stored conversations so newly created chats aren't lost
+        // The server is authoritative for confirmed conversations.
+        // We only retain in-flight local conversations created in the last 60 seconds
         const local = getStoredConversations();
-        const merged = [...data.conversations];
-        local.forEach((localConv) => {
-          const already = merged.some(
-            (m) =>
-              m.id === localConv.id ||
-              (m.productId === localConv.productId &&
-                Boolean(localConv.buyerEmail) &&
-                m.buyerEmail?.toLowerCase() === localConv.buyerEmail?.toLowerCase())
-          );
-          if (!already) {
-            merged.push(localConv);
-          }
+        const serverIds = new Set(data.conversations.map((c: InquiryConversation) => c.id));
+        const now = Date.now();
+        const inFlight = local.filter((c) => {
+          if (serverIds.has(c.id)) return false;
+          const lastMsg = c.messages?.[c.messages.length - 1];
+          if (!lastMsg?.timestamp) return false;
+          const ageMs = now - new Date(lastMsg.timestamp).getTime();
+          return ageMs < 60000;
         });
+
+        const merged = [...data.conversations, ...inFlight];
         saveStoredConversations(merged);
         return merged;
       }

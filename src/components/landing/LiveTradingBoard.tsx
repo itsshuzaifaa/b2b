@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, ChevronDown, ArrowRight, Barcode } from 'lucide-react';
@@ -12,6 +12,8 @@ import {
   type TradingBoardItem,
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { getPublicWtbRequests } from '@/lib/actions/wtb';
 
 export function LiveTradingBoard() {
   const router = useRouter();
@@ -25,11 +27,14 @@ export function LiveTradingBoard() {
   const [selectedDetailItem, setSelectedDetailItem] = useState<TradingBoardItem | null>(null);
   const [authGateOpen, setAuthGateOpen] = useState(false);
 
-  // Load live user listings from localStorage
-  useEffect(() => {
+  // Load live user sell listings and buy requests
+  const refreshBoard = useCallback(async () => {
     try {
       localStorage.removeItem('b2b_seller_listings_real_v2');
       localStorage.removeItem('b2b_seller_listings_v1');
+      localStorage.removeItem('b2b_user_wtb_requests_v1');
+
+      // 1. User Sell listings
       const rawUserListings = localStorage.getItem('b2b_seller_listings_v3');
       const userListings = rawUserListings ? JSON.parse(rawUserListings) : [];
 
@@ -43,26 +48,124 @@ export function LiveTradingBoard() {
             description: l.title || l.description || 'Wholesale Lot',
             ean: l.ean || '195949048735',
             qty: Number(l.available || l.qty || 50),
-            condition: l.condition || 'New',
+            condition: l.condition === 'new' ? 'New' : l.condition === 'refurbished' ? 'Refurbished' : 'Used',
             price: Number(l.unitPrice || l.price || 99),
-            currency: '€',
+            currency: l.currency || '€',
             location: l.location || 'DE',
             match: '98%',
-            companyName: company?.name || 'Verified Supplier',
-            contactEmail: company?.email || 'supplier@b2blink.eu',
-            contactName: company?.contact_name || 'Trade Desk',
-            contactPhone: company?.phone || '',
+            companyName: l.companyName || company?.name || 'Verified Supplier',
+            contactEmail: l.contactEmail || company?.email || 'supplier@b2blink.eu',
+            contactName: l.contactName || company?.contact_name || 'Trade Desk',
+            contactPhone: l.contactPhone || company?.phone || '',
             moq: Number(l.moq || 10),
+            companyId: l.company_id || l.companyId || company?.id,
           }))
         : [];
 
-      const combined = [...formattedUserSell, ...ALL_TRADING_BOARD_ITEMS];
-      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      // 2. User WTB / Buy requests from localStorage
+      const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
+      const userWtbs: TradingBoardItem[] = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
+
+      const formattedUserWtbs: TradingBoardItem[] = Array.isArray(userWtbs)
+        ? userWtbs.map((w: any, idx: number) => ({
+            id: w.id || `wtb-usr-${idx}`,
+            type: 'BUY' as const,
+            category: w.category || 'General Wholesale',
+            brand: w.brand || 'Procurement',
+            itemCode: w.itemCode || 'WTB-REQ',
+            description: w.description || w.title || 'Wanted Wholesale Lot',
+            ean: w.ean || '—',
+            qty: Number(w.qty || 50),
+            condition: w.condition || 'New',
+            price: Number(w.price || 0),
+            currency: w.currency || '€',
+            location: w.location || 'EU',
+            match: w.match || '96%',
+            companyName: w.companyName || company?.name || 'Verified Buyer',
+            contactEmail: w.contactEmail || company?.email || 'buyer@b2blink.eu',
+            contactName: w.contactName || company?.contact_name || 'Procurement Desk',
+            contactPhone: w.contactPhone || company?.phone || '',
+            moq: Number(w.moq || 1),
+            companyId: w.companyId || w.company_id || w.buyerCompanyId || company?.id,
+          }))
+        : [];
+
+      // 3. Supabase Public WTBs
+      let supabaseMapped: TradingBoardItem[] = [];
+      try {
+        const supabaseData = await getPublicWtbRequests();
+        if (Array.isArray(supabaseData) && supabaseData.length > 0) {
+          supabaseMapped = supabaseData.map((req) => ({
+            id: req.id,
+            type: 'BUY' as const,
+            category: req.category_slug
+              ? req.category_slug.charAt(0).toUpperCase() + req.category_slug.slice(1).replace(/-/g, ' ')
+              : 'Electronics',
+            brand: req.product_name.split(' ')[0] || 'Brand',
+            itemCode: req.barcode_or_sku ? req.barcode_or_sku.slice(0, 10) : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
+            description: req.product_name + (req.notes ? ` — ${req.notes}` : ''),
+            ean: req.barcode_or_sku || '8806095087286',
+            qty: req.target_quantity || 50,
+            condition: 'New',
+            price: req.target_price || 0,
+            currency: '€',
+            location: 'EU',
+            match: '96%',
+            companyName: req.buyer_company || 'Verified Buyer',
+            contactEmail: req.buyer_email || 'buyer@b2blink.eu',
+            contactName: req.buyer_name || 'Buyer',
+            contactPhone: req.buyer_phone || '',
+            moq: 1,
+            companyId: req.buyer_company_id || req.buyer_user_id,
+          }));
+        }
+      } catch (err) {
+        console.warn('Could not load Supabase WTBs:', err);
+      }
+
+      // Combine and filter out any items from deleted accounts
+      const combined = [
+        ...formattedUserSell,
+        ...formattedUserWtbs,
+        ...supabaseMapped,
+        ...ALL_TRADING_BOARD_ITEMS,
+      ];
+
+      const cleanItems = combined.filter((item) => {
+        const cId = (item as any).companyId || (item as any).company_id;
+        const cEmail = item.contactEmail || (item as any).seller_email;
+        if (isAccountDeleted(cId, cEmail)) return false;
+        return true;
+      });
+
+      const unique = Array.from(new Map(cleanItems.map((item) => [item.id, item])).values());
       setItems(unique);
     } catch {
       setItems(ALL_TRADING_BOARD_ITEMS);
     }
   }, [company]);
+
+  useEffect(() => {
+    refreshBoard();
+
+    const handleUpdate = () => {
+      refreshBoard();
+    };
+
+    window.addEventListener('b2b_wtb_created', handleUpdate);
+    window.addEventListener('b2b_listing_created', handleUpdate);
+    window.addEventListener('b2b_listings_updated', handleUpdate);
+    window.addEventListener('b2b_admin_update', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    return () => {
+      window.removeEventListener('b2b_wtb_created', handleUpdate);
+      window.removeEventListener('b2b_listing_created', handleUpdate);
+      window.removeEventListener('b2b_listings_updated', handleUpdate);
+      window.removeEventListener('b2b_admin_update', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [refreshBoard]);
 
   // Extract unique categories
   const categoriesList = useMemo(() => {

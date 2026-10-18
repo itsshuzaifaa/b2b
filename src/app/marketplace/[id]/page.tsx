@@ -174,7 +174,7 @@ function ProductDetailContent() {
     );
   }
 
-  const sellerName = product.company?.name || 'Vetted European Seller';
+  const sellerName = product.company?.name || 'Vetted Global Seller';
   const sellerInitials = sellerName
     .split(' ')
     .map((n) => n[0])
@@ -386,7 +386,7 @@ function ProductDetailContent() {
         isOpen={upgradeModalOpen}
         onClose={() => setUpgradeModalOpen(false)}
         title="Upgrade to Unlock Supplier Contacts"
-        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with verified European wholesale distributors."
+        subtitle="You have used all contact unlocks on your current plan. Upgrade to Silver (20 unlocks) or Gold (Unlimited) to link up with verified global wholesale distributors."
       />
 
       {/* Auth Gate Modal */}

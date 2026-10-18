@@ -13,9 +13,19 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const { switchDemoRole, refreshProfile, setAuthenticatedUser } = useAuth();
 
-  const email = searchParams.get('email') || '';
+  const searchEmail = searchParams.get('email') || '';
+  const [email, setEmail] = useState(searchEmail);
   const role = searchParams.get('role') || 'buyer';
   const redirectParam = searchParams.get('redirect');
+
+  useEffect(() => {
+    if (!email && typeof window !== 'undefined') {
+      const savedEmail = localStorage.getItem('b2b_pending_verification_email');
+      if (savedEmail) {
+        setEmail(savedEmail);
+      }
+    }
+  }, [email]);
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -72,6 +82,7 @@ function VerifyEmailContent() {
       setSuccess(true);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_demo_role');
+        localStorage.removeItem('b2b_pending_verification_email');
       }
 
       // Dispatch business verification documents email ONLY after email is verified
@@ -202,6 +213,22 @@ function VerifyEmailContent() {
 
             {/* Form */}
             <form onSubmit={handleVerify} className="space-y-5">
+              {!searchEmail && (
+                <div>
+                  <label className="block text-[14px] font-bold text-[#0B1F3A] mb-2">
+                    Account email address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value.trim().toLowerCase())}
+                    placeholder="name@company.eu"
+                    className="w-full px-4 py-3 text-[15px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-[14px] font-bold text-[#0B1F3A] text-center mb-2">
                   Enter verification code
@@ -222,10 +249,10 @@ function VerifyEmailContent() {
               {/* Verify Button */}
               <button
                 type="submit"
-                disabled={loading || !otp.trim()}
+                disabled={loading || !otp.trim() || !email.trim()}
                 className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs mt-6 disabled:opacity-60 cursor-pointer"
               >
-                {loading ? 'Verifying code...' : 'Verify & Continue'}
+                {loading ? 'Verifying code...' : 'Verify & Log In'}
               </button>
             </form>
 
@@ -240,7 +267,7 @@ function VerifyEmailContent() {
                 <button
                   type="button"
                   onClick={handleResendCode}
-                  disabled={resending}
+                  disabled={resending || !email.trim()}
                   className="inline-flex items-center gap-1.5 font-bold text-[#0A6CFF] hover:underline cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
@@ -249,10 +276,13 @@ function VerifyEmailContent() {
               )}
             </div>
 
-            {/* Change Email / Back link */}
-            <div className="mt-4 text-center text-[13px] text-[#5B6B82]">
-              <Link href="/register" className="font-semibold hover:text-[#0B1F3A] hover:underline">
-                Wrong email? Return to registration
+            {/* Links */}
+            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-[13px] text-[#5B6B82]">
+              <Link href="/login" className="font-semibold text-[#0A6CFF] hover:underline">
+                Sign in with password
+              </Link>
+              <Link href="/register" className="hover:text-[#0B1F3A] hover:underline">
+                Return to register
               </Link>
             </div>
           </>

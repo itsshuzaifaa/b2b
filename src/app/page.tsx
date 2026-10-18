@@ -15,7 +15,7 @@ export default function HomePage() {
         <div className="absolute inset-0 z-0">
           <Image
             src="/hero-warehouse.jpg"
-            alt="European Logistics Warehouse"
+            alt="Global Logistics Warehouse"
             fill
             priority
             sizes="100vw"
@@ -35,7 +35,7 @@ export default function HomePage() {
         <div className="max-w-[1160px] mx-auto px-5 sm:px-8 relative z-10 text-center">
           {/* Eyebrow Label: 13px, weight 700, uppercase, letter-spacing 0.12em, cyan on dark */}
           <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#00C2FF] mb-5">
-            EUROPE&apos;S VETTED WHOLESALE NETWORK
+            GLOBAL VETTED WHOLESALE NETWORK
           </div>
 
           {/* H1: 68px / line-height 1.04 (46px under 1000px, 38px on phones), weight 800, letter-spacing -0.025em */}
@@ -47,7 +47,7 @@ export default function HomePage() {
           {/* Hero Paragraph: 19px */}
           <p className="mt-6 text-[17px] sm:text-[19px] text-[#D3DEEE] leading-relaxed max-w-2xl mx-auto font-normal">
             Browse verified stock lots or post what you need. Deal directly with
-            vetted European sellers, with no commission on any trade.
+            vetted global sellers, with no commission on any trade.
           </p>
 
           {/* Buttons: Pill shape, min-height 48px, 15px bold. Solid blue & white outline */}

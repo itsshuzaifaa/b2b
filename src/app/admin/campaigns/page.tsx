@@ -495,7 +495,7 @@ export default function AdminCampaignsPage() {
 
                         {/* Country */}
                         <td className="py-3.5 px-4 text-slate-600 font-medium">
-                          {lead.country || 'Europe'}
+                          {lead.country || 'Global'}
                         </td>
 
                         {/* Date */}
@@ -579,7 +579,7 @@ export default function AdminCampaignsPage() {
           <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <div>
-              <strong className="font-bold">Campaign Delivery Notice:</strong> All registered business emails are pre-filtered for valid European corporate domains. For cold broadcast compliance, use the platform’s official transactional sender in <code className="font-mono bg-blue-100 px-1 py-0.5 rounded">lib/email/dispatcher.ts</code>.
+              <strong className="font-bold">Campaign Delivery Notice:</strong> All registered business emails are pre-filtered for valid commercial corporate domains. For cold broadcast compliance, use the platform’s official transactional sender in <code className="font-mono bg-blue-100 px-1 py-0.5 rounded">lib/email/dispatcher.ts</code>.
             </div>
           </div>
         </div>

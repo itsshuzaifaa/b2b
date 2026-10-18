@@ -178,7 +178,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess }: CreateWtbModalPro
                 WTB Request Posted!
               </h4>
               <p className="text-[14px] text-[#64748B] max-w-md mx-auto leading-relaxed">
-                Your request is now live on the Trading Board. European verified suppliers matching this item will receive instant alert notifications.
+                Your request is now live on the Trading Board. Global verified suppliers matching this item will receive instant alert notifications.
               </p>
               <button
                 type="button"

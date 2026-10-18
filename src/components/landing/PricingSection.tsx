@@ -8,7 +8,7 @@ export function PricingSection() {
   const tiers = [
     {
       name: 'Bronze',
-      subtitle: 'For verified European businesses testing the board.',
+      subtitle: 'For verified global businesses testing the board.',
       price: 'Free',
       period: 'forever',
       isFeatured: false,
@@ -26,7 +26,7 @@ export function PricingSection() {
     },
     {
       name: 'Silver',
-      subtitle: 'For active European wholesalers moving steady volume.',
+      subtitle: 'For active global wholesalers moving steady volume.',
       price: '£79',
       period: '/ month',
       isFeatured: true,
@@ -75,7 +75,7 @@ export function PricingSection() {
             Transparent monthly plans. 0% commission.
           </h2>
           <p className="mt-3 text-[15px] sm:text-[16px] text-[#5B6B82] leading-relaxed">
-            Every verified business account has full dual capabilities to both source (WTB) and sell wholesale stock. Trade directly with vetted European partners with zero hidden fees.
+            Every verified business account has full dual capabilities to both source (WTB) and sell wholesale stock. Trade directly with vetted global partners with zero hidden fees.
           </p>
         </div>
 

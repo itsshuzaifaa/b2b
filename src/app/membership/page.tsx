@@ -17,7 +17,7 @@ import {
 export const metadata = {
   title: 'Membership & Pricing Plans | B2B LINK OÜ',
   description:
-    'Transparent membership tiers for European wholesale traders. Unified accounts that buy & sell with 0% transaction commission.',
+    'Transparent membership tiers for global wholesale traders. Unified accounts that buy & sell with 0% transaction commission.',
 };
 
 export default function MembershipPage() {
@@ -46,7 +46,7 @@ export default function MembershipPage() {
     },
     {
       q: 'How are membership fees invoiced and paid?',
-      a: 'All invoices are issued by the B2B LINK Membership Team in EUR, GBP, or USD. Subscriptions are billed directly via Wise Business transfer or company credit card with official EU VAT-compliant proforma documentation.',
+      a: 'All invoices are issued by the B2B LINK Membership Team in EUR, GBP, or USD. Subscriptions are billed directly via Wise Business transfer or company credit card with official tax-compliant proforma documentation.',
     },
     {
       q: 'Can I upgrade, downgrade, or cancel at any time?',
@@ -69,7 +69,7 @@ export default function MembershipPage() {
             <span>UNIFIED COMMERCIAL TRADING MEMBERSHIP</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white max-w-3xl mx-auto leading-tight">
-            Transparent Plans for European Wholesale Traders
+            Transparent Plans for Global Wholesale Traders
           </h1>
           <p className="mt-4 text-slate-300 max-w-2xl mx-auto text-[15px] sm:text-[17px] leading-relaxed">
             One account for both buying and selling. Enjoy verified member matchmaking, unlimited dealmaking, and 0% platform transaction commission.
@@ -100,7 +100,7 @@ export default function MembershipPage() {
               Compare Membership Features
             </h2>
             <p className="text-[14px] sm:text-[15px] text-[#64748B] mt-2">
-              Everything you need to source inventory and distribute wholesale lots across Europe.
+              Everything you need to source inventory and distribute wholesale lots globally.
             </p>
           </div>
 

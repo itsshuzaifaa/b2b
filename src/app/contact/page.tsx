@@ -69,7 +69,7 @@ export default function ContactPage() {
   const faqs = [
     {
       q: 'How quickly does the compliance desk review new seller accounts?',
-      a: 'All seller accounts undergo manual verification by Jeff, our Vetting Director. We check your European VAT registration, Commercial Registry records, and warehouse capability within 24 hours of submission.',
+      a: 'All seller accounts undergo manual verification by Jeff, our Vetting Director. We check your national VAT / tax registration, Commercial Registry records, and warehouse capability within 24 hours of submission.',
     },
     {
       q: 'Can I pay membership fees via direct bank transfer or Wise?',
@@ -92,7 +92,7 @@ export default function ContactPage() {
         <div className="absolute inset-0 z-0">
           <Image
             src="/hero-warehouse.jpg"
-            alt="European Logistics Support"
+            alt="Global Logistics Support"
             fill
             priority
             sizes="100vw"
@@ -113,10 +113,10 @@ export default function ContactPage() {
               DIRECT TRADER SUPPORT
             </div>
             <h1 className="text-[32px] lg:text-[42px] leading-[1.1] font-extrabold tracking-[-0.025em] text-white">
-              Speak with Our European Wholesale Desk
+              Speak with Our Global Wholesale Desk
             </h1>
             <p className="mt-3 text-[15px] sm:text-[16px] text-[#D3DEEE] leading-relaxed max-w-2xl font-normal">
-              Direct compliance review, seller vetting inquiries, and proforma settlement assistance for European commercial counterparties.
+              Direct compliance review, seller vetting inquiries, and proforma settlement assistance for global commercial counterparties.
             </p>
           </div>
         </div>
@@ -135,7 +135,7 @@ export default function ContactPage() {
                     DIRECT CONTACT
                   </span>
                   <h3 className="text-[20px] font-bold text-[#0B1F3A]">
-                    European Verification Desk
+                    Global Verification Desk
                   </h3>
                   <p className="text-[14px] text-[#5B6B82] mt-1.5 leading-relaxed">
                     Have inquiries regarding seller verification, bulk pallet clearance, or Wise subscription settlement? Reach our compliance officers directly.
@@ -295,7 +295,7 @@ export default function ContactPage() {
                           value={formData.company}
                           onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                           className="w-full px-4 py-3 text-[14px] border border-[#E3E9F2] rounded-xl focus:outline-none focus:border-[#0A6CFF] bg-[#F3F6FB] text-[#0B1F3A] transition"
-                          placeholder="European Wholesale Ltd"
+                          placeholder="Global Wholesale Ltd"
                         />
                       </div>
                     </div>

@@ -157,7 +157,7 @@ export default function SiteAdminOverviewPage() {
             Platform Control Center
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            Real-time compliance oversight for European traders, card fee settlements, stock listings, and customer inquiries.
+            Real-time compliance oversight for global traders, card fee settlements, stock listings, and customer inquiries.
           </p>
         </div>
 
@@ -250,7 +250,7 @@ export default function SiteAdminOverviewPage() {
               {listingsCount}
             </div>
             <p className="text-[12px] text-[#5B6B82] font-medium mt-1.5">
-              Live physical lots European stock
+              Live physical lots global stock
             </p>
           </div>
         </div>

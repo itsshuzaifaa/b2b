@@ -13,6 +13,7 @@ import {
   type TradingBoardItem,
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 
 function MarketplaceContent() {
   const router = useRouter();
@@ -73,7 +74,13 @@ function MarketplaceContent() {
       const userWtbs = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
 
       const combined = [...formattedUserSell, ...userWtbs, ...ALL_TRADING_BOARD_ITEMS];
-      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      const cleanItems = combined.filter((item) => {
+        const cId = (item as any).companyId || (item as any).company_id;
+        const cEmail = item.contactEmail || (item as any).seller_email;
+        if (isAccountDeleted(cId, cEmail)) return false;
+        return true;
+      });
+      const unique = Array.from(new Map(cleanItems.map((item) => [item.id, item])).values());
       setItems(unique);
     } catch {
       setItems(ALL_TRADING_BOARD_ITEMS);
@@ -83,10 +90,16 @@ function MarketplaceContent() {
   useEffect(() => {
     refreshItems();
     window.addEventListener('b2b_wtb_created', refreshItems);
+    window.addEventListener('b2b_listing_created', refreshItems);
     window.addEventListener('b2b_listings_updated', refreshItems);
+    window.addEventListener('b2b_admin_update', refreshItems);
+    window.addEventListener('storage', refreshItems);
     return () => {
       window.removeEventListener('b2b_wtb_created', refreshItems);
+      window.removeEventListener('b2b_listing_created', refreshItems);
       window.removeEventListener('b2b_listings_updated', refreshItems);
+      window.removeEventListener('b2b_admin_update', refreshItems);
+      window.removeEventListener('storage', refreshItems);
     };
   }, [company]);
 
@@ -144,13 +157,13 @@ function MarketplaceContent() {
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/20 text-[#60A5FA] text-[13px] font-bold mb-3">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Verified European Wholesale Inventory</span>
+                <span>Verified Global Buyers & Sellers Of Wholesale Trade Inventory.</span>
               </div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-[-0.03em] text-white">
                 Live Trading Board
               </h1>
               <p className="mt-2 text-slate-300 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed">
-                Fresh from verified European sellers and active commercial procurement desks. Browse real-time buy and sell offers with direct contact access and 0% commission.
+                Fresh from verified global sellers and active commercial procurement desks. Browse real-time buy and sell offers with direct contact access and 0% commission.
               </p>
             </div>
 

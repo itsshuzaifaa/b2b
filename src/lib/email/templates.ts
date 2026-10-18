@@ -149,7 +149,7 @@ function emailWrapper(title: string, badge: string, content: string, ctaUrl: str
                 B2B LINK OÜ &bull; Narva mnt 5, 10117 Tallinn, Estonia
               </p>
               <p style="margin: 0 0 8px 0; color: #8A9BB0;">
-                Europe&rsquo;s verified wholesale trading network &bull; 0% transaction commission
+                The verified global wholesale trading network &bull; 0% transaction commission
               </p>
               <p style="margin: 0; font-size: 11px; color: #94A3B8;">
                 Need assistance? Contact our verification desk at <a href="mailto:support@b2blink.eu" style="color: #0A6CFF; text-decoration: none; font-weight: 600;">support@b2blink.eu</a>
@@ -508,6 +508,7 @@ export interface PasswordResetOtpEmailProps {
   recipientEmail: string;
   otpCode: string;
   contactName?: string;
+  actionUrl?: string;
 }
 
 /**
@@ -562,7 +563,7 @@ export function passwordResetOtpEmail(props: PasswordResetOtpEmailProps): { subj
       'Password Reset Verification',
       'PASSWORD RESET',
       content,
-      `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password`,
+      props.actionUrl || 'https://b2blink.eu/reset-password',
       'Reset Password'
     ),
   };
@@ -641,7 +642,7 @@ export function verificationEmail(props: VerificationEmailProps): { subject: str
 export function kycVerificationRequestEmail(
   props: KycVerificationRequestEmailProps
 ): { subject: string; html: string } {
-  const subject = 'Action Required: Complete Your B2B LINK Business Verification';
+  const subject = 'Action Required: Submit verification documents to activate your account - B2B LINK';
   const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
 
   const content = `
@@ -659,23 +660,61 @@ export function kycVerificationRequestEmail(
 
     <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px; padding: 16px 18px; margin: 18px 0;">
       <div style="font-size: 12px; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">
-        Account Status: Pending Verification
+        Account Status: Pending Document Verification
       </div>
       <p style="font-size: 14px; line-height: 1.5; color: #92400E; margin: 0;">
-        Your email address has been verified, and your account is now awaiting business verification.
+        Your email address has been verified. Because initial registration on B2B LINK requires only minimal information, we require official business documentation to verify your company identity, maintain trading security, and activate full wholesale platform access.
+      </p>
+    </div>
+
+    <h3 style="font-size: 16px; font-weight: 800; color: #0B1F3A; margin: 24px 0 14px 0; letter-spacing: -0.01em;">
+      Required Wholesale Documents Checklist (Please Provide All 4):
+    </h3>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 22px;">
+      <tr>
+        <td style="padding: 12px 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">1. Certificate of Incorporation / Company Registration</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Official government proof of registered business entity (Companies House, Commercial Register / Handelsregister, or national equivalent).</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 12px 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">2. VAT / Tax Registration Certificate</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Valid national tax authority registration document or VAT certificate.</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 12px 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">3. Proof of Registered Business / Trading Address</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Recent utility bill, lease agreement, or corporate bank statement (dated within the last 90 days) displaying your company name and address.</div>
+        </td>
+      </tr>
+      <tr><td style="height: 8px;"></td></tr>
+      <tr>
+        <td style="padding: 12px 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
+          <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">4. Wholesale Trade Invoices or Authorized Distributor Invoices</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Recent commercial purchase invoices from official manufacturers, brand distributors, or wholesale trade references demonstrating active trading operations.</div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 14px; padding: 18px 20px; margin: 22px 0;">
+      <div style="font-size: 12px; font-weight: 800; color: #1E40AF; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">
+        How to Submit Your 4 Documents:
+      </div>
+      <p style="font-size: 14px; line-height: 1.6; color: #1E3A8A; margin: 0 0 10px 0;">
+        &bull; <strong>Option 1 (Fastest):</strong> Simply <strong>reply directly to this email</strong> with your PDF, scanned, or image files attached.
+      </p>
+      <p style="font-size: 14px; line-height: 1.6; color: #1E3A8A; margin: 0;">
+        &bull; <strong>Option 2:</strong> Email your documents directly to <a href="mailto:newcustomers@brandnova.info" style="color: #0A6CFF; font-weight: 700; text-decoration: underline;">newcustomers@brandnova.info</a> (or <a href="mailto:newcustomers@b2blink.eu" style="color: #0A6CFF; font-weight: 700; text-decoration: underline;">newcustomers@b2blink.eu</a>) with your company name (<strong>${props.companyName}</strong>) in the subject line.
       </p>
     </div>
 
     <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
-      Our Verification Team may check information including company registration details, VAT details where applicable, business contact information, company email/domain and bank account information.
-    </p>
-
-    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
-      If we require any additional information or supporting documents, we will contact you directly.
-    </p>
-
-    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
-      Your account will remain in Pending Verification status until the review has been completed.
+      Our Verification Team reviews all submitted documents promptly. Your account will remain in Pending Verification status until the review is completed, after which you will receive an automated confirmation email activating full trading access.
     </p>
 
     <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
@@ -687,7 +726,7 @@ export function kycVerificationRequestEmail(
   return {
     subject,
     html: emailWrapper(
-      'Business Verification Request',
+      'Business Verification Documents Required',
       'ACTION REQUIRED',
       content,
       props.actionUrl,
@@ -729,7 +768,7 @@ export function adminNewCustomerAlertEmail(props: {
       <div style="margin-bottom: 8px;"><strong>Contact:</strong> ${props.contactName}</div>
       <div style="margin-bottom: 8px;"><strong>Email:</strong> <a href="mailto:${props.email}" style="color: #0A6CFF; text-decoration: none;">${props.email}</a></div>
       <div style="margin-bottom: 8px;"><strong>Telephone:</strong> ${props.phone || 'Not provided'}</div>
-      <div style="margin-bottom: 8px;"><strong>Country:</strong> ${props.country || 'European Union'}</div>
+      <div style="margin-bottom: 8px;"><strong>Country:</strong> ${props.country || 'Global'}</div>
       <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #E2E8F0; font-weight: 700; color: #B45309;">
         Current Status: Pending Verification
       </div>

@@ -109,7 +109,7 @@ export default function BuyerRequestsPage() {
             My WTB Requests
           </h1>
           <p className="text-[14px] text-[#5B6B82] mt-1 font-normal">
-            Track and manage Want-To-Buy procurement requests sent by {buyerCompanyName} to verified European suppliers.
+            Track and manage Want-To-Buy procurement requests sent by {buyerCompanyName} to verified global suppliers.
           </p>
         </div>
 

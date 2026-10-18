@@ -267,7 +267,7 @@ export default function SiteAdminCampaignsPage() {
             {leads.length}
           </div>
           <div className="text-[12px] text-slate-500 mt-1 font-medium">
-            Registered European trading counterparties
+            Registered global trading counterparties
           </div>
         </div>
 
@@ -490,7 +490,7 @@ export default function SiteAdminCampaignsPage() {
 
                         {/* Country */}
                         <td className="py-3.5 px-4 text-slate-600">
-                          {lead.country || 'European Union'}
+                          {lead.country || 'Global'}
                         </td>
 
                         {/* Date */}

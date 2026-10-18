@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendPasswordResetEmail } from '@/lib/email/dispatcher';
+import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = await getDynamicAppUrl(request);
     const redirectUrl = `${appUrl}/reset-password`;
 
     const admin = createAdminClient();
@@ -46,13 +47,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const actionLink = data?.properties?.action_link;
-    if (!actionLink) {
+    const rawActionLink = data?.properties?.action_link;
+    if (!rawActionLink) {
       return NextResponse.json(
         { error: 'Failed to generate reset link. Please try again.' },
         { status: 500 }
       );
     }
+
+    const actionLink = sanitizeActionUrl(rawActionLink, appUrl);
 
     // 2. Dispatch branded email via Resend
     const emailResult = await sendPasswordResetEmail(rawEmail, {

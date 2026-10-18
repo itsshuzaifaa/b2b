@@ -28,11 +28,11 @@ import {
   type CustomerQueryReplyEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
+import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'B2B LINK <notifications@b2blink.eu>';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export interface SendEmailResult {
   success: boolean;
@@ -104,7 +104,8 @@ export async function sendNewInquiryEmail(
   toEmail: string,
   props: Omit<NewInquiryEmailProps, 'actionUrl'> & { inquiryId?: string }
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard/seller/inquiries${props.inquiryId ? `/${props.inquiryId}` : ''}`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard/seller/inquiries${props.inquiryId ? `/${props.inquiryId}` : ''}`;
   const { subject, html } = newInquiryEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -116,7 +117,8 @@ export async function sendNicheWtbAlertEmail(
   toEmail: string,
   props: Omit<NicheWtbAlertEmailProps, 'actionUrl'> & { wtbRequestId: string }
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard/seller/wtb-board/${props.wtbRequestId}`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard/seller/wtb-board/${props.wtbRequestId}`;
   const { subject, html } = nicheWtbAlertEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -128,7 +130,8 @@ export async function sendExactBarcodeMatchEmail(
   toEmail: string,
   props: Omit<ExactBarcodeMatchEmailProps, 'actionUrl'> & { wtbRequestId: string }
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard/seller/wtb-board/${props.wtbRequestId}?match=exact`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard/seller/wtb-board/${props.wtbRequestId}?match=exact`;
   const { subject, html } = exactBarcodeMatchEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -140,7 +143,8 @@ export async function sendQuoteReceivedEmail(
   toEmail: string,
   props: Omit<QuoteReceivedEmailProps, 'actionUrl'> & { quotationId?: string; wtbRequestId: string }
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard/buyer/wtb/${props.wtbRequestId}`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard/buyer/wtb/${props.wtbRequestId}`;
   const { subject, html } = quoteReceivedEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -152,7 +156,8 @@ export async function sendVettingDecisionEmail(
   toEmail: string,
   props: Omit<VettingDecisionEmailProps, 'actionUrl'> & { companyId: string }
 ): Promise<SendEmailResult> {
-  const actionUrl = props.decision === 'approved' ? `${APP_URL}/dashboard/seller` : `${APP_URL}/support`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = props.decision === 'approved' ? `${baseUrl}/dashboard/seller` : `${baseUrl}/support`;
   const { subject, html } = vettingDecisionEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
@@ -164,7 +169,9 @@ export async function sendPasswordResetEmail(
   toEmail: string,
   props: PasswordResetEmailProps
 ): Promise<SendEmailResult> {
-  const { subject, html } = passwordResetEmail(props);
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = sanitizeActionUrl(props.actionUrl, baseUrl);
+  const { subject, html } = passwordResetEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
 
@@ -175,7 +182,9 @@ export async function sendPasswordResetOtpEmail(
   toEmail: string,
   props: PasswordResetOtpEmailProps
 ): Promise<SendEmailResult> {
-  const { subject, html } = passwordResetOtpEmail(props);
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = sanitizeActionUrl(props.actionUrl || `${baseUrl}/reset-password`, baseUrl);
+  const { subject, html } = passwordResetOtpEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
 
@@ -187,7 +196,9 @@ export async function sendVerificationEmail(
   toEmail: string,
   props: VerificationEmailProps
 ): Promise<SendEmailResult> {
-  const { subject, html } = verificationEmail(props);
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = sanitizeActionUrl(props.actionUrl, baseUrl);
+  const { subject, html } = verificationEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html });
 }
 
@@ -199,15 +210,16 @@ export async function sendKycVerificationRequestEmail(
   toEmail: string,
   props: Omit<KycVerificationRequestEmailProps, 'actionUrl'>
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/dashboard`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard`;
   const { subject, html } = kycVerificationRequestEmail({ ...props, actionUrl });
 
-  // 1. Send onboarding verification email to customer (replyTo: verification@b2blink.eu)
+  // 1. Send onboarding verification email to customer (replyTo: newcustomers@brandnova.info)
   const result = await sendEmail({
     to: toEmail,
     subject,
     html,
-    replyTo: 'verification@b2blink.eu',
+    replyTo: 'newcustomers@brandnova.info',
   });
 
   // 2. Alert B2B LINK administration / verification queue
@@ -217,9 +229,9 @@ export async function sendKycVerificationRequestEmail(
       contactName: props.contactName,
       email: toEmail,
       phone: props.phone,
-      country: props.address ? props.address.split(',').pop()?.trim() : 'European Union',
+      country: props.address ? props.address.split(',').pop()?.trim() : 'Global',
       role: 'wholesale_member',
-      actionUrl: `${APP_URL}/site-admin/users`,
+      actionUrl: `${baseUrl}/site-admin/users`,
     });
     void sendEmail({
       to: 'admin@b2blink.eu',
@@ -243,7 +255,8 @@ export async function sendAccountApprovalEmail(
   toEmail: string,
   props: Omit<AccountApprovalEmailProps, 'actionUrl'>
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/login`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/login`;
   const { subject, html } = accountApprovalEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html, replyTo: 'verification@b2blink.eu' });
 }
@@ -257,7 +270,8 @@ export async function sendAccountSuspensionEmail(
   toEmail: string,
   props: Omit<AccountSuspendedEmailProps, 'actionUrl'> & { status?: 'under_review' | 'suspended' }
 ): Promise<SendEmailResult> {
-  const actionUrl = `${APP_URL}/contact`;
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/contact`;
   const { subject, html } = accountSuspendedEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html, replyTo: 'verification@b2blink.eu' });
 }

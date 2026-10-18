@@ -20,6 +20,10 @@ import {
   Mail,
   Lock,
   RefreshCw,
+  Copy,
+  Check,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -179,6 +183,57 @@ export default function DashboardLayout({
       : (company?.membership_tier || company?.tier || 'bronze').toLowerCase() === 'silver'
       ? 20
       : 2;
+
+  // Contact Verification Team Modal & Email Dispatch
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+
+  const verificationEmail = 'verification@b2blink.eu';
+  const verificationSubject = `Business Verification Documents - ${company?.name || companyName || 'B2B LINK Wholesale Member'}`;
+  const verificationBody = `Hello B2B LINK Verification Team,
+
+Please find our business verification information and documents attached for review:
+
+- Company Name: ${company?.name || companyName || ''}
+- Registered Email: ${company?.email || ''}
+- Registration Number: ${company?.company_number || 'Attached'}
+- VAT / Tax Number: ${company?.vat_number || 'Attached'}
+
+Attached Documents:
+1. Certificate of Incorporation / Registry Extract
+2. National Business Tax or VAT Certificate
+3. Business Contact & Domain verification
+4. Official Corporate Bank Header / Statement
+
+Thank you,
+${sellerFullName || company?.contact_name || ''}`;
+
+  const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(verificationEmail)}&su=${encodeURIComponent(verificationSubject)}&body=${encodeURIComponent(verificationBody)}`;
+  const outlookComposeUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(verificationEmail)}&subject=${encodeURIComponent(verificationSubject)}&body=${encodeURIComponent(verificationBody)}`;
+  const mailtoUrl = `mailto:${verificationEmail}?subject=${encodeURIComponent(verificationSubject)}&body=${encodeURIComponent(verificationBody)}`;
+
+  const handleContactVerificationTeam = () => {
+    // If user's account is a Gmail or Google Workspace account, open Gmail compose immediately in a new tab
+    const userEmail = (company?.email || '').toLowerCase();
+    if (userEmail.includes('@gmail.com') || userEmail.includes('@googlemail.com')) {
+      try {
+        window.open(gmailComposeUrl, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Popups might be blocked, modal provides fallback
+      }
+    }
+    setShowContactModal(true);
+  };
+
+  const handleCopyEmail = () => {
+    try {
+      navigator.clipboard.writeText(verificationEmail);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2500);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-3 sm:p-4 lg:p-5 gap-4 sm:gap-6 font-sans">
@@ -439,12 +494,13 @@ export default function DashboardLayout({
               <div><strong>Status:</strong> Suspended (Under Review)</div>
             </div>
             <div className="flex justify-center gap-3 pt-2">
-              <a
-                href="mailto:verification@b2blink.eu?subject=Account%20Reactivation%20Appeal%20-%20"
-                className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition"
+              <button
+                type="button"
+                onClick={handleContactVerificationTeam}
+                className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition cursor-pointer"
               >
                 Contact Verification Team
-              </a>
+              </button>
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -516,7 +572,7 @@ export default function DashboardLayout({
                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
                     <div>
                       <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
-                      <div className="text-[11px] text-[#5B6B82]">European VIES VAT or national business tax registration</div>
+                      <div className="text-[11px] text-[#5B6B82]">National business tax or VAT registration</div>
                     </div>
                   </div>
 
@@ -540,13 +596,14 @@ export default function DashboardLayout({
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <a
-                  href={`mailto:verification@b2blink.eu?subject=Business%20Verification%20Information%20-%20${encodeURIComponent(company?.name || companyName)}`}
-                  className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition"
+                <button
+                  type="button"
+                  onClick={handleContactVerificationTeam}
+                  className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                 >
                   <Mail className="w-4 h-4" />
                   <span>Contact Verification Team</span>
-                </a>
+                </button>
 
                 <button
                   type="button"
@@ -566,6 +623,162 @@ export default function DashboardLayout({
                   <span>Log Out</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* CONTACT VERIFICATION TEAM MODAL (Gmail, Outlook, Mailto, Copy) */}
+        {/* ========================================================= */}
+        {showContactModal && (
+          <div
+            className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+            onClick={() => setShowContactModal(false)}
+          >
+            <div
+              className="w-full max-w-lg bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_25px_60px_rgba(11,31,58,0.3)] p-6 sm:p-8 text-[#0B1F3A] relative space-y-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowContactModal(false)}
+                className="absolute top-5 right-5 p-2 rounded-full text-[#5B6B82] hover:text-[#0B1F3A] hover:bg-[#F3F6FB] transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Title Header */}
+              <div className="text-center pt-1">
+                <div className="w-12 h-12 rounded-2xl bg-[#EBF3FF] border border-[#BFDBFE] text-[#0A6CFF] flex items-center justify-center mx-auto mb-3 shadow-xs">
+                  <Mail className="w-6 h-6" />
+                </div>
+                <h3 className="text-[22px] sm:text-[24px] font-black text-[#0B1F3A] tracking-tight">
+                  Contact Verification Team
+                </h3>
+                <p className="text-[13.5px] text-[#5B6B82] mt-1.5 leading-relaxed">
+                  Send your business verification documents directly to our compliance desk:
+                </p>
+              </div>
+
+              {/* Email Address Bar with 1-Click Copy */}
+              <div className="bg-[#F8FAFD] border-2 border-[#E2EDF8] rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <span className="font-mono font-bold text-[14px] sm:text-[15px] text-[#0B1F3A] truncate select-all">
+                    {verificationEmail}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyEmail}
+                  className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center gap-1.5 shrink-0 transition shadow-xs cursor-pointer"
+                >
+                  {copiedEmail ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-[#5B6B82]" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* 1-Click Mail Client Buttons */}
+              <div className="space-y-2.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#7B8B9E] px-1">
+                  Choose your email client
+                </div>
+
+                {/* Gmail Web (Primary for Gmail users) */}
+                <a
+                  href={gmailComposeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full p-3.5 rounded-2xl border-2 border-[#BFDBFE] bg-[#F4F8FF] hover:bg-[#EBF3FF] hover:border-[#0A6CFF] text-[#0B1F3A] flex items-center justify-between transition group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-white border border-[#BFDBFE] flex items-center justify-center text-red-500 font-black text-[13px] shadow-xs">
+                      G
+                    </div>
+                    <div className="text-left">
+                      <div className="font-extrabold text-[14px] text-[#0B1F3A] flex items-center gap-2">
+                        <span>Open in Gmail (Web)</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#0A6CFF] text-white">
+                          Recommended
+                        </span>
+                      </div>
+                      <div className="text-[12px] text-[#5B6B82]">
+                        Opens compose window with pre-filled subject &amp; details
+                      </div>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-[#0A6CFF] group-hover:translate-x-0.5 transition shrink-0" />
+                </a>
+
+                {/* Outlook Web */}
+                <a
+                  href={outlookComposeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-[#0B1F3A] flex items-center justify-between transition group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#0078D4]/10 border border-[#0078D4]/20 flex items-center justify-center text-[#0078D4] font-black text-[13px] shadow-xs">
+                      O
+                    </div>
+                    <div className="text-left">
+                      <div className="font-extrabold text-[14px] text-[#0B1F3A]">
+                        Open in Outlook Web
+                      </div>
+                      <div className="text-[12px] text-[#5B6B82]">
+                        Microsoft 365, Hotmail, and Outlook.com
+                      </div>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
+                </a>
+
+                {/* Default Mail App (Desktop/Mobile) */}
+                <a
+                  href={mailtoUrl}
+                  className="w-full p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-[#0B1F3A] flex items-center justify-between transition group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 shadow-xs">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-extrabold text-[14px] text-[#0B1F3A]">
+                        Default Mail App
+                      </div>
+                      <div className="text-[12px] text-[#5B6B82]">
+                        Apple Mail, Windows Mail, Thunderbird, or mobile app
+                      </div>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
+                </a>
+              </div>
+
+              {/* Instructions Reminder */}
+              <div className="bg-slate-50 rounded-2xl p-3 text-[12px] text-[#5B6B82] leading-relaxed">
+                <strong className="text-[#0B1F3A]">Documents to attach:</strong> Certificate of Incorporation, VAT Certificate (or national tax registration), and a corporate bank statement header.
+              </div>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowContactModal(false)}
+                className="w-full min-h-[44px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13.5px] transition cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         )}

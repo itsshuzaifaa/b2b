@@ -757,7 +757,7 @@ function SiteAdminMessagesContent() {
                   <label
                     onClick={() => {
                       setBroadcastTarget('buyer');
-                      setBroadcastTitle('European Wholesale Sourcing Update for Buyers');
+                      setBroadcastTitle('Global Wholesale Sourcing Update for Buyers');
                     }}
                     className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col gap-1 ${
                       broadcastTarget === 'buyer'

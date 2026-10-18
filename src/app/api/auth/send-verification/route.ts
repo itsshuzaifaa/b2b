@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
+import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = await getDynamicAppUrl(request);
     const redirectUrl = `${appUrl}/auth/callback`;
 
     const admin = createAdminClient();
@@ -37,7 +38,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const actionLink = linkData.properties.action_link;
+    const rawActionLink = linkData.properties.action_link;
+    const actionLink = rawActionLink
+      ? sanitizeActionUrl(rawActionLink, appUrl)
+      : `${appUrl}/verify-email?email=${encodeURIComponent(rawEmail)}`;
     const otpCode = linkData.properties.email_otp || 'VERIFY';
 
     // 2. Dispatch branded email via Resend

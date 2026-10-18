@@ -97,7 +97,7 @@ export function LiveInventorySection() {
   };
 
   const getSellerInitials = (name?: string) => {
-    if (!name) return 'EU';
+    if (!name) return 'GL';
     return name
       .split(' ')
       .map((n) => n[0])
@@ -176,7 +176,7 @@ export function LiveInventorySection() {
               No live inventory lots posted yet
             </h3>
             <p className="text-[14px] text-[#5B6B82] max-w-md mx-auto mb-6">
-              New wholesale inventory from verified European suppliers is added continuously. Post what you need or submit a sell listing.
+              New wholesale inventory from verified global suppliers is added continuously. Post what you need or submit a sell listing.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <Link
@@ -200,7 +200,7 @@ export function LiveInventorySection() {
             className="flex gap-[24px] overflow-x-auto scroll-smooth snap-x snap-mandatory scrollbar-none pb-4 -mx-1 px-1"
           >
             {featuredListings.map((item, index) => {
-              const sellerName = item.company?.name || 'Vetted European Seller';
+              const sellerName = item.company?.name || 'Vetted Global Seller';
               const sellerInitials = getSellerInitials(sellerName);
               const productImage = item.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800';
 

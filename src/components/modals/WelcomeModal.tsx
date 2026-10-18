@@ -85,7 +85,7 @@ export function WelcomeModal({ buyerName, buyerEmail, companyId }: WelcomeModalP
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#00C2FF] bg-[#00C2FF]/10 px-2.5 py-0.5 rounded-full border border-[#00C2FF]/20 flex items-center gap-1.5">
               <Sparkles className="w-3 h-3 text-[#00C2FF]" />
-              <span>EUROPE&apos;S VERIFIED WHOLESALE NETWORK</span>
+              <span>GLOBAL VERIFIED WHOLESALE NETWORK</span>
             </span>
           </div>
 
@@ -107,7 +107,7 @@ export function WelcomeModal({ buyerName, buyerEmail, companyId }: WelcomeModalP
         {/* Modal Body */}
         <div className="p-6 sm:p-8 space-y-5">
           <p className="text-[14px] text-[#41536D] leading-relaxed">
-            Your unified wholesale account is active. Connect directly with European trading partners to buy and sell products with zero broker fees.
+            Your unified wholesale account is active. Connect directly with global trading partners to buy and sell products with zero broker fees.
           </p>
 
           {/* 5 Core Features from Message 7 Specification */}

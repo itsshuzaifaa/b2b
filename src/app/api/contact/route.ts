@@ -46,11 +46,11 @@ export async function POST(request: NextRequest) {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #0B1F3A;">
             <div style="background: #0B1F3A; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 24px;">
               <h2 style="color: #00E5FF; margin: 0; font-size: 20px; letter-spacing: 1px;">B2B LINK</h2>
-              <div style="color: #94A3B8; font-size: 12px; margin-top: 4px;">European Wholesale & Compliance Desk</div>
+              <div style="color: #94A3B8; font-size: 12px; margin-top: 4px;">Global Wholesale & Compliance Desk</div>
             </div>
             <h3 style="font-size: 18px; margin-bottom: 12px;">Hello ${query.name},</h3>
             <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-              Thank you for contacting our European Compliance & Trader Support Desk regarding <strong>${query.company}</strong>. We have registered your inquiry under reference <strong>#${query.id}</strong>.
+              Thank you for contacting our Global Compliance & Trader Support Desk regarding <strong>${query.company}</strong>. We have registered your inquiry under reference <strong>#${query.id}</strong>.
             </p>
             <div style="background: #F1F5F9; border-left: 4px solid #0A6CFF; padding: 16px; border-radius: 8px; margin: 20px 0;">
               <div style="font-size: 12px; font-weight: bold; color: #64748B; text-transform: uppercase;">Topic: ${query.topic.toUpperCase()}</div>

@@ -172,7 +172,7 @@ export default function AdminUsersPage() {
             Accounts Directory
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            Comprehensive register of European wholesale sellers and verified buyers. Suspend, delete, or audit client dossiers.
+            Comprehensive register of global wholesale sellers and verified buyers. Suspend, delete, or audit client dossiers.
           </p>
         </div>
 
@@ -304,7 +304,7 @@ export default function AdminUsersPage() {
                           <span>{acc.name}</span>
                         </button>
                         <div className="text-[12px] text-[#8A9BB0] mt-0.5 flex items-center gap-1.5">
-                          <span>{acc.country || 'European Union'}</span>
+                          <span>{acc.country || 'Global'}</span>
                           {acc.vat_number && (
                             <>
                               <span>·</span>

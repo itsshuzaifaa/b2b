@@ -188,9 +188,9 @@ function InquiriesContent() {
       const priceStr = activeConv.productPrice ? `£${activeConv.productPrice.toFixed(2)}` : 'our agreed trade price';
       setReplyText(`We can fulfill this trade order at ${priceStr} per unit. Proforma invoice can be issued immediately.`);
     } else if (presetType === 'stock') {
-      setReplyText('Yes, full quantity is in stock and ready for immediate European pallet collection.');
+      setReplyText('Yes, full quantity is in stock and ready for immediate global pallet collection / dispatch.');
     } else if (presetType === 'delivery') {
-      setReplyText('Standard transit time is 2-4 business days across European logistics terminals with full tracking.');
+      setReplyText('Standard transit time is 2-4 business days across international logistics terminals with full tracking.');
     }
   };
 
@@ -201,7 +201,7 @@ function InquiriesContent() {
         .filter(Boolean)
         .slice(0, 2)
         .map((w) => w[0]?.toUpperCase())
-        .join('') || 'EU'
+        .join('') || 'GL'
     );
   };
 

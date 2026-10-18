@@ -324,7 +324,7 @@ export default function OverviewPage() {
               <div>
                 <h3 className="text-[17px] font-bold text-[#0B1F3A]">Active Inquiries &amp; Messages</h3>
                 <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                  Direct commercial inquiries from European wholesale partners
+                  Direct commercial inquiries from global wholesale partners
                 </p>
               </div>
               <Link
@@ -401,7 +401,7 @@ export default function OverviewPage() {
               <div>
                 <h3 className="text-[17px] font-bold text-[#0B1F3A]">Demand Opportunities</h3>
                 <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                  High-intent European Want-To-Buy requests
+                  High-intent global Want-To-Buy requests
                 </p>
               </div>
               <Link

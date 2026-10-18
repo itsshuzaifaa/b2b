@@ -23,10 +23,10 @@ export function ContactSection() {
               <span>Direct Trader Support</span>
             </div>
             <h2 className="text-3xl font-extrabold text-[#0B132B] tracking-tight">
-              Speak with Our European Wholesale Desk
+              Speak with Our Global Wholesale Desk
             </h2>
             <p className="mt-4 text-sm text-slate-600 leading-relaxed max-w-lg">
-              Have specific inquiry about bulk pallet clearance, European compliance documentation, or seller verification status? Contact Jeff and our compliance team directly.
+              Have specific inquiry about bulk pallet clearance, international compliance documentation, or seller verification status? Contact Jeff and our compliance team directly.
             </p>
 
             <div className="mt-8 space-y-4 text-xs text-slate-700">
@@ -94,7 +94,7 @@ export function ContactSection() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066FF] bg-white"
-                    placeholder="European Goods Trading Ltd"
+                    placeholder="Global Goods Trading Ltd"
                   />
                 </div>
 
@@ -106,7 +106,7 @@ export function ContactSection() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066FF] bg-white"
-                    placeholder="trader@company.eu"
+                    placeholder="trader@company.com"
                   />
                 </div>
 
@@ -118,7 +118,7 @@ export function ContactSection() {
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066FF] bg-white"
-                    placeholder="Questions regarding Gold membership, bulk pallet lists, or VAT clearance..."
+                    placeholder="Questions regarding Gold membership, bulk pallet lists, or tax clearance..."
                   />
                 </div>
 

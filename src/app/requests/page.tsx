@@ -14,6 +14,7 @@ import {
   type TradingBoardItem,
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 
 function RequestsContent() {
   const router = useRouter();
@@ -73,7 +74,13 @@ function RequestsContent() {
       }
 
       const combined = [...userWtbs, ...supabaseMapped, ...baseWtbs];
-      const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
+      const cleanItems = combined.filter((item) => {
+        const cId = (item as any).companyId || (item as any).company_id;
+        const cEmail = item.contactEmail || (item as any).buyer_email;
+        if (isAccountDeleted(cId, cEmail)) return false;
+        return true;
+      });
+      const unique = Array.from(new Map(cleanItems.map((item) => [item.id, item])).values());
       // Strictly enforce BUY only
       setItems(unique.filter((item) => item.type === 'BUY'));
     } catch {
@@ -84,8 +91,12 @@ function RequestsContent() {
   useEffect(() => {
     refreshItems();
     window.addEventListener('b2b_wtb_created', refreshItems);
+    window.addEventListener('b2b_admin_update', refreshItems);
+    window.addEventListener('storage', refreshItems);
     return () => {
       window.removeEventListener('b2b_wtb_created', refreshItems);
+      window.removeEventListener('b2b_admin_update', refreshItems);
+      window.removeEventListener('storage', refreshItems);
     };
   }, [company]);
 
@@ -154,7 +165,7 @@ function RequestsContent() {
                 Buyer Requests (WTB Board)
               </h1>
               <p className="mt-2 text-slate-300 max-w-2xl text-[14px] sm:text-[15px] leading-relaxed">
-                Active procurement requests from verified European commercial buyers. Assess requirement suitability, unlock direct buyer procurement details, and submit formal quotations with 0% commission.
+                Active procurement requests from verified global commercial buyers. Assess requirement suitability, unlock direct buyer procurement details, and submit formal quotations with 0% commission.
               </p>
             </div>
 

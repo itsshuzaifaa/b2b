@@ -411,6 +411,7 @@ export function changePlan(
  */
 export function processRegistrationCardCheckout(params: {
   companyId: string;
+  userId?: string;
   companyName: string;
   contactEmail: string;
   tier: MembershipTier;
@@ -422,7 +423,7 @@ export function processRegistrationCardCheckout(params: {
     brand?: 'visa' | 'mastercard' | 'amex';
   };
 }): { success: boolean; error?: string } {
-  const { companyId, companyName, contactEmail, tier, cardData } = params;
+  const { companyId, userId, companyName, contactEmail, tier, cardData } = params;
 
   // 1. Save card
   const cardRes = addPaymentCard(companyId, {
@@ -436,6 +437,19 @@ export function processRegistrationCardCheckout(params: {
 
   if (!cardRes.success || !cardRes.card) {
     return { success: false, error: cardRes.error || 'Card verification failed.' };
+  }
+
+  if (userId && userId !== companyId) {
+    try {
+      addPaymentCard(userId, {
+        cardNumber: cardData.cardNumber,
+        cardholderName: cardData.cardholderName,
+        expMonth: cardData.expMonth,
+        expYear: cardData.expYear,
+        brand: cardData.brand,
+        setAsDefault: true,
+      });
+    } catch {}
   }
 
   const pricing = TIER_PRICING[tier];
@@ -457,6 +471,12 @@ export function processRegistrationCardCheckout(params: {
   };
 
   saveCompanySubscription(companyId, sub);
+
+  if (userId && userId !== companyId) {
+    try {
+      saveCompanySubscription(userId, { ...sub, companyId: userId });
+    } catch {}
+  }
 
   // 3. Record in Admin Payments
   if (pricing.price > 0) {

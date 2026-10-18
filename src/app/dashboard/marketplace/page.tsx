@@ -8,6 +8,7 @@ import { MOCK_CATEGORIES } from '@/lib/mock-data';
 import { useAuth } from '@/lib/auth/auth-context';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
 import type { Product } from '@/types/database';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 import {
   Search,
   Flame,
@@ -54,59 +55,81 @@ export default function DashboardMarketplacePage() {
   // Load real products
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/products')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return;
-        let baseProducts: Product[] = [];
-        if (data.success && Array.isArray(data.products)) {
-          baseProducts = data.products;
-        }
-        // Merge any locally added seller products if not yet returned from API
-        try {
-          localStorage.removeItem('b2b_seller_listings_real_v2');
-          const raw = localStorage.getItem('b2b_seller_listings_v3');
-          if (raw) {
-            const localListings = JSON.parse(raw);
-            if (Array.isArray(localListings)) {
-              localListings.forEach((localItem: any) => {
-                if (!baseProducts.some((p) => p.id === localItem.id || p.title === localItem.title)) {
-                  baseProducts.unshift({
-                    id: localItem.id,
-                    company_id: company?.id || 'comp-local',
-                    title: localItem.title,
-                    description: localItem.description,
-                    barcode_or_sku: localItem.ean,
-                    category_slug: localItem.category ? localItem.category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-') : 'electronics',
-                    unit_price: localItem.unitPrice,
-                    quantity_available: localItem.available,
-                    moq: localItem.moq,
-                    is_hot: localItem.status === 'Hot',
-                    status: 'active',
-                    images: localItem.images && localItem.images.length > 0 ? localItem.images : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
-                    created_at: new Date().toISOString(),
-                    company: company ? {
-                      id: company.id,
-                      name: company.company_name || company.name || 'Verified Supplier',
-                      contact_name: company.contact_name || 'Trade Representative',
-                      email: company.contact_email || company.email || '',
-                      role: 'seller',
-                    } : undefined,
-                  } as Product);
-                }
-              });
-            }
+
+    const loadProducts = () => {
+      fetch('/api/products')
+        .then((res) => res.json())
+        .then((data) => {
+          if (!isMounted) return;
+          let baseProducts: Product[] = [];
+          if (data.success && Array.isArray(data.products)) {
+            baseProducts = data.products;
           }
-        } catch {}
-        setProducts(baseProducts);
-      })
-      .catch((err) => console.warn('[DASHBOARD MARKETPLACE LOAD ERROR]', err))
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
+          // Merge any locally added seller products if not yet returned from API
+          try {
+            localStorage.removeItem('b2b_seller_listings_real_v2');
+            const raw = localStorage.getItem('b2b_seller_listings_v3');
+            if (raw) {
+              const localListings = JSON.parse(raw);
+              if (Array.isArray(localListings)) {
+                localListings.forEach((localItem: any) => {
+                  if (!baseProducts.some((p) => p.id === localItem.id || p.title === localItem.title)) {
+                    baseProducts.unshift({
+                      id: localItem.id,
+                      company_id: company?.id || 'comp-local',
+                      title: localItem.title,
+                      description: localItem.description,
+                      barcode_or_sku: localItem.ean,
+                      category_slug: localItem.category ? localItem.category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-') : 'electronics',
+                      unit_price: localItem.unitPrice,
+                      quantity_available: localItem.available,
+                      moq: localItem.moq,
+                      is_hot: localItem.status === 'Hot',
+                      status: 'active',
+                      images: localItem.images && localItem.images.length > 0 ? localItem.images : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
+                      created_at: new Date().toISOString(),
+                      company: company ? {
+                        id: company.id,
+                        name: company.company_name || company.name || 'Verified Supplier',
+                        contact_name: company.contact_name || 'Trade Representative',
+                        email: company.contact_email || company.email || '',
+                        role: 'seller',
+                      } : undefined,
+                    } as Product);
+                  }
+                });
+              }
+            }
+          } catch {}
+
+          // Filter out listings belonging to deleted accounts
+          baseProducts = baseProducts.filter(
+            (p) => !isAccountDeleted(p.company_id, p.company?.email)
+          );
+
+          setProducts(baseProducts);
+        })
+        .catch((err) => console.warn('[DASHBOARD MARKETPLACE LOAD ERROR]', err))
+        .finally(() => {
+          if (isMounted) setIsLoading(false);
+        });
+    };
+
+    loadProducts();
+
+    const handleUpdate = () => {
+      loadProducts();
+    };
+
+    window.addEventListener('b2b_admin_update', handleUpdate);
+    window.addEventListener('b2b_listing_created', handleUpdate);
+    window.addEventListener('b2b_listings_updated', handleUpdate);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('b2b_admin_update', handleUpdate);
+      window.removeEventListener('b2b_listing_created', handleUpdate);
+      window.removeEventListener('b2b_listings_updated', handleUpdate);
     };
   }, [company]);
 
@@ -186,7 +209,7 @@ export default function DashboardMarketplacePage() {
   };
 
   const getSellerInitials = (name?: string) => {
-    if (!name) return 'EU';
+    if (!name) return 'GL';
     return name
       .split(' ')
       .map((n) => n[0])
@@ -204,7 +227,7 @@ export default function DashboardMarketplacePage() {
             Marketplace
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            Browse verified wholesale inventory lots across Europe. Connect & inquire directly.
+            Browse verified wholesale inventory lots globally. Connect & inquire directly.
           </p>
         </div>
 
@@ -298,7 +321,7 @@ export default function DashboardMarketplacePage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProducts.map((product) => {
-            const sellerName = product.company?.name || 'Verified European Seller';
+            const sellerName = product.company?.name || 'Verified Global Seller';
             const sellerInitials = getSellerInitials(sellerName);
             const productImage = product.images?.[0] || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800';
 

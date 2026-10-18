@@ -355,7 +355,7 @@ export default function SiteAdminUsersPage() {
                           <span>{acc.name}</span>
                         </button>
                         <div className="text-[12px] text-[#8A9BB0] mt-0.5 flex items-center gap-1.5">
-                          <span>{acc.country || 'European Union'}</span>
+                          <span>{acc.country || 'Global'}</span>
                           {acc.vat_number && (
                             <>
                               <span>·</span>

@@ -104,22 +104,34 @@ export default function DashboardListingsPage() {
 
   // Load listings from localStorage
   useEffect(() => {
-    try {
-      localStorage.removeItem('b2b_seller_listings_real_v2');
-      localStorage.removeItem('b2b_seller_listings_v1');
+    const reload = () => {
+      try {
+        localStorage.removeItem('b2b_seller_listings_real_v2');
+        localStorage.removeItem('b2b_seller_listings_v1');
 
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setListings(parsed);
-          return;
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setListings(parsed);
+            return;
+          }
         }
+        setListings([]);
+      } catch {
+        setListings([]);
       }
-      setListings([]);
-    } catch {
-      setListings([]);
-    }
+    };
+
+    reload();
+
+    window.addEventListener('b2b_admin_update', reload);
+    window.addEventListener('storage', reload);
+
+    return () => {
+      window.removeEventListener('b2b_admin_update', reload);
+      window.removeEventListener('storage', reload);
+    };
   }, []);
 
   const saveListings = (items: ListingItem[]) => {

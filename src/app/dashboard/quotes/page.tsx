@@ -402,7 +402,7 @@ export default function DashboardQuotesPage() {
                   Buyer Specifications &amp; Delivery Instructions
                 </span>
                 <p className="text-[13px] text-[#41536D] p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] leading-relaxed">
-                  {selectedRequestDetails.requestNotes || selectedRequestDetails.notes || 'European verified inventory requested.'}
+                  {selectedRequestDetails.requestNotes || selectedRequestDetails.notes || 'Global verified inventory requested.'}
                 </p>
               </div>
 

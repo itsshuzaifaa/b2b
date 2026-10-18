@@ -98,7 +98,7 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
   if (isSellerBroadcast) targetAudience = 'seller';
   else if (isBuyerBroadcast) targetAudience = 'buyer';
 
-  let title = row.products?.title || 'Verified European Stock Lot';
+  let title = row.products?.title || 'Verified Global Stock Lot';
   if (isSellerBroadcast || isBuyerBroadcast || isGenericBroadcast || isAdminDesk) {
     title = 'Jeff Vetting Director (B2B LINK Desk)';
   }

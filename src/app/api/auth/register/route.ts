@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
+import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = createAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = await getDynamicAppUrl(request);
     const redirectUrl = `${appUrl}/auth/callback`;
 
     // 0. Clean up any previous unverified registration attempts with this email or username
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
         if (!u.email_confirmed_at && (u.email?.toLowerCase() === email || uMetaUsername === username)) {
           await admin.auth.admin.deleteUser(u.id);
           await admin.from('companies').delete().eq('user_id', u.id);
+          await admin.from('product_inquiries').delete().eq('buyer_email', email);
+          await admin.from('wtb_requests').delete().eq('buyer_email', email);
         }
       }
     } catch (cleanupErr) {
@@ -189,7 +192,7 @@ B2B LINK Support Team`;
         companyName: effectiveCompanyName,
         role,
         tier: role === 'seller' ? membershipTier : 'bronze',
-        country: 'European Union',
+        country: 'Global',
       });
     } catch (leadErr) {
       console.warn('[CAMPAIGN LEAD RECORDING NOTICE]', leadErr);
@@ -209,7 +212,10 @@ B2B LINK Support Team`;
     }
 
     const otpCode = linkData?.properties?.email_otp || '';
-    const actionUrl = linkData?.properties?.action_link || `${appUrl}/verify-email?email=${encodeURIComponent(email)}`;
+    const rawActionLink = linkData?.properties?.action_link;
+    const actionUrl = rawActionLink
+      ? sanitizeActionUrl(rawActionLink, appUrl)
+      : `${appUrl}/verify-email?email=${encodeURIComponent(email)}`;
 
     // 4. Dispatch the ONE official branded B2B LINK verification email via Resend
     if (otpCode) {
@@ -230,6 +236,7 @@ B2B LINK Support Team`;
       email,
       role,
       companyId,
+      userId,
     });
   } catch (err) {
     console.error('[REGISTER EXCEPTION]', err);

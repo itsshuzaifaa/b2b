@@ -176,22 +176,29 @@ export async function POST(req: Request) {
           targetUserId = comp.user_id ?? null;
         }
 
-        // 2. Cascade delete associated records
+        // 2. Cascade delete associated records (products, WTB requests, inquiries, quotes)
         try {
-          await admin.from('products').delete().eq('company_id', targetId);
+          if (targetId) await admin.from('products').delete().eq('company_id', targetId);
         } catch {}
         try {
-          await admin.from('quotations').delete().eq('seller_company_id', targetId);
+          if (targetId) await admin.from('quotations').delete().eq('seller_company_id', targetId);
         } catch {}
         try {
-          await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', targetId);
+          if (targetId) await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', targetId);
         } catch {}
         try {
-          await admin.from('wtb_requests').delete().eq('buyer_company_id', targetId);
+          if (targetId) await admin.from('wtb_requests').delete().eq('buyer_company_id', targetId);
+          if (targetUserId) await admin.from('wtb_requests').delete().eq('buyer_user_id', targetUserId);
+          if (email) await admin.from('wtb_requests').delete().eq('buyer_email', email);
         } catch {}
         try {
-          await admin.from('product_inquiries').delete().eq('seller_company_id', targetId);
-          await admin.from('product_inquiries').delete().eq('buyer_company_id', targetId);
+          if (targetId) {
+            await admin.from('product_inquiries').delete().eq('seller_company_id', targetId);
+            await admin.from('product_inquiries').delete().eq('buyer_company_id', targetId);
+          }
+          if (email) {
+            await admin.from('product_inquiries').delete().eq('buyer_email', email);
+          }
         } catch {}
 
         // 3. Delete company record
@@ -274,10 +281,13 @@ export async function DELETE(req: Request) {
         } catch {}
         try {
           await admin.from('wtb_requests').delete().eq('buyer_company_id', targetId);
+          if (targetUserId) await admin.from('wtb_requests').delete().eq('buyer_user_id', targetUserId);
+          if (email) await admin.from('wtb_requests').delete().eq('buyer_email', email);
         } catch {}
         try {
           await admin.from('product_inquiries').delete().eq('seller_company_id', targetId);
           await admin.from('product_inquiries').delete().eq('buyer_company_id', targetId);
+          if (email) await admin.from('product_inquiries').delete().eq('buyer_email', email);
         } catch {}
 
         await admin.from('companies').delete().eq('id', targetId);

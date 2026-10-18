@@ -122,7 +122,7 @@ export function Footer() {
         {/* Thin divider above the legal line */}
         <div className="mt-14 pt-8 border-t border-white/10 text-[13px] text-[#5B6B82] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <p>
-            &copy; 2026 B2B LINK OÜ. Europe&apos;s verified wholesale trading and Want-To-Buy demand network. 0% transaction commission.
+            &copy; 2026 B2B LINK OÜ. The verified global wholesale trading and Want-To-Buy demand network. 0% transaction commission.
           </p>
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[12px] text-[#8A9BB0]">
             <Link href="/terms" className="hover:text-white transition-colors">

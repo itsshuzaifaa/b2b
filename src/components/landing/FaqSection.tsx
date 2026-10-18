@@ -9,7 +9,7 @@ export function FaqSection() {
   const faqs = [
     {
       q: 'How does seller vetting and account activation work?',
-      a: 'To safeguard our network from brokers and counterfeit lots, all sellers undergo manual compliance review by Jeff, our Vetting Director. We cross-reference your European VAT registration, Companies House / Commercial Registry records, and warehouse capability. Once you complete your initial Wise membership payment, your account is activated within 24 hours.',
+      a: 'To safeguard our network from brokers and counterfeit lots, all sellers undergo manual compliance review by Jeff, our Vetting Director. We cross-reference your national VAT / tax registration, Companies House / Commercial Registry records, and warehouse capability. Once you complete your initial Wise membership payment, your account is activated within 24 hours.',
     },
     {
       q: 'Do you take any transaction fees or commissions on wholesale trades?',
@@ -45,7 +45,7 @@ export function FaqSection() {
             Frequently Asked Questions
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Everything you need to know about trading on Europe&apos;s verified wholesale network.
+            Everything you need to know about trading on the verified global wholesale network.
           </p>
         </div>
 

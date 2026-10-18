@@ -601,7 +601,7 @@ function AdminMessagesContent() {
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">Message Seller Privately</h3>
-                  <p className="text-xs text-slate-500">Search registered European sellers to start or open a private support thread.</p>
+                  <p className="text-xs text-slate-500">Search registered global sellers to start or open a private support thread.</p>
                 </div>
               </div>
               <button
@@ -759,7 +759,7 @@ function AdminMessagesContent() {
                   <label
                     onClick={() => {
                       setBroadcastTarget('buyer');
-                      setBroadcastTitle('European Wholesale Sourcing Update for Buyers');
+                      setBroadcastTitle('Global Wholesale Sourcing Update for Buyers');
                     }}
                     className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col gap-1 ${
                       broadcastTarget === 'buyer'

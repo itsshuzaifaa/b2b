@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'About B2B LINK — European Wholesale Electronics Trading Platform',
+  title: 'About B2B LINK — Global Wholesale Electronics Trading Platform',
   description:
     'B2B LINK connects verified buyers and sellers in the wholesale electronics market with 42+ years of combined industry experience, 0% commission, and direct trading.',
 };
@@ -41,7 +41,7 @@ export default function AboutPage() {
     },
     {
       title: 'Live BUY and SELL Listings',
-      description: 'Real-time inventory and demand requests posted by verified European traders.',
+      description: 'Real-time inventory and demand requests posted by verified global traders.',
       icon: TrendingUp,
       badge: 'Live Market',
     },
@@ -104,7 +104,7 @@ export default function AboutPage() {
     {
       number: '02',
       title: 'Post what you need',
-      subtitle: 'Publish Want-To-Buy (WTB) procurement requests to verified European distributors.',
+      subtitle: 'Publish Want-To-Buy (WTB) procurement requests to verified global distributors.',
     },
     {
       number: '03',
@@ -565,10 +565,10 @@ export default function AboutPage() {
               Start Wholesale Trading Today
             </span>
             <h2 className="text-[28px] sm:text-[36px] font-extrabold text-white tracking-tight">
-              Ready to Connect with European Electronics Traders?
+              Ready to Connect with Global Electronics Traders?
             </h2>
             <p className="text-[15px] text-slate-300 leading-relaxed">
-              Join verified distributors, retailers, and volume traders across the European continent. Post live stock, fulfill WTB requests, and conduct 100% direct business.
+              Join verified distributors, retailers, and volume traders worldwide. Post live stock, fulfill WTB requests, and conduct 100% direct business.
             </p>
 
             <div className="pt-4 flex flex-wrap items-center justify-center gap-4">

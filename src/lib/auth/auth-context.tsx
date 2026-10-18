@@ -352,6 +352,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('b2b_demo_role');
       localStorage.removeItem('b2b_seller_sidebar_collapsed');
       localStorage.removeItem('b2b_cached_company');
+      localStorage.removeItem('b2b_live_inquiries_real_v3');
+      localStorage.removeItem('b2b_live_inquiries_real_v2');
+      localStorage.removeItem('b2b_live_inquiries_real_v1');
+      localStorage.removeItem('b2b_pending_verification_email');
+      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
+      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
+
+      // Clean up any user-specific quote or lead storage keys
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('b2b_received_quotes_') || k.startsWith('b2b_unlocked_leads_') || k.startsWith('b2b_profile_override_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch {
+        // ignore
+      }
     }
     setCompany(null);
     setDemoRole('guest');

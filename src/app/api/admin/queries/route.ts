@@ -6,6 +6,7 @@ import {
 } from '@/lib/admin/server-queries';
 import { sendEmail } from '@/lib/email/dispatcher';
 import { customerQueryReplyEmail } from '@/lib/email/templates';
+import { getDynamicAppUrl } from '@/lib/utils/app-url';
 
 export async function GET() {
   try {
@@ -46,13 +47,14 @@ export async function POST(request: NextRequest) {
       // 2. Dispatch real email directly to customer
       let emailResult: { success: boolean; error?: string } = { success: false };
       try {
+        const appUrl = await getDynamicAppUrl(request);
         const { subject, html } = customerQueryReplyEmail({
           customerName: target.name,
           companyName: target.company,
           subject: replySubject || 'Response from B2B LINK Support',
           replyMessage: replyText,
           originalMessage: target.message,
-          actionUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://b2blink.eu/contact',
+          actionUrl: `${appUrl}/contact`,
         });
 
         emailResult = await sendEmail({

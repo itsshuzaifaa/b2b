@@ -16,9 +16,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'B2B LINK OÜ — European Wholesale Trading & Sourcing Platform',
+  title: 'B2B LINK OÜ — Global Wholesale Trading & Sourcing Platform',
   description:
-    'Europe’s verified wholesale network. Connect direct with European distributors, post sourcing requests, and trade with 0% platform transaction fees.',
+    'The verified global wholesale network. Connect direct with global distributors, post sourcing requests, and trade with 0% platform transaction fees.',
 };
 
 export default function RootLayout({
