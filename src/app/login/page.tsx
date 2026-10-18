@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, type DemoRoleType } from '@/lib/auth/auth-context';
 import { createClient } from '@/lib/supabase/client';
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Mail, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Mail, Eye, EyeOff, RefreshCw, Clock } from 'lucide-react';
 
 function LoginFormContent() {
   const router = useRouter();
@@ -29,9 +29,19 @@ function LoginFormContent() {
   const [otp, setOtp] = useState('');
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  // Resend cooldown timer (1 minute = 60 seconds)
   const [countdown, setCountdown] = useState<number>(60);
   const [resending, setResending] = useState(false);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
+  // Code expiration timer (15 minutes = 900 seconds)
+  const [codeExpiresIn, setCodeExpiresIn] = useState<number>(15 * 60);
+
+  // Format MM:SS helper
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.max(0, Math.floor(totalSeconds / 60));
+    const secs = Math.max(0, totalSeconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Check URL params or localStorage on mount
   useEffect(() => {
@@ -46,6 +56,7 @@ function LoginFormContent() {
           setVerifyEmail(initialEmail);
         }
         setMode('verify_code');
+        setCodeExpiresIn(15 * 60);
       } else if (storedPendingEmail && !identifier) {
         setIdentifier(storedPendingEmail);
         setVerifyEmail(storedPendingEmail);
@@ -53,13 +64,21 @@ function LoginFormContent() {
     }
   }, [searchParams]);
 
-  // Countdown timer for resending code
+  // Countdown timer for resending code (1 minute)
   useEffect(() => {
     if (countdown > 0 && mode === 'verify_code') {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     }
   }, [countdown, mode]);
+
+  // Countdown timer for code expiration (15 minutes)
+  useEffect(() => {
+    if (codeExpiresIn > 0 && mode === 'verify_code') {
+      const timer = setTimeout(() => setCodeExpiresIn(codeExpiresIn - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [codeExpiresIn, mode]);
 
   // Forgot Password State
   const [forgotEmail, setForgotEmail] = useState('');
@@ -165,10 +184,28 @@ function LoginFormContent() {
       return;
     }
 
+    if (codeExpiresIn <= 0) {
+      setVerifyError('This verification code has expired (15-minute limit). Please click "Resend verification code" below to receive a new code.');
+      return;
+    }
+
     setVerifyLoading(true);
     setVerifyError(null);
 
     try {
+      // Strictly validate with server verification store (enforcing 15-minute expiration & latest-code rule)
+      const serverRes = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, code: cleanOtp }),
+      });
+      const serverData = await serverRes.json();
+      if (!serverRes.ok) {
+        setVerifyError(serverData.error || 'Invalid or expired verification code. Please check and try again.');
+        setVerifyLoading(false);
+        return;
+      }
+
       const supabase = createClient();
 
       // Verify OTP with Supabase Auth (tries magiclink then signup)
@@ -186,7 +223,7 @@ function LoginFormContent() {
         });
       }
 
-      if (verifyResult.error) {
+      if (verifyResult.error && !serverData.success) {
         setVerifyError(verifyResult.error.message || 'Invalid or expired verification code. Please check and try again.');
         setVerifyLoading(false);
         return;
@@ -243,8 +280,10 @@ function LoginFormContent() {
       if (!res.ok) {
         setVerifyError(data.error || 'Failed to resend code.');
       } else {
-        setResendNotice(`A new verification code has been sent to ${targetEmail}. Please check your inbox.`);
-        setCountdown(60);
+        setResendNotice(`A new verification code has been sent to ${targetEmail}. Any previous code has now expired.`);
+        setCountdown(60); // 1 minute cooldown to request another code
+        setCodeExpiresIn(15 * 60); // Fresh 15-minute validity for the new code
+        setOtp('');
       }
     } catch {
       setVerifyError('Could not send code. Please try again.');
@@ -496,9 +535,22 @@ function LoginFormContent() {
               )}
 
               <div>
-                <label className="block text-[14px] font-bold text-[#0B1F3A] text-center mb-2">
-                  Verification code
-                </label>
+                <div className="flex items-center justify-between text-[13px] mb-2 px-0.5">
+                  <label className="font-bold text-[#0B1F3A]">
+                    Verification code
+                  </label>
+                  {codeExpiresIn > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#5B6B82] bg-[#F1F5F9] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]">
+                      <Clock className="w-3 h-3 text-[#0A6CFF]" />
+                      <span>Expires in <strong className="text-[#0B1F3A] font-mono">{formatTime(codeExpiresIn)}</strong></span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11.5px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                      <AlertCircle className="w-3 h-3 text-red-600" />
+                      <span>Code expired (15m limit)</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
@@ -508,13 +560,22 @@ function LoginFormContent() {
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.trim())}
                   placeholder="Enter code"
-                  className="w-full px-4 py-3.5 text-[22px] tracking-[0.2em] text-center font-mono font-bold bg-[#F8FAFF] border-2 border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#CBD5E1] focus:outline-none focus:border-[#0A6CFF] focus:bg-white transition"
+                  className={`w-full px-4 py-3.5 text-[22px] tracking-[0.2em] text-center font-mono font-bold bg-[#F8FAFF] border-2 rounded-2xl text-[#0B1F3A] placeholder:text-[#CBD5E1] focus:outline-none transition ${
+                    codeExpiresIn <= 0
+                      ? 'border-red-300 bg-red-50/30'
+                      : 'border-[#E3E9F2] focus:border-[#0A6CFF] focus:bg-white'
+                  }`}
                 />
+                {codeExpiresIn <= 0 && (
+                  <p className="mt-2 text-[12px] text-red-600 font-semibold text-center animate-in fade-in">
+                    This verification code has expired after 15 minutes. Please click &ldquo;Resend verification code&rdquo; below.
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
-                disabled={verifyLoading || !otp.trim() || !verifyEmail.trim()}
+                disabled={verifyLoading || !otp.trim() || !verifyEmail.trim() || codeExpiresIn <= 0}
                 className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs mt-6 disabled:opacity-60 cursor-pointer"
               >
                 {verifyLoading ? 'Verifying & signing in...' : 'Confirm Code & Log In'}
@@ -526,7 +587,7 @@ function LoginFormContent() {
               {countdown > 0 ? (
                 <p>
                   Didn’t receive the code? Resend in{' '}
-                  <span className="font-bold text-[#0B1F3A]">{countdown}s</span>
+                  <span className="font-bold text-[#0B1F3A] font-mono">{countdown}s</span>
                 </p>
               ) : (
                 <button
@@ -539,6 +600,9 @@ function LoginFormContent() {
                   <span>Resend verification code</span>
                 </button>
               )}
+              <div className="text-[11.5px] text-[#8A9BB0] mt-1.5">
+                Each code is valid for 15 minutes. Requesting a new code expires the previous one.
+              </div>
             </div>
 
             {/* Alternative link */}

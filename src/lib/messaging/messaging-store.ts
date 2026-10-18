@@ -2,6 +2,7 @@
 
 import type { Product, Company, WtbRequest } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 
 export interface ChatMessage {
   id: string;
@@ -13,6 +14,27 @@ export interface ChatMessage {
   isRead?: boolean;
   isBroadcast?: boolean;
   targetAudience?: 'seller' | 'buyer' | 'all';
+  broadcastKind?: 'wtb' | 'wts' | 'admin';
+  broadcastDetails?: BroadcastDetails;
+}
+
+export interface BroadcastDetails {
+  itemType: 'wtb' | 'wts';
+  itemId?: string;
+  title: string;
+  brand?: string;
+  category?: string;
+  condition?: string;
+  quantity: number;
+  price: number;
+  moq?: number;
+  barcode?: string;
+  notes?: string;
+  ownerCompanyId: string;
+  ownerCompanyName: string;
+  ownerContactName?: string;
+  ownerEmail?: string;
+  ownerPhone?: string;
 }
 
 export type InquiryMessage = ChatMessage;
@@ -44,6 +66,8 @@ export interface InquiryConversation {
   unreadByBuyer: boolean;
   unreadByAdmin?: boolean;
   messages: ChatMessage[];
+  broadcastKind?: 'wtb' | 'wts' | 'admin';
+  broadcastDetails?: BroadcastDetails;
 }
 
 const STORAGE_KEY = 'b2b_live_inquiries_real_v3';
@@ -399,13 +423,162 @@ export async function broadcastToTargetAudience(
 export const broadcastToAllSellers = (title: string, text: string) =>
   broadcastToTargetAudience(title, text, 'seller');
 
+export interface MemberBroadcastInput {
+  broadcastKind: 'wtb' | 'wts';
+  itemId?: string;
+  title: string;
+  category?: string;
+  brand?: string;
+  condition?: string;
+  quantity: number;
+  price: number;
+  moq?: number;
+  barcode?: string;
+  notes?: string;
+  senderCompany: Company;
+  targetAudience?: 'all' | 'seller' | 'buyer';
+}
+
+/**
+ * Gold Member Network Broadcast:
+ * Dispatches an internal WTB or WTS broadcast to all verified members.
+ * Details are fully shared but contact credentials remain locked until counterparty unlocks.
+ */
+export async function broadcastMemberOpportunity(
+  input: MemberBroadcastInput
+): Promise<InquiryConversation | null> {
+  const broadcastId = `broadcast-${input.broadcastKind}-${Date.now()}`;
+  const initialMsgText = input.broadcastKind === 'wtb'
+    ? `📢 INTERNAL WTB BROADCAST\nProduct: ${input.title}\nTarget Quantity: ${input.quantity} units\nTarget Price: £${input.price.toFixed(2)}/unit\nTotal Estimated Value: £${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/SKU: ${input.barcode || 'N/A'}\nNotes: ${input.notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
+    : `📢 INTERNAL WTS BROADCAST\nProduct: ${input.title}\nBrand: ${input.brand || 'Generic'}\nCondition: ${input.condition || 'New'}\nAvailable Quantity: ${input.quantity} pcs\nUnit Price: £${input.price.toFixed(2)}/pc\nMinimum Order (MOQ): ${input.moq || 1} pcs\nTotal Lot Value: £${(input.quantity * input.price).toLocaleString()}\nCategory: ${input.category || 'General'}\nBarcode/EAN: ${input.barcode || 'N/A'}\nDescription: ${input.notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
+
+  const details: BroadcastDetails = {
+    itemType: input.broadcastKind,
+    itemId: input.itemId || broadcastId,
+    title: input.title,
+    brand: input.brand,
+    category: input.category,
+    condition: input.condition,
+    quantity: input.quantity,
+    price: input.price,
+    moq: input.moq || 1,
+    barcode: input.barcode,
+    notes: input.notes,
+    ownerCompanyId: input.senderCompany.id,
+    ownerCompanyName: input.senderCompany.name || 'Commercial Member',
+    ownerContactName: input.senderCompany.contact_name || 'Trading Representative',
+    ownerEmail: input.senderCompany.email,
+    ownerPhone: input.senderCompany.phone || undefined,
+  };
+
+  const initialMsg: ChatMessage = {
+    id: `msg-${broadcastId}`,
+    senderId: input.senderCompany.id,
+    senderName: `${input.broadcastKind.toUpperCase()} Broadcast Desk`,
+    senderRole: input.broadcastKind === 'wtb' ? 'buyer' : 'seller',
+    text: initialMsgText,
+    timestamp: new Date().toISOString(),
+    isBroadcast: true,
+    targetAudience: input.targetAudience || 'all',
+    broadcastKind: input.broadcastKind,
+    broadcastDetails: details,
+  };
+
+  const newConv: InquiryConversation = {
+    id: broadcastId,
+    type: 'broadcast',
+    targetAudience: input.targetAudience || 'all',
+    status: input.broadcastKind === 'wtb' ? 'broadcast_wtb' : 'broadcast_wts',
+    productId: input.itemId || broadcastId,
+    productTitle: `[${input.broadcastKind.toUpperCase()} BROADCAST] ${input.title}`,
+    productPrice: input.price,
+    productMoq: input.moq || 1,
+    productCategory: input.category,
+    sellerCompanyId: input.senderCompany.id,
+    sellerCompanyName: input.senderCompany.name || 'Commercial Member',
+    sellerContactName: input.senderCompany.contact_name,
+    buyerCompanyId: input.senderCompany.id,
+    buyerCompanyName: input.senderCompany.name || 'Commercial Member',
+    buyerContactName: input.senderCompany.contact_name,
+    buyerEmail: input.senderCompany.email,
+    buyerPhone: input.senderCompany.phone || undefined,
+    lastMessageText: initialMsgText,
+    lastMessageTime: 'Just now',
+    unreadBySeller: true,
+    unreadByBuyer: true,
+    messages: [initialMsg],
+    broadcastKind: input.broadcastKind,
+    broadcastDetails: details,
+  };
+
+  // 1. Optimistic Local Save
+  markMessageAsSentByMe(initialMsg.id);
+  const all = getStoredConversations();
+  all.unshift(newConv);
+  saveStoredConversations(all, initialMsg, newConv, true);
+
+  // 2. Persist to API / Supabase
+  try {
+    const res = await fetch('/api/inquiries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_member_broadcast',
+        broadcastKind: input.broadcastKind,
+        itemId: input.itemId,
+        title: input.title,
+        category: input.category,
+        brand: input.brand,
+        condition: input.condition,
+        quantity: input.quantity,
+        price: input.price,
+        moq: input.moq,
+        barcode: input.barcode,
+        notes: input.notes,
+        senderCompanyId: input.senderCompany.id,
+        senderCompanyName: input.senderCompany.name,
+        senderContactName: input.senderCompany.contact_name,
+        senderEmail: input.senderCompany.email,
+        senderPhone: input.senderCompany.phone,
+        targetAudience: input.targetAudience || 'all',
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.conversation) {
+        const freshAll = getStoredConversations();
+        const idx = freshAll.findIndex((c) => c.id === broadcastId || c.id === data.conversation.id);
+        if (idx >= 0) {
+          freshAll[idx] = { ...data.conversation, broadcastKind: input.broadcastKind, broadcastDetails: details };
+        } else {
+          freshAll.unshift({ ...data.conversation, broadcastKind: input.broadcastKind, broadcastDetails: details });
+        }
+        saveStoredConversations(freshAll, data.broadcast || initialMsg, freshAll[0], true);
+        return freshAll[0];
+      }
+    }
+  } catch (err) {
+    console.warn('[MEMBER BROADCAST SYNC NOTICE]', err);
+  }
+
+  return newConv;
+}
+
+export type SendAdminDirectResult = {
+  success: boolean;
+  conversation: InquiryConversation | null;
+  error?: string;
+};
+
 // Admin sends a private direct message to a specific seller
 export async function sendAdminDirectMessage(
   sellerCompanyId: string,
   text: string,
-  adminName: string = 'Jeff Vetting Director (B2B LINK Desk)',
-  adminId: string = 'admin-desk'
-): Promise<InquiryConversation | null> {
+  adminName: string = 'Platform Administrator (Executive Desk)',
+  adminId: string = 'facbb93f-080f-480f-b54b-8ef26664da86',
+  sellerInfo?: { company_name?: string; contact_name?: string; contact_email?: string }
+): Promise<SendAdminDirectResult> {
   try {
     const res = await fetch('/api/inquiries', {
       method: 'POST',
@@ -419,25 +592,80 @@ export async function sendAdminDirectMessage(
       }),
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.conversation) {
-        const all = getStoredConversations();
-        const existingIdx = all.findIndex((c) => c.id === data.conversation.id);
-        if (existingIdx >= 0) {
-          all[existingIdx] = data.conversation;
-        } else {
-          all.unshift(data.conversation);
-        }
-        if (data.message?.id) markMessageAsSentByMe(data.message.id);
-        saveStoredConversations(all, data.message, data.conversation, true);
-        return data.conversation;
+    const data = await res.json().catch(() => null);
+
+    if (res.ok && data?.success && data?.conversation) {
+      const all = getStoredConversations();
+      const existingIdx = all.findIndex((c) => c.id === data.conversation.id);
+      if (existingIdx >= 0) {
+        all[existingIdx] = data.conversation;
+      } else {
+        all.unshift(data.conversation);
       }
+      if (data.message?.id) markMessageAsSentByMe(data.message.id);
+      saveStoredConversations(all, data.message, data.conversation, true);
+      return { success: true, conversation: data.conversation };
     }
-  } catch {
-    // silent
+
+    if (data?.error) {
+      return { success: false, conversation: null, error: data.error };
+    }
+  } catch (err: any) {
+    // If network error but seller info is provided, provide optimistic fallback
+    if (sellerInfo) {
+      const convId = `admin-desk-${sellerCompanyId}`;
+      const newMsg: ChatMessage = {
+        id: `msg-admin-${Date.now()}`,
+        senderId: adminId,
+        senderName: adminName,
+        senderRole: 'admin',
+        text: text.trim(),
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      };
+      markMessageAsSentByMe(newMsg.id);
+
+      const all = getStoredConversations();
+      let conv = all.find((c) => c.id === convId || (c.sellerCompanyId === sellerCompanyId && c.type === 'seller_admin'));
+      if (conv) {
+        conv.messages.push(newMsg);
+        conv.lastMessageText = text.trim();
+        conv.lastMessageTime = 'Just now';
+        conv.unreadBySeller = true;
+      } else {
+        conv = {
+          id: convId,
+          type: 'seller_admin',
+          targetAudience: 'seller',
+          status: 'admin_desk',
+          productId: '00000000-0000-0000-0000-000000000001',
+          productTitle: 'Platform Administrator (Executive Desk)',
+          productImage: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800',
+          productPrice: 0,
+          productMoq: 1,
+          productCategory: 'Compliance Desk',
+          sellerCompanyId,
+          sellerCompanyName: sellerInfo.company_name || 'Registered Seller',
+          sellerContactName: sellerInfo.contact_name || 'Trade Desk',
+          buyerCompanyName: 'B2B LINK OÜ (Admin Desk)',
+          buyerContactName: adminName,
+          buyerEmail: 'admin@b2blink.eu',
+          buyerContactEmail: 'admin@b2blink.eu',
+          lastMessageText: text.trim(),
+          lastMessageTime: 'Just now',
+          unreadBySeller: true,
+          unreadByBuyer: false,
+          unreadByAdmin: false,
+          messages: [newMsg],
+        };
+        all.unshift(conv);
+      }
+      saveStoredConversations(all, newMsg, conv, true);
+      return { success: true, conversation: conv };
+    }
+    return { success: false, conversation: null, error: err?.message || 'Network error sending message' };
   }
-  return null;
+  return { success: false, conversation: null, error: 'Failed to send direct message to seller.' };
 }
 
 // Fetch list of registered sellers for Admin Direct Messaging
@@ -451,7 +679,7 @@ export async function fetchAllSellersForAdmin(): Promise<any[]> {
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.sellers)) {
-        return data.sellers;
+        return data.sellers.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
       }
     }
   } catch {

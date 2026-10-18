@@ -354,9 +354,10 @@ function RegisterContent() {
         return;
       }
 
-      // Switch auth context & redirect to verification screen
-      switchDemoRole('seller');
+      // Clear any prior demo role or cached session before redirecting to verification screen
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('b2b_demo_role');
+        localStorage.removeItem('b2b_cached_company');
         localStorage.setItem('b2b_pending_verification_email', email.trim().toLowerCase());
         localStorage.setItem('b2b_pending_tier', selectedTier);
         localStorage.setItem('b2b_registered_tier', selectedTier);

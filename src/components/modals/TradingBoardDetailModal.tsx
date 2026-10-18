@@ -340,7 +340,9 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-3.5 border-t border-[#EAEFF6] text-[12px]">
               <div>
                 <span className="text-[#8A9BB0] block text-[11px]">EAN / GTIN</span>
-                <span className="font-mono font-bold text-[#0B1F3A]">{item.ean}</span>
+                <span className="font-mono font-bold text-[#0B1F3A]">
+                  {item.ean && item.ean !== '8806095087286' && item.ean !== '195949048735' && item.ean !== '—' ? item.ean : 'n/a'}
+                </span>
               </div>
               <div>
                 <span className="text-[#8A9BB0] block text-[11px]">Quantity {isBuy ? 'Wanted' : 'In Stock'}</span>

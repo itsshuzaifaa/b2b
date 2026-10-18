@@ -39,7 +39,12 @@ function RequestsContent() {
       // 2. User created WTBs in local storage
       localStorage.removeItem('b2b_user_wtb_requests_v1');
       const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
-      const userWtbs: TradingBoardItem[] = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
+      const userWtbs: TradingBoardItem[] = rawUserWtbs
+        ? JSON.parse(rawUserWtbs).map((w: any) => ({
+            ...w,
+            ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
+          }))
+        : [];
 
       // 3. Supabase Public WTBs
       let supabaseMapped: TradingBoardItem[] = [];
@@ -55,9 +60,9 @@ function RequestsContent() {
             brand: req.product_name.split(' ')[0] || 'Brand',
             itemCode: req.barcode_or_sku ? req.barcode_or_sku.slice(0, 10) : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
             description: req.product_name + (req.notes ? ` — ${req.notes}` : ''),
-            ean: req.barcode_or_sku || '8806095087286',
+            ean: req.barcode_or_sku || 'n/a',
             qty: req.target_quantity || 50,
-            condition: 'New',
+            condition: (req.notes?.match(/Condition:\s*([^|]+)/i)?.[1]?.trim()) || 'New',
             price: req.target_price || 0,
             currency: '€',
             location: 'EU',
@@ -339,7 +344,7 @@ function RequestsContent() {
 
                         {/* 6. EAN/UPC */}
                         <td className="py-3.5 px-3 text-[12px] font-mono text-[#475569] whitespace-nowrap">
-                          {item.ean}
+                          {item.ean && item.ean !== '8806095087286' && item.ean !== '195949048735' && item.ean !== '—' ? item.ean : 'n/a'}
                         </td>
 
                         {/* 7. TARGET QTY */}

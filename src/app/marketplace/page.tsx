@@ -52,11 +52,19 @@ function MarketplaceContent() {
             type: 'SELL',
             category: l.category || 'Mobile Phones',
             brand: l.brand || 'Apple',
-            itemCode: l.itemCode || l.ean?.slice(0, 8) || 'MDL-2026',
+            itemCode: l.itemCode || (l.ean && l.ean !== '195949048735' && l.ean !== 'n/a' ? l.ean.slice(0, 8) : 'MDL-2026'),
             description: l.title || l.description || 'Wholesale Lot',
-            ean: l.ean || '195949048735',
+            ean: (l.ean && l.ean !== '195949048735') ? l.ean : 'n/a',
             qty: Number(l.available || l.qty || 50),
-            condition: l.condition === 'new' ? 'New' : l.condition === 'refurbished' ? 'Refurbished' : 'Used',
+            condition: l.condition
+              ? l.condition === 'new'
+                ? 'New'
+                : l.condition === 'refurbished'
+                ? 'Refurbished'
+                : l.condition === 'worn_out'
+                ? 'Ber'
+                : l.condition
+              : 'New',
             price: Number(l.unitPrice || l.price || 99),
             currency: '€',
             location: l.location || 'DE',
@@ -71,7 +79,12 @@ function MarketplaceContent() {
 
       // 2. User WTB requests
       const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
-      const userWtbs = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
+      const userWtbs: TradingBoardItem[] = rawUserWtbs
+        ? JSON.parse(rawUserWtbs).map((w: any) => ({
+            ...w,
+            ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
+          }))
+        : [];
 
       const combined = [...formattedUserSell, ...userWtbs, ...ALL_TRADING_BOARD_ITEMS];
       const cleanItems = combined.filter((item) => {
@@ -356,7 +369,7 @@ function MarketplaceContent() {
 
                         {/* 6. EAN/UPC */}
                         <td className="py-3.5 px-3 text-[12px] font-mono text-[#475569] whitespace-nowrap">
-                          {item.ean}
+                          {item.ean && item.ean !== '195949048735' && item.ean !== '8806095087286' && item.ean !== '—' ? item.ean : 'n/a'}
                         </td>
 
                         {/* 7. QTY */}

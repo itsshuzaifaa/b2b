@@ -6,7 +6,9 @@ import {
   updateAccountTier,
   getAdminAccounts,
   saveAdminAccounts,
+  getAdminPayments,
   type AdminClientAccount,
+  type AdminPaymentRecord,
 } from '@/lib/admin/admin-store';
 
 export interface PaymentCard {
@@ -69,28 +71,123 @@ export function broadcastBillingUpdate() {
 // 1. CARDS MANAGEMENT
 // ==========================================
 
-export function getCompanyCards(companyId: string): PaymentCard[] {
+export function getCompanyCards(
+  companyId?: string,
+  contactEmail?: string,
+  userId?: string
+): PaymentCard[] {
   if (typeof window === 'undefined') return [];
   try {
-    const key = getStorageKey(CARDS_STORAGE_PREFIX, companyId);
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+    // 1. Check primary company key
+    if (companyId) {
+      const key = getStorageKey(CARDS_STORAGE_PREFIX, companyId);
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     }
 
-    // Return empty cards array for new companies (no test card seeded)
+    // 2. Check contactEmail key
+    if (contactEmail) {
+      const emailKey = getStorageKey(CARDS_STORAGE_PREFIX, contactEmail.toLowerCase().trim());
+      const raw = localStorage.getItem(emailKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (companyId) saveCompanyCards(companyId, parsed);
+          return parsed;
+        }
+      }
+    }
+
+    // 3. Check userId key
+    if (userId && userId !== companyId) {
+      const userKey = getStorageKey(CARDS_STORAGE_PREFIX, userId);
+      const raw = localStorage.getItem(userKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (companyId) saveCompanyCards(companyId, parsed);
+          return parsed;
+        }
+      }
+    }
+
+    // 4. Scan all localStorage keys for any saved cards
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CARDS_STORAGE_PREFIX)) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              if (companyId) saveCompanyCards(companyId, parsed);
+              return parsed;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 5. Look up in Admin Payments for any corporate card on file
+    const allPay = getAdminPayments();
+    const match = allPay.find(
+      (p: AdminPaymentRecord) =>
+        (companyId && p.company_id === companyId) ||
+        (contactEmail && p.contact_email?.toLowerCase() === contactEmail.toLowerCase().trim()) ||
+        p.payment_method === 'Corporate Card'
+    );
+
+    if (match && match.payment_method === 'Corporate Card') {
+      const last4 = match.wise_reference?.replace(/\D/g, '').slice(-4) || '4242';
+      const recoveredCard: PaymentCard = {
+        id: `card-${match.id || Date.now()}`,
+        brand: match.wise_reference?.toLowerCase().includes('mastercard')
+          ? 'mastercard'
+          : match.wise_reference?.toLowerCase().includes('amex')
+          ? 'amex'
+          : 'visa',
+        last4,
+        expMonth: '12',
+        expYear: '28',
+        cardholderName: match.company_name || 'Verified Member',
+        isDefault: true,
+        createdAt: match.created_at || new Date().toISOString(),
+      };
+      const cards = [recoveredCard];
+      if (companyId) saveCompanyCards(companyId, cards);
+      if (contactEmail) saveCompanyCards(contactEmail.toLowerCase().trim(), cards);
+      return cards;
+    }
+
     return [];
   } catch {
     return [];
   }
 }
 
-export function saveCompanyCards(companyId: string, cards: PaymentCard[]) {
+export function saveCompanyCards(
+  companyId: string,
+  cards: PaymentCard[],
+  contactEmail?: string,
+  userId?: string
+) {
   if (typeof window === 'undefined') return;
   try {
-    const key = getStorageKey(CARDS_STORAGE_PREFIX, companyId);
-    localStorage.setItem(key, JSON.stringify(cards));
+    if (companyId) {
+      const key = getStorageKey(CARDS_STORAGE_PREFIX, companyId);
+      localStorage.setItem(key, JSON.stringify(cards));
+    }
+    if (contactEmail) {
+      const emailKey = getStorageKey(CARDS_STORAGE_PREFIX, contactEmail.toLowerCase().trim());
+      localStorage.setItem(emailKey, JSON.stringify(cards));
+    }
+    if (userId && userId !== companyId) {
+      const userKey = getStorageKey(CARDS_STORAGE_PREFIX, userId);
+      localStorage.setItem(userKey, JSON.stringify(cards));
+    }
     broadcastBillingUpdate();
   } catch {
     // ignore
@@ -106,7 +203,8 @@ export function addPaymentCard(
     expYear: string;
     brand?: 'visa' | 'mastercard' | 'amex';
     setAsDefault?: boolean;
-  }
+  },
+  contactEmail?: string
 ): { success: boolean; card?: PaymentCard; error?: string } {
   const cleanNumber = cardData.cardNumber.replace(/\s+/g, '');
   if (cleanNumber.length < 15) {
@@ -116,7 +214,7 @@ export function addPaymentCard(
     return { success: false, error: 'Cardholder name is required.' };
   }
 
-  const cards = getCompanyCards(companyId);
+  const cards = getCompanyCards(companyId, contactEmail);
   const last4 = cleanNumber.slice(-4);
   const brand = cardData.brand || (cleanNumber.startsWith('5') ? 'mastercard' : 'visa');
   const isFirst = cards.length === 0;
@@ -138,13 +236,13 @@ export function addPaymentCard(
   };
 
   updatedCards.push(newCard);
-  saveCompanyCards(companyId, updatedCards);
+  saveCompanyCards(companyId, updatedCards, contactEmail);
 
   // If set as default, update subscription record
   if (shouldBeDefault) {
-    const sub = getCompanySubscription(companyId);
+    const sub = getCompanySubscription(companyId, contactEmail);
     sub.defaultCardId = newCard.id;
-    saveCompanySubscription(companyId, sub);
+    saveCompanySubscription(companyId, sub, contactEmail);
   }
 
   return { success: true, card: newCard };
@@ -152,10 +250,11 @@ export function addPaymentCard(
 
 export function removePaymentCard(
   companyId: string,
-  cardId: string
+  cardId: string,
+  contactEmail?: string
 ): { success: boolean; error?: string } {
-  const cards = getCompanyCards(companyId);
-  const sub = getCompanySubscription(companyId);
+  const cards = getCompanyCards(companyId, contactEmail);
+  const sub = getCompanySubscription(companyId, contactEmail);
 
   // RULE: One card must stay for active subscription!
   const hasActivePaidSub = sub.tier !== 'bronze' && sub.status === 'active';
@@ -179,18 +278,19 @@ export function removePaymentCard(
   if (targetCard.isDefault && remaining.length > 0) {
     remaining[0].isDefault = true;
     sub.defaultCardId = remaining[0].id;
-    saveCompanySubscription(companyId, sub);
+    saveCompanySubscription(companyId, sub, contactEmail);
   }
 
-  saveCompanyCards(companyId, remaining);
+  saveCompanyCards(companyId, remaining, contactEmail);
   return { success: true };
 }
 
 export function setDefaultCard(
   companyId: string,
-  cardId: string
+  cardId: string,
+  contactEmail?: string
 ): { success: boolean; error?: string } {
-  const cards = getCompanyCards(companyId);
+  const cards = getCompanyCards(companyId, contactEmail);
   const exists = cards.some((c) => c.id === cardId);
   if (!exists) return { success: false, error: 'Card not found.' };
 
@@ -198,11 +298,11 @@ export function setDefaultCard(
     ...c,
     isDefault: c.id === cardId,
   }));
-  saveCompanyCards(companyId, updated);
+  saveCompanyCards(companyId, updated, contactEmail);
 
-  const sub = getCompanySubscription(companyId);
+  const sub = getCompanySubscription(companyId, contactEmail);
   sub.defaultCardId = cardId;
-  saveCompanySubscription(companyId, sub);
+  saveCompanySubscription(companyId, sub, contactEmail);
 
   return { success: true };
 }
@@ -211,15 +311,51 @@ export function setDefaultCard(
 // 2. SUBSCRIPTION MANAGEMENT
 // ==========================================
 
-export function getCompanySubscription(companyId: string): UserSubscription {
+export function getCompanySubscription(
+  companyId?: string,
+  contactEmail?: string,
+  fallbackTier?: MembershipTier
+): UserSubscription {
   const now = new Date();
   const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+  // Check external sources for higher active tiers
+  let detectedTier: MembershipTier | null = null;
+
+  if (fallbackTier && fallbackTier !== 'bronze') {
+    detectedTier = fallbackTier;
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const regTier = localStorage.getItem('b2b_registered_tier') as MembershipTier;
+      if (regTier && (regTier === 'silver' || regTier === 'gold')) {
+        if (!detectedTier) {
+          detectedTier = regTier;
+        }
+      }
+
+      // Check admin accounts
+      const accounts = getAdminAccounts();
+      const accountMatch = accounts.find(
+        (a) =>
+          (companyId && a.id === companyId) ||
+          (contactEmail && a.email?.toLowerCase() === contactEmail.toLowerCase().trim())
+      );
+      if (accountMatch?.membership_tier && accountMatch.membership_tier !== 'bronze') {
+        detectedTier = accountMatch.membership_tier;
+      }
+    } catch {}
+  }
+
+  const effectiveTier: MembershipTier = detectedTier || 'bronze';
+  const pricing = TIER_PRICING[effectiveTier];
+
   const defaultSub: UserSubscription = {
     companyId: companyId || 'default',
-    tier: 'bronze',
-    status: 'free',
-    amountGbp: 0,
+    tier: effectiveTier,
+    status: effectiveTier === 'bronze' ? 'free' : 'active',
+    amountGbp: pricing.price,
     interval: 'month',
     currentPeriodStart: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     currentPeriodEnd: nextMonth.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -231,8 +367,19 @@ export function getCompanySubscription(companyId: string): UserSubscription {
   if (typeof window === 'undefined') return defaultSub;
 
   try {
-    const key = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, companyId);
-    const raw = localStorage.getItem(key);
+    let raw: string | null = null;
+    let usedKey: string | null = null;
+
+    if (companyId) {
+      usedKey = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, companyId);
+      raw = localStorage.getItem(usedKey);
+    }
+
+    if (!raw && contactEmail) {
+      const emailKey = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, contactEmail.toLowerCase().trim());
+      raw = localStorage.getItem(emailKey);
+    }
+
     if (raw) {
       const sub: UserSubscription = JSON.parse(raw);
 
@@ -248,26 +395,58 @@ export function getCompanySubscription(companyId: string): UserSubscription {
           sub.status = 'free';
           sub.amountGbp = 0;
           sub.cancelAtPeriodEnd = false;
-          localStorage.setItem(key, JSON.stringify(sub));
-          updateAccountTier(companyId, 'bronze');
+          if (usedKey) localStorage.setItem(usedKey, JSON.stringify(sub));
+          if (companyId) updateAccountTier(companyId, 'bronze');
           broadcastBillingUpdate();
+          return sub;
         }
+      }
+
+      // If stored tier is bronze but account/registration/fallback is silver or gold, update it!
+      if (effectiveTier !== 'bronze' && (sub.tier === 'bronze' || !sub.tier)) {
+        sub.tier = effectiveTier;
+        sub.status = 'active';
+        sub.amountGbp = pricing.price;
+        sub.cancelAtPeriodEnd = false;
+        if (companyId) saveCompanySubscription(companyId, sub, contactEmail);
       }
 
       return sub;
     }
-    localStorage.setItem(key, JSON.stringify(defaultSub));
+
+    // No existing subscription record found: save the defaultSub reflecting the active tier
+    if (companyId) {
+      saveCompanySubscription(companyId, defaultSub, contactEmail);
+    }
     return defaultSub;
   } catch {
     return defaultSub;
   }
 }
 
-export function saveCompanySubscription(companyId: string, sub: UserSubscription) {
+export function saveCompanySubscription(
+  companyId: string,
+  sub: UserSubscription,
+  contactEmail?: string,
+  userId?: string
+) {
   if (typeof window === 'undefined') return;
   try {
-    const key = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, companyId);
-    localStorage.setItem(key, JSON.stringify(sub));
+    if (companyId) {
+      const key = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, companyId);
+      localStorage.setItem(key, JSON.stringify(sub));
+    }
+    if (contactEmail) {
+      const emailKey = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, contactEmail.toLowerCase().trim());
+      localStorage.setItem(emailKey, JSON.stringify(sub));
+    }
+    if (userId && userId !== companyId) {
+      const userKey = getStorageKey(SUBSCRIPTION_STORAGE_PREFIX, userId);
+      localStorage.setItem(userKey, JSON.stringify(sub));
+    }
+    if (sub.tier) {
+      localStorage.setItem('b2b_registered_tier', sub.tier);
+    }
     broadcastBillingUpdate();
   } catch {
     // ignore
@@ -359,7 +538,7 @@ export function changePlan(
   companyName: string = 'Enterprise Trader Ltd',
   contactEmail: string = 'billing@client.eu'
 ): { success: boolean; error?: string } {
-  const cards = getCompanyCards(companyId);
+  const cards = getCompanyCards(companyId, contactEmail);
   if (newTier !== 'bronze' && cards.length === 0) {
     return {
       success: false,
@@ -367,7 +546,7 @@ export function changePlan(
     };
   }
 
-  const sub = getCompanySubscription(companyId);
+  const sub = getCompanySubscription(companyId, contactEmail, newTier);
   const pricing = TIER_PRICING[newTier];
   const now = new Date();
   const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -381,10 +560,13 @@ export function changePlan(
   sub.cancelAtPeriodEnd = false;
   sub.canceledAt = null;
 
-  saveCompanySubscription(companyId, sub);
+  saveCompanySubscription(companyId, sub, contactEmail);
+  if (cards.length > 0) {
+    saveCompanyCards(companyId, cards, contactEmail);
+  }
 
   // Update in Admin Store
-  updateAccountTier(companyId, newTier);
+  updateAccountTier(companyId, newTier, contactEmail);
 
   // If paid tier, record payment in Admin Dashboard
   if (pricing.price > 0) {
@@ -426,31 +608,25 @@ export function processRegistrationCardCheckout(params: {
   const { companyId, userId, companyName, contactEmail, tier, cardData } = params;
 
   // 1. Save card
-  const cardRes = addPaymentCard(companyId, {
-    cardNumber: cardData.cardNumber,
-    cardholderName: cardData.cardholderName,
-    expMonth: cardData.expMonth,
-    expYear: cardData.expYear,
-    brand: cardData.brand,
-    setAsDefault: true,
-  });
+  const cardRes = addPaymentCard(
+    companyId,
+    {
+      cardNumber: cardData.cardNumber,
+      cardholderName: cardData.cardholderName,
+      expMonth: cardData.expMonth,
+      expYear: cardData.expYear,
+      brand: cardData.brand,
+      setAsDefault: true,
+    },
+    contactEmail
+  );
 
   if (!cardRes.success || !cardRes.card) {
     return { success: false, error: cardRes.error || 'Card verification failed.' };
   }
 
-  if (userId && userId !== companyId) {
-    try {
-      addPaymentCard(userId, {
-        cardNumber: cardData.cardNumber,
-        cardholderName: cardData.cardholderName,
-        expMonth: cardData.expMonth,
-        expYear: cardData.expYear,
-        brand: cardData.brand,
-        setAsDefault: true,
-      });
-    } catch {}
-  }
+  // Multi-key sync for cards
+  saveCompanyCards(companyId, [cardRes.card], contactEmail, userId);
 
   const pricing = TIER_PRICING[tier];
   const now = new Date();
@@ -470,7 +646,7 @@ export function processRegistrationCardCheckout(params: {
     defaultCardId: cardRes.card.id,
   };
 
-  saveCompanySubscription(companyId, sub);
+  saveCompanySubscription(companyId, sub, contactEmail, userId);
 
   if (userId && userId !== companyId) {
     try {
@@ -506,12 +682,12 @@ export function processRegistrationCardCheckout(params: {
         email: contactEmail,
         role: 'seller',
         membership_tier: tier,
-        approval_status: 'approved',
+        approval_status: 'pending',
         account_status: 'active',
         created_at: new Date().toISOString(),
         listings_count: 0,
         total_spend_or_sales: `£${pricing.price}/mo Membership`,
-        verified_documents: true,
+        verified_documents: false,
       };
       saveAdminAccounts([newAccount, ...existingAccounts]);
     } else {

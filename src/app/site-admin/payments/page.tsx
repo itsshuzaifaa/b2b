@@ -4,7 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   getAdminPayments,
   getAdminAccounts,
+  saveAdminAccounts,
   type AdminPaymentRecord,
+  type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import {
   CreditCard,
@@ -35,6 +37,7 @@ import {
 
 export default function SiteAdminPaymentsPage() {
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
+  const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'month' | '30days' | '90days'>('all');
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentRecord | null>(null);
@@ -43,8 +46,20 @@ export default function SiteAdminPaymentsPage() {
   const [currentMonthStr, setCurrentMonthStr] = useState('Oct');
   const [currentMonthYearStr, setCurrentMonthYearStr] = useState('Oct 2026');
 
-  const loadData = () => {
+  const loadData = async () => {
     setPayments(getAdminPayments());
+    try {
+      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.accounts)) {
+          setAccounts(data.accounts);
+          saveAdminAccounts(data.accounts);
+          return;
+        }
+      }
+    } catch {}
+    setAccounts(getAdminAccounts());
   };
 
   useEffect(() => {
@@ -102,7 +117,6 @@ export default function SiteAdminPaymentsPage() {
   const thisMonthTotal = thisMonthPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 
   // Accounts with active paid subscriptions
-  const accounts = getAdminAccounts();
   const activePaidSubs = accounts.filter(
     (a) => a.membership_tier === 'silver' || a.membership_tier === 'gold'
   );

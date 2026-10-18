@@ -44,11 +44,19 @@ export function LiveTradingBoard() {
             type: 'SELL',
             category: l.category || 'Mobile Phones',
             brand: l.brand || 'Apple',
-            itemCode: l.itemCode || l.ean?.slice(0, 8) || 'MDL-2026',
+            itemCode: l.itemCode || (l.ean && l.ean !== '195949048735' && l.ean !== 'n/a' ? l.ean.slice(0, 8) : 'MDL-2026'),
             description: l.title || l.description || 'Wholesale Lot',
-            ean: l.ean || '195949048735',
+            ean: (l.ean && l.ean !== '195949048735') ? l.ean : 'n/a',
             qty: Number(l.available || l.qty || 50),
-            condition: l.condition === 'new' ? 'New' : l.condition === 'refurbished' ? 'Refurbished' : 'Used',
+            condition: l.condition
+              ? l.condition === 'new'
+                ? 'New'
+                : l.condition === 'refurbished'
+                ? 'Refurbished'
+                : l.condition === 'worn_out'
+                ? 'Ber'
+                : l.condition
+              : 'New',
             price: Number(l.unitPrice || l.price || 99),
             currency: l.currency || '€',
             location: l.location || 'DE',
@@ -74,7 +82,7 @@ export function LiveTradingBoard() {
             brand: w.brand || 'Procurement',
             itemCode: w.itemCode || 'WTB-REQ',
             description: w.description || w.title || 'Wanted Wholesale Lot',
-            ean: w.ean || '—',
+            ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
             qty: Number(w.qty || 50),
             condition: w.condition || 'New',
             price: Number(w.price || 0),
@@ -104,7 +112,7 @@ export function LiveTradingBoard() {
             brand: req.product_name.split(' ')[0] || 'Brand',
             itemCode: req.barcode_or_sku ? req.barcode_or_sku.slice(0, 10) : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
             description: req.product_name + (req.notes ? ` — ${req.notes}` : ''),
-            ean: req.barcode_or_sku || '8806095087286',
+            ean: req.barcode_or_sku || 'n/a',
             qty: req.target_quantity || 50,
             condition: 'New',
             price: req.target_price || 0,

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   getCompanyCards,
@@ -37,10 +38,26 @@ import {
 } from 'lucide-react';
 
 export default function DashboardBillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[400px] text-[#5B6B82] font-semibold text-sm">
+          Loading billing settings...
+        </div>
+      }
+    >
+      <BillingContent />
+    </Suspense>
+  );
+}
+
+function BillingContent() {
+  const searchParams = useSearchParams();
   const { company, updateProfile } = useAuth();
   const companyId = company?.id || '';
   const companyName = company?.name || company?.company_name || 'Wholesale Member';
   const contactEmail = company?.email || '';
+  const effectiveCompanyTier = (company?.membership_tier || company?.tier || 'bronze') as MembershipTier;
 
   const [cards, setCards] = useState<PaymentCard[]>([]);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -69,25 +86,8 @@ export default function DashboardBillingPage() {
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
 
   const loadData = () => {
-    if (!companyId) {
-      setCards([]);
-      setSubscription({
-        companyId: 'default',
-        tier: (company?.tier || company?.membership_tier || 'bronze') as MembershipTier,
-        status: 'free',
-        amountGbp: 0,
-        interval: 'month',
-        currentPeriodStart: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        currentPeriodEnd: new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        cancelAtPeriodEnd: false,
-        defaultCardId: null,
-      });
-      setPayments([]);
-      return;
-    }
-
-    const cList = getCompanyCards(companyId);
-    const sub = getCompanySubscription(companyId);
+    const cList = getCompanyCards(companyId, contactEmail, company?.id);
+    const sub = getCompanySubscription(companyId, contactEmail, effectiveCompanyTier);
     setCards(cList);
     setSubscription(sub);
 
@@ -95,8 +95,9 @@ export default function DashboardBillingPage() {
     const allPay = getAdminPayments();
     const myPay = allPay.filter(
       (p) =>
-        p.company_id === companyId ||
-        (contactEmail && p.contact_email.toLowerCase() === contactEmail.toLowerCase())
+        (companyId && p.company_id === companyId) ||
+        (contactEmail && p.contact_email?.toLowerCase() === contactEmail.toLowerCase().trim()) ||
+        (companyName && p.company_name?.toLowerCase() === companyName.toLowerCase().trim())
     );
     setPayments(myPay);
   };
@@ -109,7 +110,16 @@ export default function DashboardBillingPage() {
       window.removeEventListener('b2b_billing_update', loadData);
       window.removeEventListener('b2b_admin_update', loadData);
     };
-  }, [companyId]);
+  }, [companyId, contactEmail, effectiveCompanyTier]);
+
+  // Handle URL ?upgrade=gold or ?upgrade=silver query param
+  useEffect(() => {
+    const upgradeParam = searchParams?.get('upgrade');
+    if (upgradeParam === 'gold' || upgradeParam === 'silver') {
+      setSelectedTier(upgradeParam as MembershipTier);
+      setShowPlanModal(true);
+    }
+  }, [searchParams]);
 
   const showNotification = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -125,7 +135,7 @@ export default function DashboardBillingPage() {
     setNewCardZip(DEMO_TEST_CARD.zip);
   };
 
-  const handleAddCardSubmit = (e: React.FormEvent) => {
+  const handleAddCardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanNum = newCardNumber.replace(/\s+/g, '');
     if (cleanNum.length < 15) {
@@ -137,20 +147,46 @@ export default function DashboardBillingPage() {
       return;
     }
 
-    const res = addPaymentCard(companyId, {
-      cardNumber: cleanNum,
-      cardholderName: newCardholderName.trim(),
-      expMonth: newCardExpMonth,
-      expYear: newCardExpYear,
-      brand: cleanNum.startsWith('5') ? 'mastercard' : 'visa',
-      setAsDefault: newCardSetDefault,
-    });
+    const res = addPaymentCard(
+      companyId,
+      {
+        cardNumber: cleanNum,
+        cardholderName: newCardholderName.trim(),
+        expMonth: newCardExpMonth,
+        expYear: newCardExpYear,
+        brand: cleanNum.startsWith('5') ? 'mastercard' : 'visa',
+        setAsDefault: newCardSetDefault,
+      },
+      contactEmail
+    );
 
     if (res.success) {
       if (pendingPlanTier && pendingPlanTier !== 'bronze') {
         const planRes = changePlan(companyId, pendingPlanTier, companyName, contactEmail);
         if (planRes.success) {
-          updateProfile({ membership_tier: pendingPlanTier });
+          await updateProfile({ membership_tier: pendingPlanTier, tier: pendingPlanTier });
+
+          try {
+            await fetch('/api/billing/activate-tier', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId,
+                email: contactEmail,
+                tier: pendingPlanTier,
+                companyName,
+                contactName: company?.contact_name,
+                cardLast4: res.card?.last4 || '4242',
+              }),
+            });
+          } catch (err) {
+            console.warn('[BILLING ACTIVATE TIER NOTICE]', err);
+          }
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+          }
+
           showNotification(
             'success',
             `Card saved and ${TIER_PRICING[pendingPlanTier].name} activated! Perks are now unlocked.`
@@ -173,7 +209,7 @@ export default function DashboardBillingPage() {
   };
 
   const handleRemoveCard = (cardId: string) => {
-    const res = removePaymentCard(companyId, cardId);
+    const res = removePaymentCard(companyId, cardId, contactEmail);
     if (!res.success) {
       showNotification('error', res.error || 'Cannot remove card.');
     } else {
@@ -183,7 +219,7 @@ export default function DashboardBillingPage() {
   };
 
   const handleSetDefault = (cardId: string) => {
-    const res = setDefaultCard(companyId, cardId);
+    const res = setDefaultCard(companyId, cardId, contactEmail);
     if (res.success) {
       showNotification('success', 'Default subscription card updated.');
       loadData();
@@ -229,7 +265,29 @@ export default function DashboardBillingPage() {
 
     const res = changePlan(companyId, selectedTier, companyName, contactEmail);
     if (res.success) {
-      await updateProfile({ membership_tier: selectedTier });
+      await updateProfile({ membership_tier: selectedTier, tier: selectedTier });
+
+      try {
+        await fetch('/api/billing/activate-tier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId,
+            email: contactEmail,
+            tier: selectedTier,
+            companyName,
+            contactName: company?.contact_name,
+            cardLast4: cards[0]?.last4 || '4242',
+          }),
+        });
+      } catch (err) {
+        console.warn('[BILLING ACTIVATE TIER NOTICE]', err);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+      }
+
       showNotification(
         'success',
         `Membership plan updated to ${TIER_PRICING[selectedTier].name}! Card charged and perks activated.`
@@ -241,8 +299,8 @@ export default function DashboardBillingPage() {
     }
   };
 
-  const currentTier = subscription?.tier || 'bronze';
-  const isPaidActive = currentTier !== 'bronze' && (subscription?.status === 'active' || subscription?.cancelAtPeriodEnd);
+  const currentTier = (effectiveCompanyTier !== 'bronze' ? effectiveCompanyTier : (subscription?.tier || 'bronze')) as MembershipTier;
+  const isPaidActive = currentTier !== 'bronze' && (subscription?.status === 'active' || subscription?.cancelAtPeriodEnd || effectiveCompanyTier !== 'bronze');
   const isCancelingAtPeriodEnd = Boolean(subscription?.cancelAtPeriodEnd && currentTier !== 'bronze');
 
   return (
@@ -920,6 +978,22 @@ export default function DashboardBillingPage() {
                 </div>
               </div>
             </div>
+
+            {selectedTier !== 'bronze' && (
+              <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 mb-5 flex items-center justify-between text-xs">
+                <span className="text-[#5B6B82] font-medium">Payment Method:</span>
+                {cards.length > 0 ? (
+                  <span className="font-bold text-[#0B1F3A] flex items-center gap-1.5 capitalize">
+                    <CreditCard className="w-3.5 h-3.5 text-[#0A6CFF]" />
+                    {cards.find((c) => c.isDefault)?.brand || cards[0].brand} ending in {cards.find((c) => c.isDefault)?.last4 || cards[0].last4}
+                  </span>
+                ) : (
+                  <span className="text-amber-600 font-bold">
+                    Card will be requested next
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-3">
               <button

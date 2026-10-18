@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   getAdminAccounts,
+  saveAdminAccounts,
   getAdminPayments,
   getAdminListings,
   getCustomerQueries,
@@ -53,10 +54,8 @@ export default function SiteAdminOverviewPage() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.accounts)) {
-          const cleanAccounts = data.accounts.filter(
-            (a: AdminClientAccount) => !isAccountDeleted(a.id, a.email)
-          );
-          setAccounts(cleanAccounts);
+          setAccounts(data.accounts);
+          saveAdminAccounts(data.accounts);
         } else {
           setAccounts(getAdminAccounts());
         }

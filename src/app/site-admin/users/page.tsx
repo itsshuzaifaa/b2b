@@ -35,7 +35,10 @@ import {
   ShieldCheck,
   Ban,
   Check,
+  FileSpreadsheet,
+  MoreVertical,
 } from 'lucide-react';
+import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
 export default function SiteAdminUsersPage() {
   const router = useRouter();
@@ -48,6 +51,8 @@ export default function SiteAdminUsersPage() {
   const [deleteConfirmAccount, setDeleteConfirmAccount] = useState<AdminClientAccount | null>(null);
   const [editingTierAccount, setEditingTierAccount] = useState<AdminClientAccount | null>(null);
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
+  const [bulkCsvAccount, setBulkCsvAccount] = useState<AdminClientAccount | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -57,7 +62,10 @@ export default function SiteAdminUsersPage() {
         const data = await res.json();
         if (Array.isArray(data.accounts)) {
           const cleanAccounts = data.accounts.filter(
-            (a: AdminClientAccount) => !isAccountDeleted(a.id, a.email)
+            (a: AdminClientAccount) =>
+              !isAccountDeleted(a.id, a.email) &&
+              a.role !== 'admin' &&
+              a.email?.toLowerCase() !== 'admin@b2blink.eu'
           );
           setAccounts(cleanAccounts);
           saveAdminAccounts(cleanAccounts);
@@ -67,7 +75,10 @@ export default function SiteAdminUsersPage() {
     } catch {
       // fallback
     }
-    setAccounts(getAdminAccounts());
+    const cleanLocal = getAdminAccounts().filter(
+      (a) => a.role !== 'admin' && a.email?.toLowerCase() !== 'admin@b2blink.eu'
+    );
+    setAccounts(cleanLocal);
   };
 
   useEffect(() => {
@@ -79,6 +90,11 @@ export default function SiteAdminUsersPage() {
   const showNotice = (msg: string) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3000);
+  };
+
+  const handleBulkCsvSuccess = (count: number) => {
+    showNotice(`Successfully uploaded and published ${count} listings for ${bulkCsvAccount?.name}`);
+    loadData();
   };
 
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
@@ -156,6 +172,12 @@ export default function SiteAdminUsersPage() {
   };
 
   const handleDelete = async (acc: AdminClientAccount) => {
+    if (acc.role === 'admin' || acc.email?.toLowerCase() === 'admin@b2blink.eu') {
+      showNotice('Admin accounts cannot be deleted or removed.');
+      setDeleteConfirmAccount(null);
+      return;
+    }
+
     // 1. Optimistic AJAX UI update immediately - NO hard reload
     setAccounts((prev) => prev.filter((a) => a.id !== acc.id && a.email !== acc.email));
     setDeleteConfirmAccount(null);
@@ -192,7 +214,7 @@ export default function SiteAdminUsersPage() {
     setAccounts((prev) =>
       prev.map((a) => (a.id === targetAccount.id ? { ...a, membership_tier: newTier } : a))
     );
-    updateAccountTier(targetAccount.id, newTier);
+    updateAccountTier(targetAccount.id, newTier, targetAccount.email);
     showNotice(`Membership tier updated to ${newTier.toUpperCase()} for ${targetAccount.name}`);
 
     try {
@@ -202,6 +224,7 @@ export default function SiteAdminUsersPage() {
         body: JSON.stringify({
           action: 'update_tier',
           companyId: targetAccount.id,
+          email: targetAccount.email,
           tier: newTier,
         }),
       });
@@ -211,6 +234,11 @@ export default function SiteAdminUsersPage() {
 
   const filteredAccounts = useMemo(() => {
     return accounts.filter((acc) => {
+      // Admin accounts cannot be listed or shown in the client accounts directory
+      if (acc.role === 'admin' || acc.email?.toLowerCase() === 'admin@b2blink.eu') {
+        return false;
+      }
+
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
@@ -231,10 +259,13 @@ export default function SiteAdminUsersPage() {
     });
   }, [accounts, searchQuery, roleFilter]);
 
-  const sellerCount = accounts.filter((a) => a.role === 'seller').length;
-  const buyerCount = accounts.filter((a) => a.role === 'buyer').length;
-  const suspendedCount = accounts.filter((a) => a.account_status === 'suspended').length;
-  const pendingCount = accounts.filter((a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification').length;
+  const clientAccounts = accounts.filter(
+    (a) => a.role !== 'admin' && a.email?.toLowerCase() !== 'admin@b2blink.eu'
+  );
+  const sellerCount = clientAccounts.filter((a) => a.role === 'seller').length;
+  const buyerCount = clientAccounts.filter((a) => a.role === 'buyer').length;
+  const suspendedCount = clientAccounts.filter((a) => a.account_status === 'suspended').length;
+  const pendingCount = clientAccounts.filter((a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification').length;
 
   return (
     <>
@@ -251,7 +282,7 @@ export default function SiteAdminUsersPage() {
 
         <div className="flex items-center gap-3">
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
-            {accounts.length} active clients
+            {clientAccounts.length} active clients
           </div>
         </div>
       </div>
@@ -445,6 +476,16 @@ export default function SiteAdminUsersPage() {
                             </button>
                           )}
 
+                          {/* Upload Bulk CSV Quick Action */}
+                          <button
+                            type="button"
+                            onClick={() => setBulkCsvAccount(acc)}
+                            title="Upload Bulk CSV for this seller"
+                            className="p-2 rounded-xl text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
+                          >
+                            <FileSpreadsheet className="w-4 h-4" />
+                          </button>
+
                           {/* Message Button */}
                           <button
                             type="button"
@@ -465,29 +506,89 @@ export default function SiteAdminUsersPage() {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          {/* Suspend / Unsuspend */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSuspend(acc)}
-                            title={isSuspended ? 'Reactivate account' : 'Suspend account'}
-                            className={`p-2 rounded-xl transition cursor-pointer ${
-                              isSuspended
-                                ? 'text-emerald-600 hover:bg-emerald-50'
-                                : 'text-amber-500 hover:bg-amber-50'
-                            }`}
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
+                          {/* More Options Dropdown */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenMenuId(openMenuId === acc.id ? null : acc.id)}
+                              title="More options"
+                              className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
 
-                          {/* Delete Account */}
-                          <button
-                            type="button"
-                            onClick={() => setDeleteConfirmAccount(acc)}
-                            title="Delete account permanently"
-                            className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            {openMenuId === acc.id && (
+                              <div
+                                className="absolute right-0 top-full mt-1 w-52 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setBulkCsvAccount(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                  <span>Upload Bulk CSV</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setSelectedDossier(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <Eye className="w-4 h-4 text-[#5B6B82]" />
+                                  <span>View Dossier</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setEditingTierAccount(acc);
+                                    setSelectedTier(acc.membership_tier);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <Edit className="w-4 h-4 text-[#5B6B82]" />
+                                  <span>Change Membership Tier</span>
+                                </button>
+
+                                <div className="my-1 border-t border-slate-100" />
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    handleToggleSuspend(acc);
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-[12px] font-bold flex items-center gap-2 transition cursor-pointer ${
+                                    isSuspended ? 'text-emerald-700 hover:bg-emerald-50' : 'text-amber-700 hover:bg-amber-50'
+                                  }`}
+                                >
+                                  <Ban className="w-4 h-4" />
+                                  <span>{isSuspended ? 'Reactivate Account' : 'Suspend Account'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setDeleteConfirmAccount(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  <span>Delete Account</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -592,18 +693,33 @@ export default function SiteAdminUsersPage() {
                 {selectedDossier.account_status === 'suspended' ? 'Reactivate Client' : 'Suspend Access'}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedDossier;
-                  setSelectedDossier(null);
-                  router.push(`/site-admin/messages?to=${target.id}`);
-                }}
-                className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Message Client</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    setBulkCsvAccount(target);
+                  }}
+                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Upload Bulk CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    router.push(`/site-admin/messages?to=${target.id}`);
+                  }}
+                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Message Client</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -709,6 +825,14 @@ export default function SiteAdminUsersPage() {
           </div>
         </div>
       )}
+
+      {/* ADMIN BULK CSV MODAL */}
+      <AdminBulkCsvModal
+        isOpen={Boolean(bulkCsvAccount)}
+        onClose={() => setBulkCsvAccount(null)}
+        account={bulkCsvAccount}
+        onSuccess={handleBulkCsvSuccess}
+      />
     </>
   );
 }

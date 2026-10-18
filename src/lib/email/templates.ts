@@ -74,6 +74,15 @@ export interface AccountApprovalEmailProps {
   actionUrl: string;
 }
 
+export interface MembershipUpgradeEmailProps {
+  companyName: string;
+  contactName: string;
+  tier: 'silver' | 'gold';
+  price: number;
+  cardLast4?: string;
+  actionUrl: string;
+}
+
 export interface AccountSuspendedEmailProps {
   companyName: string;
   contactName?: string;
@@ -860,6 +869,77 @@ export function accountApprovalEmail(props: AccountApprovalEmailProps): { subjec
 }
 
 export const accountVerifiedEmail = accountApprovalEmail;
+
+/**
+  * Membership Plan Upgrade Confirmation Email
+  * Trigger Event: Sent when a member upgrades to Silver or Gold tier
+  * Recipient: Customer business email address
+  * Subject: [B2B LINK] Membership Upgraded to [Tier]
+  */
+export function membershipUpgradeEmail(props: MembershipUpgradeEmailProps): { subject: string; html: string } {
+  const isGold = props.tier.toLowerCase() === 'gold';
+  const tierName = isGold ? 'Gold VIP Tier' : 'Silver Tier';
+  const subject = `[B2B LINK] Membership Upgraded to ${tierName}`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      🎉 Membership Upgraded: Welcome to ${tierName}
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Your B2B LINK membership for <strong>${props.companyName}</strong> has been successfully upgraded to <strong>${tierName}</strong>.
+    </p>
+
+    <div style="background-color: ${isGold ? '#FFFBEB' : '#EFF6FF'}; border: 1px solid ${isGold ? '#FDE68A' : '#BFDBFE'}; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <p style="font-size: 14px; line-height: 1.5; color: ${isGold ? '#92400E' : '#1E40AF'}; margin: 0; font-weight: 700;">
+        Plan: ${tierName} • £${props.price}/month • Auto-renewing monthly via card ending in ${props.cardLast4 || '4242'}
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 12px 0;">
+      Your new membership tier perks are now active across your entire account:
+    </p>
+
+    <ul style="font-size: 14px; color: #334155; line-height: 1.8; margin: 0 0 24px 0; padding-left: 20px;">
+      ${
+        isGold
+          ? `<li><strong>Internal Network Broadcasts (WTB & WTS)</strong>: Instantly broadcast want-to-buy and want-to-sell offers to all verified platform members</li>
+             <li><strong>Unlimited Direct Contact Unlocks</strong>: View supplier contacts, WhatsApp details & phone numbers without restrictions</li>
+             <li><strong>Unlimited Product Listings</strong> with Priority Spotlight & Hot placement</li>
+             <li><strong>Verified EU Gold Supplier Badge</strong> on your profile and listings</li>
+             <li>Dedicated Account Manager & Priority RFQ Support</li>`
+          : `<li><strong>20 Direct Contact Unlocks</strong> per month</li>
+             <li><strong>50 Active Product Listings</strong></li>
+             <li><strong>CSV Bulk Catalog Import</strong></li>
+             <li>Direct supplier WhatsApp & phone access</li>`
+      }
+    </ul>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      You can access your upgraded features immediately from your seller dashboard.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Accounts & Billing Team</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Membership Upgraded',
+      tierName.toUpperCase(),
+      content,
+      props.actionUrl,
+      'Go to Seller Dashboard'
+    ),
+  };
+}
 
 /**
  * 11. (Message 5) Account Under Review / Suspended

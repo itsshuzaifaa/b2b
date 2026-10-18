@@ -7,6 +7,8 @@ import { QuotationModal } from '@/components/modals/QuotationModal';
 import { CsvImportModal } from '@/components/dashboard/CsvImportModal';
 import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
 import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
+import { BroadcastWtbModal } from '@/components/modals/BroadcastWtbModal';
+import { BroadcastWtsModal } from '@/components/modals/BroadcastWtsModal';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
 import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -51,7 +53,11 @@ export default function OverviewPage() {
   // Modals state
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalConfig, setUpgradeModalConfig] = useState<{ title: string; subtitle: string; goldOnly?: boolean } | null>(null);
   const [createWtbOpen, setCreateWtbOpen] = useState(false);
+  const [tradeModalMode, setTradeModalMode] = useState<'WTB' | 'WTS'>('WTB');
+  const [broadcastWtbOpen, setBroadcastWtbOpen] = useState(false);
+  const [broadcastWtsOpen, setBroadcastWtsOpen] = useState(false);
   const [selectedWtbForQuote, setSelectedWtbForQuote] = useState<WtbRequest | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<InquiryItem | null>(null);
 
@@ -62,7 +68,8 @@ export default function OverviewPage() {
   const [remainingUnlocks, setRemainingUnlocks] = useState<number>(2);
   const [unlockedCount, setUnlockedCount] = useState<number>(0);
 
-  const currentTier = ((company?.tier || company?.membership_tier || 'bronze') as string).toLowerCase() as MembershipTier;
+  const rawTier = ((company?.tier || company?.membership_tier || (typeof window !== 'undefined' ? localStorage.getItem('b2b_registered_tier') : null) || 'bronze') as string).toLowerCase();
+  const currentTier = (rawTier === 'gold' ? 'gold' : rawTier === 'silver' ? 'silver' : 'bronze') as MembershipTier;
   const tierConfig = TIER_LIMITS[currentTier] || TIER_LIMITS.bronze;
   const maxActiveProducts = tierConfig.maxActiveProducts;
   const isUnlimitedProducts = maxActiveProducts === Infinity;
@@ -132,9 +139,37 @@ export default function OverviewPage() {
     });
   };
 
+  const handleOpenBroadcastWtb = () => {
+    if (currentTier !== 'gold') {
+      setUpgradeModalConfig({
+        title: 'Gold Tier Exclusive: Broadcast WTB Request',
+        subtitle: 'Internal network broadcasting is exclusively available to Gold members. Upgrade to instantly broadcast your Want-To-Buy procurement requests to all verified members across the platform.',
+        goldOnly: true,
+      });
+      setUpgradeModalOpen(true);
+      return;
+    }
+    setBroadcastWtbOpen(true);
+  };
+
+  const handleOpenBroadcastWts = () => {
+    if (currentTier !== 'gold') {
+      setUpgradeModalConfig({
+        title: 'Gold Tier Exclusive: Broadcast WTS Offer',
+        subtitle: 'Internal network broadcasting is exclusively available to Gold members. Upgrade to instantly broadcast your Want-To-Sell wholesale stock lots to all verified members across the platform.',
+        goldOnly: true,
+      });
+      setUpgradeModalOpen(true);
+      return;
+    }
+    setBroadcastWtsOpen(true);
+  };
+
   useEffect(() => {
     loadData();
     window.addEventListener('b2b_lead_unlock_update', loadData);
+    window.addEventListener('b2b_billing_update', loadData);
+    window.addEventListener('b2b_account_status_change', loadData);
     if (company) {
       void syncWithSupabase(role || undefined, company.id, company.email).then(() => {
         setInquiries(getConversationsForUser(company));
@@ -142,6 +177,8 @@ export default function OverviewPage() {
     }
     return () => {
       window.removeEventListener('b2b_lead_unlock_update', loadData);
+      window.removeEventListener('b2b_billing_update', loadData);
+      window.removeEventListener('b2b_account_status_change', loadData);
     };
   }, [company, role, currentTier]);
 
@@ -179,23 +216,29 @@ export default function OverviewPage() {
         </div>
 
         {/* Dual Buy & Sell Action Buttons */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
           <button
             type="button"
-            onClick={() => setCreateWtbOpen(true)}
-            className="bg-white hover:bg-slate-50 text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
+            onClick={() => {
+              setTradeModalMode('WTB');
+              setCreateWtbOpen(true);
+            }}
+            className="bg-[#10B981] hover:bg-[#059669] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4 text-[#0A6CFF]" />
-            <span>Post WTB Request</span>
+            <Plus className="w-4 h-4 text-white" />
+            <span>Post Buy (WTB) Request</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setCsvModalOpen(true)}
-            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-5 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
+            onClick={() => {
+              setTradeModalMode('WTS');
+              setCreateWtbOpen(true);
+            }}
+            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>+ Add Listing</span>
+            <Plus className="w-4 h-4 text-white" />
+            <span>Post Sell (WTS) Request</span>
           </button>
         </div>
       </div>
@@ -354,7 +397,10 @@ export default function OverviewPage() {
                     <span className="text-slate-300">·</span>
                     <button
                       type="button"
-                      onClick={() => setCsvModalOpen(true)}
+                      onClick={() => {
+                        setTradeModalMode('WTS');
+                        setCreateWtbOpen(true);
+                      }}
                       className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#059669] hover:underline cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -466,32 +512,69 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#F1F5F9]">
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <button
               type="button"
-              onClick={() => setCreateWtbOpen(true)}
-              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer"
+              onClick={handleOpenBroadcastWtb}
+              className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer border border-slate-200/60"
             >
-              <PlusCircle className="w-4 h-4 text-[#0A6CFF]" />
-              <span>Broadcast a Want-To-Buy Request</span>
+              <PlusCircle className="w-4 h-4 text-[#0A6CFF] shrink-0" />
+              <span className="truncate">Broadcast WTB Request</span>
+              {currentTier !== 'gold' && (
+                <span className="ml-auto text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">
+                  Gold
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenBroadcastWts}
+              className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer border border-slate-200/60"
+            >
+              <Package className="w-4 h-4 text-[#10B981] shrink-0" />
+              <span className="truncate">Broadcast WTS</span>
+              {currentTier !== 'gold' && (
+                <span className="ml-auto text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">
+                  Gold
+                </span>
+              )}
             </button>
           </div>
         </div>
       </div>
 
-      {/* CSV / ADD PRODUCT MODAL */}
-      <CsvImportModal
-        isOpen={csvModalOpen}
-        onClose={() => {
-          setCsvModalOpen(false);
-          loadData();
-        }}
-      />
 
       {/* UPGRADE MEMBERSHIP MODAL */}
       <UpgradeMembershipModal
         isOpen={upgradeModalOpen}
-        onClose={() => setUpgradeModalOpen(false)}
+        onClose={() => {
+          setUpgradeModalOpen(false);
+          setUpgradeModalConfig(null);
+          loadData();
+        }}
+        title={upgradeModalConfig?.title}
+        subtitle={upgradeModalConfig?.subtitle}
+        goldOnly={upgradeModalConfig?.goldOnly}
+      />
+
+      {/* BROADCAST WTB MODAL */}
+      <BroadcastWtbModal
+        isOpen={broadcastWtbOpen}
+        onClose={() => setBroadcastWtbOpen(false)}
+        onSuccess={() => {
+          loadData();
+          setBroadcastWtbOpen(false);
+        }}
+      />
+
+      {/* BROADCAST WTS MODAL */}
+      <BroadcastWtsModal
+        isOpen={broadcastWtsOpen}
+        onClose={() => setBroadcastWtsOpen(false)}
+        onSuccess={() => {
+          loadData();
+          setBroadcastWtsOpen(false);
+        }}
       />
 
       {/* QUOTATION MODAL */}
@@ -504,9 +587,10 @@ export default function OverviewPage() {
         />
       )}
 
-      {/* UNIFORM CREATE WTB MODAL */}
+      {/* UNIFORM CREATE WTB / WTS MODAL */}
       <CreateWtbModal
         isOpen={createWtbOpen}
+        initialMode={tradeModalMode}
         onClose={() => setCreateWtbOpen(false)}
         onSuccess={loadData}
       />

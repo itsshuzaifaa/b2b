@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
       category_id: resolvedCategoryId,
       title: title.trim(),
       description: description?.trim() || null,
-      barcode_or_sku: barcodeOrSku?.trim() || `SKU-${Date.now().toString().slice(-8)}`,
+      barcode_or_sku: barcodeOrSku?.trim() && barcodeOrSku.trim() !== 'n/a' ? barcodeOrSku.trim() : null,
       unit_price: Number(unitPrice) || 0,
       quantity_available: Number(quantityAvailable) || 0,
       moq: Number(moq) || 1,

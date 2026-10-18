@@ -98,9 +98,12 @@ export function getDeletedAccountIds(): string[] {
 
 export function markAccountAsDeleted(idOrEmail?: string | null) {
   if (typeof window === 'undefined' || !idOrEmail) return;
+  const clean = idOrEmail.trim().toLowerCase();
+  // Admin account cannot be deleted or removed
+  if (clean === 'admin@b2blink.eu' || clean === 'admin_company') return;
+
   try {
     const list = getDeletedAccountIds();
-    const clean = idOrEmail.trim().toLowerCase();
     let changed = false;
     if (!list.includes(clean)) {
       list.push(clean);
@@ -116,7 +119,20 @@ export function markAccountAsDeleted(idOrEmail?: string | null) {
   } catch {}
 }
 
+export function unmarkAccountAsDeleted(idOrEmail?: string | null) {
+  if (typeof window === 'undefined' || !idOrEmail) return;
+  try {
+    const list = getDeletedAccountIds();
+    const clean = idOrEmail.trim().toLowerCase();
+    const filtered = list.filter((item) => item !== clean && item !== idOrEmail);
+    if (filtered.length !== list.length) {
+      localStorage.setItem(DELETED_ACCOUNTS_STORAGE_KEY, JSON.stringify(filtered));
+    }
+  } catch {}
+}
+
 export function isAccountDeleted(id?: string | null, email?: string | null): boolean {
+  if (email && email.trim().toLowerCase() === 'admin@b2blink.eu') return false;
   const deleted = getDeletedAccountIds();
   if (!deleted || deleted.length === 0) return false;
   if (id && deleted.includes(id)) return true;
@@ -144,29 +160,41 @@ function broadcastAdminUpdate() {
 // 1. ACCOUNTS MANAGEMENT
 // ==========================================
 export function getAdminAccounts(): AdminClientAccount[] {
-  if (typeof window === 'undefined') return INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
+  const filterClientsOnly = (list: AdminClientAccount[]) =>
+    list.filter(
+      (a) =>
+        !isAccountDeleted(a.id, a.email) &&
+        a.role !== 'admin' &&
+        a.email?.toLowerCase() !== 'admin@b2blink.eu'
+    );
+
+  if (typeof window === 'undefined') return filterClientsOnly(INITIAL_ACCOUNTS);
   try {
     const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.filter((a) => !isAccountDeleted(a.id, a.email));
+        return filterClientsOnly(parsed);
       }
     }
-    const filteredInitial = INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
+    const filteredInitial = filterClientsOnly(INITIAL_ACCOUNTS);
     localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filteredInitial));
     return filteredInitial;
   } catch {
     // ignore
   }
-  return INITIAL_ACCOUNTS.filter((a) => !isAccountDeleted(a.id, a.email));
+  return filterClientsOnly(INITIAL_ACCOUNTS);
 }
 
 export function saveAdminAccounts(accounts: AdminClientAccount[]) {
   if (typeof window === 'undefined') return;
   try {
-    const cleanAccounts = accounts.filter((a) => !isAccountDeleted(a.id, a.email));
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(cleanAccounts));
+    // Reconcile: If active accounts are provided, ensure they are unflagged from deleted blacklist
+    for (const a of accounts) {
+      if (a.id) unmarkAccountAsDeleted(a.id);
+      if (a.email) unmarkAccountAsDeleted(a.email);
+    }
+    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
     broadcastAdminUpdate();
   } catch {
     // ignore
@@ -201,6 +229,16 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
     (a) => a.id === companyId || (email && a.email?.toLowerCase() === email.toLowerCase())
   );
   const effectiveEmail = email || targetAcc?.email;
+
+  // Guard: Admin account cannot be deleted or removed
+  if (
+    targetAcc?.role === 'admin' ||
+    effectiveEmail?.toLowerCase() === 'admin@b2blink.eu' ||
+    companyId === 'admin_company'
+  ) {
+    console.warn('Admin account cannot be deleted or removed.');
+    return false;
+  }
 
   markAccountAsDeleted(companyId);
   if (effectiveEmail) {
@@ -291,12 +329,55 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
   return true;
 }
 
-export function updateAccountTier(companyId: string, newTier: MembershipTier): boolean {
+export function updateAccountTier(
+  companyIdOrEmail: string,
+  newTier: MembershipTier,
+  email?: string
+): boolean {
   const current = getAdminAccounts();
-  const updated = current.map((acc) =>
-    acc.id === companyId ? { ...acc, membership_tier: newTier } : acc
-  );
+  const cleanKey = (companyIdOrEmail || '').toLowerCase().trim();
+  const cleanEmail = email ? email.toLowerCase().trim() : '';
+
+  const updated = current.map((acc) => {
+    const matches =
+      acc.id === companyIdOrEmail ||
+      (acc.email && acc.email.toLowerCase().trim() === cleanKey) ||
+      (cleanEmail && acc.email && acc.email.toLowerCase().trim() === cleanEmail);
+
+    if (matches) {
+      return {
+        ...acc,
+        membership_tier: newTier,
+        total_spend_or_sales:
+          acc.role === 'seller'
+            ? `£${newTier === 'gold' ? '179' : newTier === 'silver' ? '79' : '0'}/mo Membership`
+            : '£0 (Free Buyer Access)',
+      };
+    }
+    return acc;
+  });
+
   saveAdminAccounts(updated);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('b2b_billing_update'));
+    window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+
+    // Reconcile with server backend
+    try {
+      fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_tier',
+          companyId: companyIdOrEmail,
+          email: email || cleanEmail,
+          tier: newTier,
+        }),
+      }).catch(() => {});
+    } catch {}
+  }
+
   return true;
 }
 
@@ -417,7 +498,18 @@ export function recordManualPayment(newPay: Omit<AdminPaymentRecord, 'id' | 'cre
   saveAdminPayments([created, ...payments]);
 
   if (created.status === 'Completed' && created.company_id) {
-    updateAccountApproval(created.company_id, 'approved');
+    const accounts = getAdminAccounts();
+    const existing = accounts.find(
+      (a) =>
+        a.id === created.company_id ||
+        (created.contact_email && a.email?.toLowerCase() === created.contact_email.toLowerCase().trim())
+    );
+    // Only trigger initial KYC approval if account is NOT already approved and NOT a membership renewal/upgrade
+    const planText = (created.plan_or_service || '').toLowerCase();
+    const isMembershipTx = planText.includes('membership') || planText.includes('upgrade') || planText.includes('subscription');
+    if (existing && existing.approval_status !== 'approved' && !isMembershipTx) {
+      updateAccountApproval(created.company_id, 'approved');
+    }
   }
 
   return created;
@@ -464,10 +556,10 @@ export function getAdminListings(): AdminModeratedListing[] {
             contact_phone: l.contactPhone || '',
             title: l.title || l.description || 'Wholesale Lot',
             brand: l.brand || 'Wholesale',
-            item_code: l.itemCode || l.ean?.slice(0, 8) || 'MDL-2026',
+            item_code: l.itemCode || (l.ean && l.ean !== '195949048735' && l.ean !== 'n/a' ? l.ean.slice(0, 8) : 'MDL-2026'),
             category_slug: (l.category || 'electronics').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
             category_name: l.category || 'Consumer Electronics',
-            ean: l.ean || '195949048735',
+            ean: (l.ean && l.ean !== '195949048735') ? l.ean : 'n/a',
             condition: l.condition || 'New',
             unit_price: Number(l.unitPrice || l.price || 99),
             currency: l.currency || '€',
@@ -495,7 +587,7 @@ export function getAdminListings(): AdminModeratedListing[] {
             item_code: w.itemCode || 'WTB-REQ',
             category_slug: (w.category || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
             category_name: w.category || 'General Wholesale',
-            ean: w.ean || '—',
+            ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
             condition: w.condition || 'New',
             unit_price: Number(w.price || 0),
             currency: w.currency || '€',

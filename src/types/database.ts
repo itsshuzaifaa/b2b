@@ -2,7 +2,21 @@ export type UserRole = 'admin' | 'seller' | 'buyer';
 export type ApprovalStatus = 'pending' | 'pending_verification' | 'approved' | 'rejected' | 'suspended';
 export type MembershipTier = 'bronze' | 'silver' | 'gold';
 export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft';
-export type ProductCondition = 'new' | 'used' | 'refurbished' | 'worn_out';
+export type ProductCondition =
+  | 'New'
+  | 'CPO'
+  | '14 Day'
+  | 'A Grade'
+  | 'B Grade'
+  | 'C Grade'
+  | 'Untested'
+  | 'Ber'
+  | 'Other'
+  | 'new'
+  | 'used'
+  | 'refurbished'
+  | 'worn_out'
+  | string;
 export type WtbStatus = 'open' | 'fulfilled' | 'closed' | 'expired';
 export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 export type NotificationType = 'niche_alert' | 'barcode_match';
@@ -27,7 +41,7 @@ export const TIER_LIMITS: Record<MembershipTier, TierConfig> = {
   silver: {
     maxActiveProducts: 50,
     maxMonthlyQuotes: 25,
-    csvUpload: true,
+    csvUpload: false,
     hotListings: false,
     contactUnlocks: 20,
   },

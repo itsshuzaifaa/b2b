@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { MOCK_COMPANIES } from '@/lib/mock-data';
+import { getAdminAccounts } from '@/lib/admin/admin-store';
 import type { Company, UserRole, MembershipTier, ApprovalStatus } from '@/types/database';
 
 export type DemoRoleType = 'guest' | 'buyer' | 'seller' | 'seller_pending' | 'seller_approved' | 'admin';
@@ -40,20 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const cached = localStorage.getItem('b2b_cached_company');
         if (cached) {
           const parsed = JSON.parse(cached);
-          // Cross-verify with b2b_admin_accounts
-          const rawAdmin = localStorage.getItem('b2b_admin_accounts');
-          if (rawAdmin) {
-            const list = JSON.parse(rawAdmin);
-            if (Array.isArray(list)) {
-              const match = list.find((a: any) =>
-                (a.id && a.id === parsed.id) ||
-                (a.email && parsed.email && a.email.toLowerCase() === parsed.email.toLowerCase())
-              );
-              if (match && match.approval_status === 'approved') {
-                parsed.approval_status = 'approved';
-              }
+          try {
+            const accounts = getAdminAccounts();
+            const match = accounts.find((a) =>
+              (a.id && a.id === parsed.id) ||
+              (a.email && parsed.email && a.email.toLowerCase() === parsed.email.toLowerCase())
+            );
+            if (match && match.approval_status) {
+              parsed.approval_status = match.approval_status;
             }
-          }
+          } catch {}
           return parsed;
         }
       } catch {
@@ -93,35 +90,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resolveVerifiedStatus = (userId?: string, email?: string, currentStatus?: string): ApprovalStatus => {
     if (typeof window === 'undefined') return (currentStatus || 'pending') as ApprovalStatus;
     try {
-      const rawAdmin = localStorage.getItem('b2b_admin_accounts');
-      if (rawAdmin) {
-        const list = JSON.parse(rawAdmin);
-        if (Array.isArray(list)) {
-          const match = list.find((a: any) =>
-            (userId && a.id === userId) ||
-            (email && a.email && a.email.toLowerCase() === email.toLowerCase())
-          );
-          if (match && match.approval_status === 'approved') {
-            return 'approved';
-          }
-        }
-      }
-
-      const cachedRaw = localStorage.getItem('b2b_cached_company');
-      if (cachedRaw) {
-        const cached = JSON.parse(cachedRaw);
-        if (
-          cached &&
-          ((userId && cached.id === userId) || (email && cached.email && cached.email.toLowerCase() === email.toLowerCase())) &&
-          cached.approval_status === 'approved'
-        ) {
-          return 'approved';
-        }
+      const accounts = getAdminAccounts();
+      const match = accounts.find((a) =>
+        (userId && a.id === userId) ||
+        (email && a.email && a.email.toLowerCase() === email.toLowerCase())
+      );
+      if (match && match.approval_status) {
+        return match.approval_status;
       }
     } catch {
       // ignore
     }
     return (currentStatus || 'pending') as ApprovalStatus;
+  };
+
+  const resolveEffectiveTier = (companyId?: string, email?: string, currentTier?: string): MembershipTier => {
+    if (typeof window === 'undefined') return (currentTier || 'bronze') as MembershipTier;
+    try {
+      const regTier = localStorage.getItem('b2b_registered_tier') as MembershipTier;
+      if (regTier === 'gold') return 'gold';
+      if (regTier === 'silver' && currentTier !== 'gold') return 'silver';
+
+      const accounts = getAdminAccounts();
+      const match = accounts.find((a) =>
+        (companyId && a.id === companyId) ||
+        (email && a.email && a.email.toLowerCase() === email.toLowerCase())
+      );
+      if (match?.membership_tier === 'gold') return 'gold';
+      if (match?.membership_tier === 'silver' && currentTier !== 'gold') return 'silver';
+
+      if (companyId) {
+        const saved = localStorage.getItem(`b2b_profile_override_${companyId}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.tier === 'gold' || parsed.membership_tier === 'gold') return 'gold';
+          if ((parsed.tier === 'silver' || parsed.membership_tier === 'silver') && currentTier !== 'gold') return 'silver';
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return (currentTier || 'bronze') as MembershipTier;
   };
 
   const getCompanyForDemoRole = (dRole: DemoRoleType): Company | null => {
@@ -172,11 +181,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem('b2b_demo_role');
           }
           let resolvedCompany = data.company;
-          // Check local verification overrides
+          // Check local verification & tier overrides
           const verifiedStatus = resolveVerifiedStatus(resolvedCompany.id, resolvedCompany.email, resolvedCompany.approval_status);
-          if (verifiedStatus === 'approved') {
-            resolvedCompany = { ...resolvedCompany, approval_status: 'approved' };
-          }
+          const effectiveTier = resolveEffectiveTier(resolvedCompany.id, resolvedCompany.email, resolvedCompany.tier || resolvedCompany.membership_tier);
+          resolvedCompany = {
+            ...resolvedCompany,
+            tier: effectiveTier,
+            membership_tier: effectiveTier,
+            approval_status: verifiedStatus,
+          };
 
           setCompany(resolvedCompany);
           if (typeof window !== 'undefined') {
@@ -200,6 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const metaRole = (meta.role || 'seller') as UserRole;
         const initialStatus = meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
         const effectiveStatus = resolveVerifiedStatus(user.id, user.email, initialStatus);
+        const effectiveTier = resolveEffectiveTier(user.id, user.email, meta.membership_tier || meta.tier);
 
         const normalized: Company = {
           id: user.id,
@@ -213,8 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: user.email || '',
           phone: meta.phone || null,
           role: metaRole,
-          tier: (meta.membership_tier || 'bronze') as MembershipTier,
-          membership_tier: (meta.membership_tier || 'bronze') as MembershipTier,
+          tier: effectiveTier,
+          membership_tier: effectiveTier,
           approval_status: effectiveStatus,
           categories: meta.selectedNiches || [],
           created_at: user.created_at || new Date().toISOString(),
@@ -254,6 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const metaRole = (meta.role || 'seller') as UserRole;
     const initialStatus = meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
     const effectiveStatus = resolveVerifiedStatus(user.id, user.email, initialStatus);
+    const effectiveTier = resolveEffectiveTier(user.id, user.email, meta.membership_tier || meta.tier);
 
     const normalized: Company = {
       id: user.id,
@@ -267,8 +282,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: user.email || '',
       phone: meta.phone || null,
       role: metaRole,
-      tier: (meta.membership_tier || 'bronze') as MembershipTier,
-      membership_tier: (meta.membership_tier || 'bronze') as MembershipTier,
+      tier: effectiveTier,
+      membership_tier: effectiveTier,
       approval_status: effectiveStatus,
       categories: meta.selectedNiches || [],
       created_at: user.created_at || new Date().toISOString(),
@@ -382,22 +397,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProfile = async (updatedData: Partial<Company>) => {
+    const newTier = updatedData.membership_tier || updatedData.tier;
+
     setCompany((prev) => {
       if (!prev) return null;
-      const updated = { ...prev, ...updatedData };
+      const updated = {
+        ...prev,
+        ...updatedData,
+        ...(newTier ? { tier: newTier, membership_tier: newTier } : {}),
+      };
       if (typeof window !== 'undefined') {
         localStorage.setItem(`b2b_profile_override_${updated.id}`, JSON.stringify(updated));
+        localStorage.setItem('b2b_cached_company', JSON.stringify(updated));
+        if (newTier) {
+          localStorage.setItem('b2b_registered_tier', newTier);
+        }
       }
       return updated;
     });
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('b2b_billing_update'));
+      window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+    }
+
+    const targetId = company?.id || (updatedData as any)?.id;
+    const targetEmail = company?.email || company?.contact_email || (updatedData as any)?.email;
+
+    if (newTier && (targetId || targetEmail)) {
+      try {
+        await fetch('/api/billing/activate-tier', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: targetId,
+            email: targetEmail,
+            tier: newTier,
+            companyName: company?.name || company?.company_name || (updatedData as any)?.name,
+            contactName: company?.contact_name || (updatedData as any)?.contact_name,
+          }),
+        });
+      } catch (err) {
+        console.warn('[UPDATE PROFILE ACTIVATE TIER NOTICE]', err);
+      }
+    }
+
     try {
       if (company?.id) {
         const supabase = createClient();
-        await supabase
-          .from('companies')
-          .update(updatedData as unknown as Record<string, unknown>)
-          .eq('id', company.id);
+        const payload: Record<string, unknown> = { ...(updatedData as Record<string, unknown>) };
+        // Delete membership_tier from direct update because companies table only has 'tier' column
+        delete payload.membership_tier;
+        if (newTier) {
+          payload.tier = newTier;
+        }
+        if (Object.keys(payload).length > 0) {
+          await supabase
+            .from('companies')
+            .update(payload)
+            .eq('id', company.id);
+        }
       }
     } catch {
       // Ignored

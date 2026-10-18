@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import {
   getConversationsForUser,
@@ -12,6 +12,9 @@ import {
   isMessageSentByMe,
   type InquiryConversation,
 } from '@/lib/messaging/messaging-store';
+import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
+import { isLeadUnlocked, unlockLead, getRemainingUnlocks } from '@/lib/leads/unlock-store';
+import type { MembershipTier } from '@/types/database';
 import {
   Search,
   Send,
@@ -22,9 +25,22 @@ import {
   Radio,
   CheckCircle2,
   Inbox,
+  Lock,
+  Unlock,
+  Sparkles,
+  Package,
+  FileText,
+  Mail,
+  Phone,
+  Building2,
+  AlertCircle,
+  Check,
+  ArrowRight,
+  Eye,
 } from 'lucide-react';
 
 function InquiriesContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const targetId = searchParams.get('id');
   const { company, role } = useAuth();
@@ -35,11 +51,16 @@ function InquiriesContent() {
   const [filterTab, setFilterTab] = useState<'all' | 'buyers' | 'admin' | 'broadcast'>('all');
   const [searchFilter, setSearchFilter] = useState('');
   const [replyText, setReplyText] = useState('');
+  const [unlockTrigger, setUnlockTrigger] = useState(0);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalConfig, setUpgradeModalConfig] = useState<{ title: string; subtitle: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const hasInitializedRef = useRef(false);
 
   const companyId = company?.id;
   const companyEmail = company?.email;
+  const currentTier = ((company?.tier || company?.membership_tier || 'bronze') as string).toLowerCase() as MembershipTier;
+  const remainingUnlocks = company ? getRemainingUnlocks(company.id, currentTier) : 0;
 
   // Load conversations and subscribe to live storage updates
   useEffect(() => {
@@ -72,15 +93,18 @@ function InquiriesContent() {
     });
 
     const handleUpdate = () => refresh();
+    const handleUnlockEvent = () => setUnlockTrigger((prev) => prev + 1);
     window.addEventListener('b2b_inquiry_update', handleUpdate);
     window.addEventListener('storage', handleUpdate);
+    window.addEventListener('b2b_lead_unlock_update', handleUnlockEvent);
 
     return () => {
       isMounted = false;
       window.removeEventListener('b2b_inquiry_update', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('b2b_lead_unlock_update', handleUnlockEvent);
     };
-  }, [companyId, companyEmail, role, targetId]);
+  }, [companyId, companyEmail, role, targetId, unlockTrigger]);
 
   useEffect(() => {
     if (targetId) {
@@ -93,9 +117,9 @@ function InquiriesContent() {
   const handleTabChange = (newTab: typeof filterTab) => {
     setFilterTab(newTab);
     const inTab = conversations.filter((c) => {
-      if (newTab === 'buyers') return c.type === 'buyer_seller';
-      if (newTab === 'admin') return c.type === 'seller_admin';
-      if (newTab === 'broadcast') return c.type === 'broadcast';
+      if (newTab === 'buyers') return c.type === 'buyer_seller' && !c.broadcastKind;
+      if (newTab === 'admin') return (c.type === 'seller_admin' || c.type === 'broadcast') && !c.broadcastKind;
+      if (newTab === 'broadcast') return c.type === 'broadcast' || Boolean(c.broadcastKind);
       return true;
     });
 
@@ -116,9 +140,9 @@ function InquiriesContent() {
 
   const filteredConversations = conversations.filter((c) => {
     // Tab filter
-    if (filterTab === 'buyers' && c.type !== 'buyer_seller') return false;
-    if (filterTab === 'admin' && c.type !== 'seller_admin') return false;
-    if (filterTab === 'broadcast' && c.type !== 'broadcast') return false;
+    if (filterTab === 'buyers' && (c.type !== 'buyer_seller' || Boolean(c.broadcastKind))) return false;
+    if (filterTab === 'admin' && ((c.type !== 'seller_admin' && c.type !== 'broadcast') || Boolean(c.broadcastKind))) return false;
+    if (filterTab === 'broadcast' && c.type !== 'broadcast' && !c.broadcastKind) return false;
 
     // Search filter
     const q = searchFilter.toLowerCase().trim();
@@ -155,9 +179,59 @@ function InquiriesContent() {
     }
   }, [activeId, isUnread, isBuyer]);
 
+  // Broadcast & Privacy State for active conversation
+  const isMemberBroadcast = Boolean(activeConv?.broadcastKind || (activeConv?.type === 'broadcast' && activeConv?.broadcastDetails));
+  const broadcastKind = activeConv?.broadcastKind || activeConv?.broadcastDetails?.itemType || (activeConv?.status === 'broadcast_wtb' ? 'wtb' : activeConv?.status === 'broadcast_wts' ? 'wts' : null);
+
+  const isBroadcastOwner = Boolean(
+    company &&
+    activeConv &&
+    isMemberBroadcast &&
+    (activeConv.broadcastDetails?.ownerCompanyId === company.id ||
+      activeConv.sellerCompanyId === company.id ||
+      (company.email &&
+        (activeConv.buyerEmail?.toLowerCase() === company.email.toLowerCase() ||
+         activeConv.broadcastDetails?.ownerEmail?.toLowerCase() === company.email.toLowerCase())))
+  );
+
+  const isContactUnlocked = Boolean(
+    company &&
+    activeConv &&
+    (isBroadcastOwner ||
+      isLeadUnlocked(company.id, activeConv.id) ||
+      (activeConv.productId ? isLeadUnlocked(company.id, activeConv.productId) : false))
+  );
+
+  const handleUnlockBroadcastContact = () => {
+    if (!company) {
+      router.push(`/login?redirect=/dashboard/inquiries?id=${activeConv?.id || ''}`);
+      return;
+    }
+    if (!activeConv) return;
+
+    const res = unlockLead(company.id, activeConv.id, currentTier);
+    if (!res.success) {
+      setUpgradeModalConfig({
+        title: 'Upgrade to Unlock Trader Contact',
+        subtitle: res.error || 'You have reached your contact unlock limit on your current plan. Upgrade to immediately reveal verified counterparty emails, phone numbers, and company credentials.',
+      });
+      setUpgradeModalOpen(true);
+    } else {
+      if (activeConv.productId) {
+        unlockLead(company.id, activeConv.productId, currentTier);
+      }
+      setUnlockTrigger((prev) => prev + 1);
+    }
+  };
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeConv) return;
+
+    if (isMemberBroadcast && !isBroadcastOwner && !isContactUnlocked) {
+      handleUnlockBroadcastContact();
+      return;
+    }
 
     const isChatWithSupplier = Boolean(company && activeConv.sellerCompanyId !== company.id);
     const senderRole = isChatWithSupplier ? 'buyer' : role === 'buyer' ? 'buyer' : 'seller';
@@ -184,6 +258,10 @@ function InquiriesContent() {
 
   const handleQuickPreset = (presetType: 'quote' | 'stock' | 'delivery') => {
     if (!activeConv) return;
+    if (isMemberBroadcast && !isBroadcastOwner && !isContactUnlocked) {
+      handleUnlockBroadcastContact();
+      return;
+    }
     if (presetType === 'quote') {
       const priceStr = activeConv.productPrice ? `£${activeConv.productPrice.toFixed(2)}` : 'our agreed trade price';
       setReplyText(`We can fulfill this trade order at ${priceStr} per unit. Proforma invoice can be issued immediately.`);
@@ -217,11 +295,20 @@ function InquiriesContent() {
 
   // Channel counts for tabs
   const allCount = conversations.length;
-  const buyersCount = conversations.filter((c) => c.type === 'buyer_seller').length;
-  const adminCount = conversations.filter((c) => c.type === 'seller_admin' || c.type === 'broadcast').length;
+  const buyersCount = conversations.filter((c) => c.type === 'buyer_seller' && !c.broadcastKind).length;
+  const broadcastCount = conversations.filter((c) => c.type === 'broadcast' || Boolean(c.broadcastKind)).length;
+  const adminCount = conversations.filter((c) => (c.type === 'seller_admin' || c.type === 'broadcast') && !c.broadcastKind).length;
 
   const recipientName = activeConv
-    ? isBuyer
+    ? isMemberBroadcast
+      ? isBroadcastOwner
+        ? 'Network Members'
+        : isContactUnlocked
+        ? activeConv.broadcastDetails?.ownerCompanyName || activeConv.sellerCompanyName || 'Trader'
+        : broadcastKind === 'wtb'
+        ? 'Verified Wholesale Buyer'
+        : 'Verified Wholesale Supplier'
+      : isBuyer
       ? (activeConv.type === 'broadcast' || activeConv.type === 'seller_admin' ? 'Jeff (B2B LINK Desk)' : activeConv.sellerCompanyName)
       : (activeConv.type === 'broadcast' || activeConv.type === 'seller_admin' ? 'Jeff (B2B LINK Desk)' : activeConv.buyerContactName || activeConv.buyerCompanyName)
     : 'Recipient';
@@ -262,6 +349,7 @@ function InquiriesContent() {
         {[
           { id: 'all', label: 'All conversations', count: allCount },
           { id: 'buyers', label: isBuyer ? 'Supplier chats' : 'Buyer inquiries', count: buyersCount },
+          { id: 'broadcast', label: 'Network Broadcasts', count: broadcastCount },
           { id: 'admin', label: 'Jeff & Support desk', count: adminCount },
         ].map((tab) => {
           const isActive = filterTab === tab.id;
@@ -312,7 +400,7 @@ function InquiriesContent() {
                 </div>
                 <h4 className="text-[14px] font-bold text-[#0F172A]">Your first inquiry shows here!</h4>
                 <p className="text-[12px] text-[#5B6B82] mt-1 leading-relaxed">
-                  When you contact a supplier about a wholesale stock lot on Marketplace, your direct chat will appear right here.
+                  When you contact a supplier about a wholesale stock lot on Marketplace, or when you broadcast a requirement, your direct threads appear right here.
                 </p>
 
                 {/* Preview Mockup Card */}
@@ -339,20 +427,54 @@ function InquiriesContent() {
             ) : (
               filteredConversations.map((conv) => {
                 const isSelected = conv.id === activeConv?.id;
-                const isBroadcast = conv.type === 'broadcast';
-                const isAdminDesk = conv.type === 'seller_admin';
+                const isConvBroadcast = Boolean(conv.broadcastKind || (conv.type === 'broadcast' && conv.broadcastDetails));
+                const convKind = conv.broadcastKind || conv.broadcastDetails?.itemType || (conv.status === 'broadcast_wtb' ? 'wtb' : conv.status === 'broadcast_wts' ? 'wts' : null);
+                const isAdminDesk = (conv.type === 'seller_admin' || conv.type === 'broadcast') && !conv.broadcastKind && !conv.broadcastDetails;
+
+                const isBroadcastOwnerInThread = Boolean(
+                  company &&
+                  isConvBroadcast &&
+                  (conv.broadcastDetails?.ownerCompanyId === company.id ||
+                    conv.sellerCompanyId === company.id ||
+                    (company.email &&
+                      (conv.buyerEmail?.toLowerCase() === company.email.toLowerCase() ||
+                       conv.broadcastDetails?.ownerEmail?.toLowerCase() === company.email.toLowerCase())))
+                );
+
+                const isContactUnlockedInThread = Boolean(
+                  company &&
+                  (isBroadcastOwnerInThread ||
+                    isLeadUnlocked(company.id, conv.id) ||
+                    (conv.productId ? isLeadUnlocked(company.id, conv.productId) : false))
+                );
 
                 const isChatWithSupplier = Boolean(company && conv.sellerCompanyId !== company.id);
-                const otherPartyName = isBroadcast || isAdminDesk
-                  ? 'Jeff Vetting Director (B2B LINK Desk)'
-                  : isChatWithSupplier
-                  ? conv.sellerCompanyName
-                  : conv.buyerContactName || conv.buyerCompanyName || 'Commercial Buyer';
 
-                const monogram = isBroadcast || isAdminDesk ? 'JF' : getMonogram(otherPartyName);
+                let otherPartyName = '';
+                if (isAdminDesk) {
+                  otherPartyName = 'Jeff Vetting Director (B2B LINK Desk)';
+                } else if (isConvBroadcast) {
+                  if (isBroadcastOwnerInThread) {
+                    otherPartyName = `You (${convKind === 'wtb' ? 'WTB Broadcast' : 'WTS Broadcast'})`;
+                  } else if (isContactUnlockedInThread) {
+                    otherPartyName = conv.broadcastDetails?.ownerCompanyName || conv.sellerCompanyName || 'Verified Partner';
+                  } else {
+                    otherPartyName = convKind === 'wtb' ? 'Verified Wholesale Buyer' : 'Verified Wholesale Supplier';
+                  }
+                } else if (isChatWithSupplier) {
+                  otherPartyName = conv.sellerCompanyName;
+                } else {
+                  otherPartyName = conv.buyerContactName || conv.buyerCompanyName || 'Commercial Buyer';
+                }
+
+                const monogram = isAdminDesk
+                  ? 'JF'
+                  : isConvBroadcast
+                  ? (convKind === 'wtb' ? 'WTB' : 'WTS')
+                  : getMonogram(otherPartyName);
+
                 const hasUnread = isBuyer ? conv.unreadByBuyer : conv.unreadBySeller;
 
-                // Format short relative time like in screenshot: "Just now", "2h", "5h", "32m", "1d"
                 let shortTime = conv.lastMessageTime || 'Just now';
                 if (shortTime.toLowerCase().includes('just now')) shortTime = 'Just now';
                 else if (shortTime.includes('ago')) shortTime = shortTime.replace(' ago', '');
@@ -369,9 +491,13 @@ function InquiriesContent() {
                   >
                     {/* Circle Avatar */}
                     <div
-                      className={`w-9 h-9 rounded-full font-bold text-[12px] flex items-center justify-center shrink-0 ${
-                        isBroadcast || isAdminDesk
+                      className={`w-9 h-9 rounded-full font-bold text-[11px] flex items-center justify-center shrink-0 ${
+                        isAdminDesk
                           ? 'bg-[#0B1528] text-[#00E5FF] ring-2 ring-slate-800'
+                          : isConvBroadcast
+                          ? convKind === 'wtb'
+                            ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                            : 'bg-blue-100 text-[#0A6CFF] ring-1 ring-blue-300'
                           : 'bg-[#EBF3FF] text-[#0A6CFF]'
                       }`}
                     >
@@ -394,11 +520,27 @@ function InquiriesContent() {
                         </div>
                       </div>
 
-                      {/* Pill Badge matching design */}
-                      <div className="mt-1">
-                        {isBroadcast || isAdminDesk ? (
+                      {/* Pill Badges */}
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                        {isAdminDesk ? (
                           <span className="inline-block bg-[#0B1528] text-[#00E5FF] text-[10px] font-semibold px-2 py-0.5 rounded-full">
                             Jeff &bull; Desk Support
+                          </span>
+                        ) : isConvBroadcast ? (
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full truncate max-w-[210px] ${
+                              convKind === 'wtb'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}
+                          >
+                            <Radio className="w-2.5 h-2.5 animate-pulse" />
+                            <span>{convKind === 'wtb' ? 'WTB Broadcast' : 'WTS Broadcast'}</span>
+                            {!isBroadcastOwnerInThread && (
+                              <span className="text-[9px] font-semibold opacity-75">
+                                {isContactUnlockedInThread ? '· Unlocked' : '· Locked'}
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="inline-block bg-[#EBF3FF] text-[#0A6CFF] text-[10px] font-semibold px-2 py-0.5 rounded-full truncate max-w-[210px]">
@@ -426,12 +568,30 @@ function InquiriesContent() {
               {/* Chat Header Bar */}
               {(() => {
                 const activeIsChatWithSupplier = Boolean(company && activeConv.sellerCompanyId !== company.id);
-                const activeHeaderName =
-                  activeConv.type === 'broadcast' || activeConv.type === 'seller_admin'
-                    ? 'Jeff Vetting Director (B2B LINK Desk)'
-                    : activeIsChatWithSupplier
-                    ? activeConv.sellerCompanyName
-                    : activeConv.buyerContactName || activeConv.buyerCompanyName || 'Commercial Buyer';
+                const isAdminDesk = (activeConv.type === 'seller_admin' || activeConv.type === 'broadcast') && !activeConv.broadcastKind && !activeConv.broadcastDetails;
+
+                let activeHeaderName = '';
+                if (isAdminDesk) {
+                  activeHeaderName = 'Jeff Vetting Director (B2B LINK Desk)';
+                } else if (isMemberBroadcast) {
+                  if (isBroadcastOwner) {
+                    activeHeaderName = `My ${broadcastKind === 'wtb' ? 'WTB Procurement' : 'WTS Stock'} Broadcast`;
+                  } else if (isContactUnlocked) {
+                    activeHeaderName = activeConv.broadcastDetails?.ownerCompanyName || activeConv.sellerCompanyName || 'Verified Partner';
+                  } else {
+                    activeHeaderName = broadcastKind === 'wtb' ? 'Verified Wholesale Buyer (Contact Protected)' : 'Verified Wholesale Supplier (Contact Protected)';
+                  }
+                } else if (activeIsChatWithSupplier) {
+                  activeHeaderName = activeConv.sellerCompanyName;
+                } else {
+                  activeHeaderName = activeConv.buyerContactName || activeConv.buyerCompanyName || 'Commercial Buyer';
+                }
+
+                const activeMonogram = isAdminDesk
+                  ? 'JF'
+                  : isMemberBroadcast
+                  ? (broadcastKind === 'wtb' ? 'WTB' : 'WTS')
+                  : getMonogram(activeHeaderName);
 
                 return (
                   <div className="p-4 bg-white border-b border-[#E2E8F0] shrink-0 flex items-center justify-between gap-3">
@@ -439,14 +599,16 @@ function InquiriesContent() {
                       {/* Square rounded avatar */}
                       <div
                         className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-[13px] shrink-0 ${
-                          activeConv.type === 'broadcast' || activeConv.type === 'seller_admin'
+                          isAdminDesk
                             ? 'bg-[#0B1528] text-[#00E5FF]'
+                            : isMemberBroadcast
+                            ? broadcastKind === 'wtb'
+                              ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                              : 'bg-blue-100 text-[#0A6CFF] ring-1 ring-blue-300'
                             : 'bg-[#DDE7F5] text-[#334155]'
                         }`}
                       >
-                        {activeConv.type === 'broadcast' || activeConv.type === 'seller_admin'
-                          ? 'JF'
-                          : getMonogram(activeHeaderName)}
+                        {activeMonogram}
                       </div>
 
                       <div className="min-w-0">
@@ -454,8 +616,10 @@ function InquiriesContent() {
                           {activeHeaderName}
                         </h3>
                         <p className="text-[11px] sm:text-[12px] text-[#64748B] truncate mt-0.5 font-normal">
-                          {activeConv.type === 'broadcast' || activeConv.type === 'seller_admin'
+                          {isAdminDesk
                             ? 'Official direct support & platform advisory channel'
+                            : isMemberBroadcast
+                            ? `${activeConv.broadcastDetails?.title || activeConv.productTitle} · ${activeConv.broadcastDetails?.quantity || activeConv.productMoq} units · £${(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}`
                             : `${activeConv.productTitle}${activeConv.productPrice ? ` · £${activeConv.productPrice.toFixed(2)}` : ''}`}
                         </p>
                       </div>
@@ -463,20 +627,43 @@ function InquiriesContent() {
 
                     {/* Right Badges & Action */}
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="inline-flex items-center gap-1 bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-semibold px-2.5 py-1 rounded-full">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>In-app verified</span>
-                      </span>
+                      {isMemberBroadcast ? (
+                        isBroadcastOwner ? (
+                          <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold px-2.5 py-1 rounded-full">
+                            <Radio className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                            <span>My Broadcast</span>
+                          </span>
+                        ) : isContactUnlocked ? (
+                          <span className="inline-flex items-center gap-1 bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-semibold px-2.5 py-1 rounded-full">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Contact Unlocked</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleUnlockBroadcastContact}
+                            className="inline-flex items-center gap-1 bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-2xs transition cursor-pointer"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Unlock Contact</span>
+                          </button>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-semibold px-2.5 py-1 rounded-full">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>In-app verified</span>
+                        </span>
+                      )}
 
                       <Link
                         href={
-                          activeConv.productId && !activeConv.productId.startsWith('00000000')
+                          activeConv.productId && !activeConv.productId.startsWith('00000000') && !activeConv.productId.startsWith('broadcast-')
                             ? `/marketplace/${activeConv.productId}`
                             : '/marketplace'
                         }
                         className="bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#334155] text-[12px] font-semibold px-3 py-1 rounded-full transition shadow-2xs inline-flex items-center gap-1"
                       >
-                        <span>View listing</span>
+                        <span>{isMemberBroadcast ? 'Marketplace' : 'View listing'}</span>
                       </Link>
                     </div>
                   </div>
@@ -485,6 +672,201 @@ function InquiriesContent() {
 
               {/* Chat Messages Body */}
               <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 bg-white">
+                {/* Broadcast Opportunity Summary Card */}
+                {isMemberBroadcast && (
+                  <div className="rounded-2xl border border-[#E2E8F0] bg-white overflow-hidden shadow-xs space-y-0 mb-4">
+                    {/* Header */}
+                    <div className={`p-4 ${broadcastKind === 'wtb' ? 'bg-emerald-50/70 border-b border-emerald-100' : 'bg-blue-50/70 border-b border-blue-100'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            broadcastKind === 'wtb' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+                          }`}>
+                            {broadcastKind === 'wtb' ? 'WTB Procurement Broadcast' : 'WTS Wholesale Stock Broadcast'}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-500">
+                            {activeConv.broadcastDetails?.category || 'Wholesale Goods'}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                          <Radio className="w-3 h-3 text-[#0A6CFF] animate-pulse" />
+                          <span>Network Wide</span>
+                        </span>
+                      </div>
+                      <h3 className="text-[16px] font-black text-[#0B1F3A] mt-2">
+                        {activeConv.broadcastDetails?.title || activeConv.productTitle}
+                      </h3>
+                      {activeConv.broadcastDetails?.brand && (
+                        <p className="text-[12px] text-slate-600 font-medium mt-0.5">
+                          Brand: <strong>{activeConv.broadcastDetails.brand}</strong>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Specification Grid */}
+                    <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white text-[12px]">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[11px] text-[#64748B] block font-medium">
+                          {broadcastKind === 'wtb' ? 'Target Price' : 'Unit Price'}
+                        </span>
+                        <strong className="text-[14px] font-bold text-[#0B1F3A] mt-0.5 block">
+                          £{(activeConv.broadcastDetails?.price || activeConv.productPrice || 0).toFixed(2)}
+                        </strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[11px] text-[#64748B] block font-medium">
+                          {broadcastKind === 'wtb' ? 'Required Quantity' : 'Available Stock'}
+                        </span>
+                        <strong className="text-[14px] font-bold text-[#0B1F3A] mt-0.5 block">
+                          {(activeConv.broadcastDetails?.quantity || activeConv.productMoq || 0).toLocaleString()} units
+                        </strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[11px] text-[#64748B] block font-medium">Total Lot Value</span>
+                        <strong className="text-[14px] font-bold text-[#0A6CFF] mt-0.5 block">
+                          £{(
+                            (activeConv.broadcastDetails?.quantity || activeConv.productMoq || 0) *
+                            (activeConv.broadcastDetails?.price || activeConv.productPrice || 0)
+                          ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[11px] text-[#64748B] block font-medium">
+                          {broadcastKind === 'wtb' ? 'Min Order (MOQ)' : 'Condition'}
+                        </span>
+                        <strong className="text-[14px] font-bold text-[#0B1F3A] mt-0.5 block truncate">
+                          {broadcastKind === 'wtb'
+                            ? `${activeConv.broadcastDetails?.moq || 1} units`
+                            : activeConv.broadcastDetails?.condition || 'Brand New'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Barcode & Notes */}
+                    {(activeConv.broadcastDetails?.barcode || activeConv.broadcastDetails?.notes) && (
+                      <div className="px-4 pb-3.5 pt-1 text-[12px] text-slate-600 space-y-1">
+                        {activeConv.broadcastDetails?.barcode && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 font-medium">Barcode / EAN:</span>
+                            <span className="font-mono font-bold text-slate-800">{activeConv.broadcastDetails.barcode}</span>
+                          </div>
+                        )}
+                        {activeConv.broadcastDetails?.notes && (
+                          <p className="text-[12px] text-slate-600 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 leading-relaxed italic">
+                            &quot;{activeConv.broadcastDetails.notes}&quot;
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Contact Privacy Section */}
+                    <div className="p-4 border-t border-slate-100 bg-[#F8FAFC]">
+                      {isBroadcastOwner ? (
+                        <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-[12px]">
+                          <Radio className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                          <div>
+                            <span className="font-bold">Your opportunity is broadcasted to verified network members.</span>
+                            <p className="text-[11px] text-amber-800/90 mt-0.5 leading-relaxed">
+                              Members can inspect all requirement specifications. Your personal contact details (email, phone, company name) are kept private until they use an unlock credit to connect directly.
+                            </p>
+                          </div>
+                        </div>
+                      ) : !isContactUnlocked ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                                <Lock className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-[13px] font-bold text-slate-900">Trader Contact Details Protected</h4>
+                                <p className="text-[11px] text-slate-500">
+                                  Specifications are visible. Unlock contact credentials to reveal company name, direct telephone, email, and quote.
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-700 shrink-0">
+                              {remainingUnlocks === Infinity ? 'Unlimited Unlocks' : `${remainingUnlocks} unlocks left`}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 rounded-xl bg-white border border-slate-200 text-[12px]">
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Company:</span>
+                              <span className="font-semibold text-slate-800 tracking-wider">•••••••••••• Ltd</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Representative:</span>
+                              <span className="font-semibold text-slate-800 tracking-wider">•••••••• ••••••••</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <Mail className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Direct Email:</span>
+                              <span className="font-semibold text-slate-800 tracking-wider">••••••••@••••••••.com</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <Phone className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Direct Phone:</span>
+                              <span className="font-semibold text-slate-800 tracking-wider">+44 ••••• ••••••</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleUnlockBroadcastContact}
+                            className="w-full py-2.5 rounded-xl bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[13px] font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                          >
+                            <Unlock className="w-4 h-4" />
+                            <span>Unlock Trader Contact Details Now</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[12px]">
+                          <div className="flex items-center gap-2 mb-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="font-bold text-emerald-950">Verified Trader Contact Unlocked</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded-lg bg-white/90 border border-emerald-100">
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Company:</span>
+                              <strong className="text-slate-900 truncate">
+                                {activeConv.broadcastDetails?.ownerCompanyName || activeConv.sellerCompanyName || activeConv.buyerCompanyName}
+                              </strong>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Representative:</span>
+                              <strong className="text-slate-900 truncate">
+                                {activeConv.broadcastDetails?.ownerContactName || activeConv.sellerContactName || activeConv.buyerContactName || 'Trader'}
+                              </strong>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Mail className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Email:</span>
+                              <a
+                                href={`mailto:${activeConv.broadcastDetails?.ownerEmail || activeConv.buyerEmail}`}
+                                className="font-bold text-[#0A6CFF] hover:underline truncate"
+                              >
+                                {activeConv.broadcastDetails?.ownerEmail || activeConv.buyerEmail || 'Available via chat'}
+                              </a>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Phone:</span>
+                              <span className="font-bold text-slate-900 truncate">
+                                {activeConv.broadcastDetails?.ownerPhone || activeConv.buyerPhone || 'Available via chat'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Centered Date Badge */}
                 <div className="flex justify-center my-2">
                   <span className="bg-[#F1F5F9] text-[#64748B] text-[11px] font-medium px-3.5 py-1 rounded-full">
@@ -516,7 +898,7 @@ function InquiriesContent() {
 
                       {/* Message Bubble */}
                       <div
-                        className={`rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed max-w-[78%] break-words ${
+                        className={`rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed max-w-[78%] break-words whitespace-pre-line ${
                           isCurrentSender
                             ? 'bg-[#0A6CFF] text-white rounded-tr-xs font-medium shadow-2xs'
                             : 'bg-[#F0F4FA] text-[#0F172A] rounded-tl-xs'
@@ -530,62 +912,83 @@ function InquiriesContent() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Quick Action Presets */}
-              <div className="px-4 py-2 bg-white flex items-center gap-2 overflow-x-auto border-t border-[#F8FAFC]">
-                <button
-                  type="button"
-                  onClick={() => handleQuickPreset('quote')}
-                  className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
-                >
-                  Send quote
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickPreset('stock')}
-                  className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
-                >
-                  Confirm stock
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickPreset('delivery')}
-                  className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
-                >
-                  Share delivery date
-                </button>
-              </div>
-
-              {/* Bottom Input Bar */}
-              <div className="p-3.5 bg-white border-t border-[#F1F5F9]">
-                <form onSubmit={handleSend} className="flex items-center gap-2.5">
+              {/* Chat Input Section */}
+              {isMemberBroadcast && !isBroadcastOwner && !isContactUnlocked ? (
+                /* Gated locked bar */
+                <div className="p-4 bg-[#F8FAFC] border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-slate-700 text-[12px] font-medium">
+                    <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Trader contact is locked. Unlock counterparty to send direct quotes, negotiate, or trade.</span>
+                  </div>
                   <button
                     type="button"
-                    title="Attach document or specification"
-                    className="w-9 h-9 rounded-full border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:bg-[#F8FAFC] transition cursor-pointer shrink-0"
+                    onClick={handleUnlockBroadcastContact}
+                    className="w-full sm:w-auto px-4 py-2 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer shrink-0"
                   >
-                    <Paperclip className="w-4 h-4 text-[#94A3B8]" />
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Unlock Contact ({remainingUnlocks === Infinity ? 'Unlimited' : `${remainingUnlocks} left`})</span>
                   </button>
-
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      placeholder={`Write a reply to ${recipientName}`}
-                      className="w-full px-4 py-2.5 bg-white border border-[#E2E8F0] rounded-full text-[13px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] font-medium"
-                    />
+                </div>
+              ) : (
+                <>
+                  {/* Quick Action Presets */}
+                  <div className="px-4 py-2 bg-white flex items-center gap-2 overflow-x-auto border-t border-[#F8FAFC]">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickPreset('quote')}
+                      className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
+                    >
+                      Send quote
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickPreset('stock')}
+                      className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
+                    >
+                      Confirm stock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickPreset('delivery')}
+                      className="bg-[#F4F8FF] border border-[#D5E5FF] hover:bg-blue-50 text-[#0A6CFF] text-[11px] font-semibold px-3 py-1 rounded-full transition cursor-pointer whitespace-nowrap"
+                    >
+                      Share delivery date
+                    </button>
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={!replyText.trim()}
-                    className="bg-[#0A6CFF] hover:bg-[#0857CF] disabled:opacity-50 text-white font-semibold text-[12px] px-5 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Send</span>
-                  </button>
-                </form>
-              </div>
+                  {/* Bottom Input Bar */}
+                  <div className="p-3.5 bg-white border-t border-[#F1F5F9]">
+                    <form onSubmit={handleSend} className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        title="Attach document or specification"
+                        className="w-9 h-9 rounded-full border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:bg-[#F8FAFC] transition cursor-pointer shrink-0"
+                      >
+                        <Paperclip className="w-4 h-4 text-[#94A3B8]" />
+                      </button>
+
+                      <div className="flex-1 relative">
+                        <input
+                          type="text"
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          placeholder={`Write a reply to ${recipientName}`}
+                          className="w-full px-4 py-2.5 bg-white border border-[#E2E8F0] rounded-full text-[13px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] font-medium"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!replyText.trim()}
+                        className="bg-[#0A6CFF] hover:bg-[#0857CF] disabled:opacity-50 text-white font-semibold text-[12px] px-5 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Send</span>
+                      </button>
+                    </form>
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <div className="flex flex-col items-center justify-center flex-1 p-8 text-center text-[#64748B]">
@@ -594,7 +997,7 @@ function InquiriesContent() {
               </div>
               <h3 className="text-[17px] font-bold text-[#0F172A]">Your Wholesale Conversations</h3>
               <p className="text-[13px] text-[#5B6B82] max-w-md mt-1.5 leading-relaxed">
-                When you initiate a direct product inquiry with a supplier on Marketplace, or when Jeff reaches out with trade updates, your real-time messages appear here.
+                When you initiate a direct product inquiry with a supplier on Marketplace, or when you receive a broadcast response, your real-time messages appear here.
               </p>
               <Link
                 href="/marketplace"
@@ -607,6 +1010,17 @@ function InquiriesContent() {
           )}
         </div>
       </div>
+
+      {/* UPGRADE MEMBERSHIP MODAL */}
+      <UpgradeMembershipModal
+        isOpen={upgradeModalOpen}
+        onClose={() => {
+          setUpgradeModalOpen(false);
+          setUpgradeModalConfig(null);
+        }}
+        title={upgradeModalConfig?.title}
+        subtitle={upgradeModalConfig?.subtitle}
+      />
     </div>
   );
 }

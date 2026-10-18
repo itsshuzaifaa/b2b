@@ -331,7 +331,7 @@ export default function SiteAdminListingsPage() {
                       <td className="py-3 px-3 whitespace-nowrap font-mono text-[11.5px] text-[#475569]">
                         <span className="flex items-center gap-1">
                           <Barcode className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{item.ean}</span>
+                          <span>{item.ean && item.ean !== '195949048735' && item.ean !== '8806095087286' && item.ean !== '—' ? item.ean : 'n/a'}</span>
                         </span>
                       </td>
 
@@ -506,7 +506,7 @@ export default function SiteAdminListingsPage() {
                   </span>
                   <p className="font-mono text-[13px] font-bold text-[#0B1F3A] flex items-center gap-1">
                     <Barcode className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{selectedProduct.ean}</span>
+                    <span>{selectedProduct.ean && selectedProduct.ean !== '195949048735' && selectedProduct.ean !== '8806095087286' && selectedProduct.ean !== '—' ? selectedProduct.ean : 'n/a'}</span>
                   </p>
                 </div>
                 <div>

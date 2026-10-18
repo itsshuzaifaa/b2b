@@ -13,6 +13,7 @@ import {
   adminNewCustomerAlertEmail,
   accountApprovalEmail,
   accountSuspendedEmail,
+  membershipUpgradeEmail,
   type NewInquiryEmailProps,
   type NicheWtbAlertEmailProps,
   type ExactBarcodeMatchEmailProps,
@@ -24,6 +25,7 @@ import {
   type KycVerificationRequestEmailProps,
   type AccountApprovalEmailProps,
   type AccountSuspendedEmailProps,
+  type MembershipUpgradeEmailProps,
   customerQueryReplyEmail,
   type CustomerQueryReplyEmailProps,
 } from '@/lib/email/templates';
@@ -262,6 +264,19 @@ export async function sendAccountApprovalEmail(
 }
 
 export const sendAccountVerifiedEmail = sendAccountApprovalEmail;
+
+/**
+ * Dispatches Membership Upgrade Confirmation Email
+ */
+export async function sendMembershipUpgradeEmail(
+  toEmail: string,
+  props: Omit<MembershipUpgradeEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/dashboard`;
+  const { subject, html } = membershipUpgradeEmail({ ...props, actionUrl });
+  return sendEmail({ to: toEmail, subject, html, replyTo: 'billing@b2blink.eu' });
+}
 
 /**
  * Dispatches Account Under Review / Suspension Email

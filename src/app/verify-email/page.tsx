@@ -22,6 +22,8 @@ import {
   User,
   Check,
   Loader2,
+  Clock,
+  ShieldAlert,
 } from 'lucide-react';
 
 function VerifyEmailContent() {
@@ -72,10 +74,20 @@ function VerifyEmailContent() {
   const [verifying, setVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Resend Cooldown Timer (60 seconds)
+  // Resend Cooldown Timer (1 minute = 60 seconds)
   const [countdown, setCountdown] = useState<number>(60);
   const [resending, setResending] = useState(false);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
+
+  // Code Expiration Timer (15 minutes = 900 seconds)
+  const [codeExpiresIn, setCodeExpiresIn] = useState<number>(15 * 60);
+
+  // Format MM:SS helper
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.max(0, Math.floor(totalSeconds / 60));
+    const secs = Math.max(0, totalSeconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Card Payment States (For Silver / Gold packages)
   const [cardholderName, setCardholderName] = useState(contactName || companyName || 'Wholesale Member');
@@ -86,6 +98,7 @@ function VerifyEmailContent() {
   const [cardZip, setCardZip] = useState('10117');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentDeclineNotice, setPaymentDeclineNotice] = useState<string | null>(null);
+  const [declineCount, setDeclineCount] = useState<number>(0);
   const [sampleCardLoaded, setSampleCardLoaded] = useState(false);
 
   // Update cardholder name when loaded
@@ -96,12 +109,21 @@ function VerifyEmailContent() {
     }
   }, [contactName, companyName, cardholderName]);
 
+  // Resend cooldown timer (1 minute)
   useEffect(() => {
     if (countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     }
   }, [countdown]);
+
+  // Code expiration countdown timer (15 minutes)
+  useEffect(() => {
+    if (codeExpiresIn > 0 && phase === 'verify') {
+      const timer = setTimeout(() => setCodeExpiresIn(codeExpiresIn - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [codeExpiresIn, phase]);
 
   // Autofill Test Card handler
   const handleAutofillTestCard = () => {
@@ -137,14 +159,33 @@ function VerifyEmailContent() {
       return;
     }
 
+    if (codeExpiresIn <= 0) {
+      setErrorMsg('This verification code has expired (15-minute limit). Please click "Resend verification code" below to receive a new code.');
+      return;
+    }
+
     setVerifying(true);
     setErrorMsg(null);
 
     try {
-      const supabase = createClient();
       const cleanOtp = otp.trim().replace(/\s+/g, '');
 
-      // Verify OTP with Supabase Auth
+      // Strictly validate with server verification store (enforcing 15-minute expiration & latest-code rule)
+      const serverRes = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: cleanOtp }),
+      });
+      const serverData = await serverRes.json();
+      if (!serverRes.ok) {
+        setErrorMsg(serverData.error || 'Invalid or expired verification code. Please check and try again.');
+        setVerifying(false);
+        return;
+      }
+
+      const supabase = createClient();
+
+      // Complete Supabase client authentication
       let verifyResult = await supabase.auth.verifyOtp({
         email,
         token: cleanOtp,
@@ -159,7 +200,7 @@ function VerifyEmailContent() {
         });
       }
 
-      if (verifyResult.error) {
+      if (verifyResult.error && !serverData.success) {
         setErrorMsg(verifyResult.error.message || 'Invalid or expired verification code. Please check and try again.');
         setVerifying(false);
         return;
@@ -183,7 +224,10 @@ function VerifyEmailContent() {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_pending_verification_email');
         localStorage.removeItem('b2b_pending_tier');
+        localStorage.removeItem('b2b_demo_role');
       }
+
+      await refreshProfile();
 
       setTimeout(() => {
         router.push(redirectParam || '/dashboard');
@@ -213,8 +257,10 @@ function VerifyEmailContent() {
       if (!res.ok) {
         setErrorMsg(data.error || 'Failed to resend code.');
       } else {
-        setResendNotice('New verification code sent! Please check your inbox.');
-        setCountdown(60);
+        setResendNotice('New verification code sent! The previous code has now expired.');
+        setCountdown(60); // 1 minute cooldown to request another code
+        setCodeExpiresIn(15 * 60); // Fresh 15-minute validity for the new code
+        setOtp('');
       }
     } catch {
       setErrorMsg('Could not send code. Please try again.');
@@ -245,6 +291,7 @@ function VerifyEmailContent() {
         localStorage.setItem('b2b_registered_tier', 'bronze');
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_demo_role');
       }
 
       await triggerKycEmail(email);
@@ -288,7 +335,8 @@ function VerifyEmailContent() {
 
     // Check for simulated decline card (ends in 0002)
     if (cleanCard.endsWith('0002')) {
-      setPaymentDeclineNotice('Your card was declined by the issuing bank (Test Decline Scenario). You can try another card, or continue with a Free Account right now.');
+      setDeclineCount((prev) => prev + 1);
+      setPaymentDeclineNotice('Your card was declined by the card issuer. Please check your card details or try a different card.');
       return;
     }
 
@@ -310,7 +358,8 @@ function VerifyEmailContent() {
 
       const activateData = await activateRes.json();
       if (!activateRes.ok) {
-        setPaymentDeclineNotice(activateData.error || 'Payment authorization failed. Please try another card or continue with a free account.');
+        setDeclineCount((prev) => prev + 1);
+        setPaymentDeclineNotice(activateData.error || 'Your card was declined by your bank. Please check your card details or try a different card.');
         setProcessingPayment(false);
         return;
       }
@@ -335,6 +384,7 @@ function VerifyEmailContent() {
         localStorage.setItem('b2b_registered_tier', selectedTier);
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_demo_role');
       }
 
       await triggerKycEmail(email);
@@ -348,7 +398,8 @@ function VerifyEmailContent() {
         router.push(redirectParam || '/dashboard');
       }, 2800);
     } catch (err) {
-      setPaymentDeclineNotice(err instanceof Error ? err.message : 'Card authorization could not be completed. You can continue with a Free Account right now.');
+      setDeclineCount((prev) => prev + 1);
+      setPaymentDeclineNotice(err instanceof Error ? err.message : 'Your card was declined. Please check your details or try a different card.');
     } finally {
       setProcessingPayment(false);
     }
@@ -434,9 +485,22 @@ function VerifyEmailContent() {
               )}
 
               <div>
-                <label className="block text-[13px] font-bold text-[#0B1F3A] text-center mb-1.5">
-                  Enter 6-digit verification code
-                </label>
+                <div className="flex items-center justify-between text-[13px] mb-1.5 px-0.5">
+                  <label className="font-bold text-[#0B1F3A]">
+                    Verification code
+                  </label>
+                  {codeExpiresIn > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#5B6B82] bg-[#F1F5F9] px-2.5 py-0.5 rounded-full border border-[#E2E8F0]">
+                      <Clock className="w-3 h-3 text-[#0A6CFF]" />
+                      <span>Expires in <strong className="text-[#0B1F3A] font-mono">{formatTime(codeExpiresIn)}</strong></span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11.5px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                      <AlertCircle className="w-3 h-3 text-red-600" />
+                      <span>Code expired (15m limit)</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
@@ -446,14 +510,23 @@ function VerifyEmailContent() {
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.trim())}
                   placeholder="Enter code"
-                  className="w-full px-4 py-3.5 text-[22px] tracking-[0.2em] text-center font-mono font-bold bg-[#F8FAFF] border-2 border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#CBD5E1] focus:outline-none focus:border-[#0A6CFF] focus:bg-white transition"
+                  className={`w-full px-4 py-3.5 text-[22px] tracking-[0.2em] text-center font-mono font-bold bg-[#F8FAFF] border-2 rounded-2xl text-[#0B1F3A] placeholder:text-[#CBD5E1] focus:outline-none transition ${
+                    codeExpiresIn <= 0
+                      ? 'border-red-300 bg-red-50/30'
+                      : 'border-[#E3E9F2] focus:border-[#0A6CFF] focus:bg-white'
+                  }`}
                 />
+                {codeExpiresIn <= 0 && (
+                  <p className="mt-2 text-[12px] text-red-600 font-semibold text-center animate-in fade-in">
+                    This verification code has expired after 15 minutes. Please click &ldquo;Resend verification code&rdquo; below.
+                  </p>
+                )}
               </div>
 
               {/* Verify Button */}
               <button
                 type="submit"
-                disabled={verifying || !otp.trim() || !email.trim()}
+                disabled={verifying || !otp.trim() || !email.trim() || codeExpiresIn <= 0}
                 className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center transition-colors shadow-xs mt-6 disabled:opacity-50 cursor-pointer"
               >
                 {verifying ? (
@@ -472,7 +545,7 @@ function VerifyEmailContent() {
               {countdown > 0 ? (
                 <p>
                   Didn’t receive the code? Resend in{' '}
-                  <span className="font-bold text-[#0B1F3A]">{countdown}s</span>
+                  <span className="font-bold text-[#0B1F3A] font-mono">{countdown}s</span>
                 </p>
               ) : (
                 <button
@@ -485,6 +558,9 @@ function VerifyEmailContent() {
                   <span>Resend verification code</span>
                 </button>
               )}
+              <div className="text-[11.5px] text-[#8A9BB0] mt-1.5">
+                Each code is valid for 15 minutes. Requesting a new code expires the previous one.
+              </div>
             </div>
 
             {/* Links */}
@@ -576,25 +652,16 @@ function VerifyEmailContent() {
               )}
             </div>
 
-            {/* Decline Notice Alert (with option to continue with free) */}
+            {/* Decline Notice Alert */}
             {paymentDeclineNotice && (
               <div className="mb-5 p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 animate-in fade-in">
-                <div className="flex items-start gap-2 text-[13px] font-bold mb-2">
+                <div className="flex items-start gap-2 text-[13px] font-bold mb-1">
                   <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <span>Payment Declined</span>
+                  <span>Card Declined</span>
                 </div>
-                <p className="text-[12px] text-red-600 mb-3 leading-snug">
+                <p className="text-[12px] text-red-600 leading-snug">
                   {paymentDeclineNotice}
                 </p>
-                <button
-                  type="button"
-                  onClick={handleContinueWithFree}
-                  disabled={processingPayment}
-                  className="w-full py-2 px-3 rounded-xl bg-white border border-red-300 hover:bg-red-50 text-red-700 font-bold text-[12px] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-                >
-                  <span>Continue with Free Account (Bronze) Right Now</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
               </div>
             )}
 
@@ -735,15 +802,19 @@ function VerifyEmailContent() {
                   )}
                 </button>
 
-                {/* Free Account Fallback Option */}
-                <button
-                  type="button"
-                  onClick={handleContinueWithFree}
-                  disabled={processingPayment}
-                  className="w-full py-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-1.5 transition cursor-pointer"
-                >
-                  <span>Or continue with Free Bronze Account</span>
-                </button>
+                {/* Subtle fallback link for free account only shown after 2 or more card declines */}
+                {declineCount >= 2 && (
+                  <div className="pt-1.5 text-center animate-in fade-in">
+                    <button
+                      type="button"
+                      onClick={handleContinueWithFree}
+                      disabled={processingPayment}
+                      className="text-[12px] text-slate-500 hover:text-slate-800 underline font-medium cursor-pointer transition"
+                    >
+                      Having trouble with your card? Continue with Free Account (Bronze)
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 flex items-center justify-between text-[11px] text-[#64748B] border-t border-slate-100">
@@ -787,9 +858,19 @@ function VerifyEmailContent() {
               {planPriceGbp}.00 GBP
             </div>
 
-            <p className="text-[13px] text-[#5B6B82] max-w-sm mx-auto mb-6 leading-relaxed">
+            <p className="text-[13px] text-[#5B6B82] max-w-sm mx-auto mb-4 leading-relaxed">
               Your {selectedTier === 'silver' ? 'Silver' : 'Gold'} membership package has been activated. A receipt has been issued to <strong className="text-[#0B1F3A]">{email}</strong>.
             </p>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 mb-5 text-left text-[12.5px] text-amber-900 flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="leading-snug">
+                <span className="font-bold">Next Step: Business Verification</span>
+                <p className="text-amber-800 text-[11.5px] mt-0.5">
+                  Your account is awaiting business verification by the B2B LINK Verification Team. Please verify your company documents on the dashboard popup.
+                </p>
+              </div>
+            </div>
 
             {/* Smooth transition progress indicator */}
             <div className="mb-5 px-4">

@@ -14,6 +14,7 @@ import {
   type InquiryConversation,
   type ChatMessage,
 } from '@/lib/messaging/messaging-store';
+import { isAccountDeleted, markAccountAsDeleted } from '@/lib/admin/admin-store';
 import {
   MessageSquare,
   Radio,
@@ -33,6 +34,7 @@ import {
   PlusCircle,
   Mail,
   UserCheck,
+  Store,
 } from 'lucide-react';
 
 function AdminMessagesContent() {
@@ -62,6 +64,8 @@ function AdminMessagesContent() {
   const [directMsgText, setDirectMsgText] = useState('');
   const [isSendingDirect, setIsSendingDirect] = useState(false);
   const [loadingSellers, setLoadingSellers] = useState(false);
+  const [directMsgError, setDirectMsgError] = useState<string | null>(null);
+  const [directMsgSuccess, setDirectMsgSuccess] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const hasInitializedRef = useRef(false);
@@ -154,8 +158,11 @@ function AdminMessagesContent() {
   const handleOpenDirectSellerModal = async () => {
     setShowDirectSellerModal(true);
     setLoadingSellers(true);
+    setDirectMsgError(null);
+    setDirectMsgSuccess(null);
     const sellers = await fetchAllSellersForAdmin();
-    setRegisteredSellers(sellers);
+    const cleanSellers = sellers.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
+    setRegisteredSellers(cleanSellers);
     setLoadingSellers(false);
   };
 
@@ -205,22 +212,41 @@ function AdminMessagesContent() {
     if (!selectedSeller || !directMsgText.trim()) return;
 
     setIsSendingDirect(true);
-    const conv = await sendAdminDirectMessage(
+    setDirectMsgError(null);
+    setDirectMsgSuccess(null);
+
+    const result = await sendAdminDirectMessage(
       selectedSeller.id,
       directMsgText.trim(),
       'Jeff Vetting Director (B2B LINK Desk)',
-      'facbb93f-080f-480f-b54b-8ef26664da86'
+      'facbb93f-080f-480f-b54b-8ef26664da86',
+      selectedSeller
     );
 
     setIsSendingDirect(false);
-    if (conv) {
-      setShowDirectSellerModal(false);
-      setDirectMsgText('');
-      setSelectedSeller(null);
-      setBroadcastNotice(`🛡️ Private direct message sent to ${selectedSeller.company_name}!`);
-      setTimeout(() => setBroadcastNotice(null), 5000);
-      setActiveConversationId(conv.id);
-      loadData();
+
+    if (result.success && result.conversation) {
+      const conv = result.conversation;
+      const targetSellerName = selectedSeller.company_name;
+      setDirectMsgSuccess(`✓ Private direct message sent to ${targetSellerName}! Redirecting to chat...`);
+      setBroadcastNotice(`🛡️ Private direct message sent to ${targetSellerName}!`);
+
+      setTimeout(() => {
+        setShowDirectSellerModal(false);
+        setDirectMsgText('');
+        setSelectedSeller(null);
+        setDirectMsgSuccess(null);
+        setActiveConversationId(conv.id);
+        loadData();
+      }, 700);
+    } else {
+      const err = result.error || 'Failed to send private message. Please check connection and try again.';
+      setDirectMsgError(err);
+      if (err.includes('deleted') || err.includes('no longer exists')) {
+        markAccountAsDeleted(selectedSeller.id);
+        if (selectedSeller.contact_email) markAccountAsDeleted(selectedSeller.contact_email);
+        setRegisteredSellers((prev) => prev.filter((s) => s.id !== selectedSeller.id));
+      }
     }
   };
 
@@ -230,6 +256,7 @@ function AdminMessagesContent() {
 
   // Filter registered sellers in modal
   const filteredSellersInModal = registeredSellers.filter((s) => {
+    if (isAccountDeleted(s.id, s.contact_email)) return false;
     const q = sellerSearch.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -629,16 +656,26 @@ function AdminMessagesContent() {
             {/* Seller List */}
             <div className="flex-1 overflow-y-auto mt-3 border border-slate-100 rounded-2xl divide-y divide-slate-100 max-h-48">
               {loadingSellers ? (
-                <div className="p-6 text-center text-xs text-slate-400">Loading sellers...</div>
+                <div className="p-6 text-center text-xs text-slate-400">Loading registered sellers...</div>
               ) : filteredSellersInModal.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400">No sellers matching your search.</div>
+                <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center">
+                  <Store className="w-8 h-8 text-slate-300 mb-2" />
+                  <span className="font-bold text-slate-700">No active sellers found</span>
+                  <span className="text-[11px] text-slate-400 mt-1">
+                    {sellerSearch ? 'No sellers matching your search query.' : 'There are currently no active registered sellers on the platform.'}
+                  </span>
+                </div>
               ) : (
                 filteredSellersInModal.map((seller) => {
                   const isChosen = selectedSeller?.id === seller.id;
                   return (
                     <div
                       key={seller.id}
-                      onClick={() => setSelectedSeller(seller)}
+                      onClick={() => {
+                        setSelectedSeller(seller);
+                        setDirectMsgError(null);
+                        setDirectMsgSuccess(null);
+                      }}
                       className={`p-3 cursor-pointer transition flex items-center justify-between ${
                         isChosen ? 'bg-blue-50 border-l-4 border-[#0A6CFF]' : 'hover:bg-slate-50'
                       }`}
@@ -666,31 +703,62 @@ function AdminMessagesContent() {
             {/* Message composer for chosen seller */}
             {selectedSeller && (
               <form onSubmit={handleSendDirectToSeller} className="mt-4 space-y-3 pt-3 border-t border-slate-100">
+                {directMsgError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-2.5 text-xs text-red-700 font-bold">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>{directMsgError}</span>
+                  </div>
+                )}
+
+                {directMsgSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-800 font-bold animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{directMsgSuccess}</span>
+                  </div>
+                )}
+
                 <div className="text-xs font-bold text-slate-700">
                   Sending to: <span className="text-blue-600">{selectedSeller.company_name}</span> ({selectedSeller.contact_name})
                 </div>
                 <textarea
                   required
+                  disabled={isSendingDirect || !!directMsgSuccess}
                   rows={3}
                   value={directMsgText}
                   onChange={(e) => setDirectMsgText(e.target.value)}
                   placeholder="Type your private message from the Admin Desk..."
-                  className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 font-medium"
+                  className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 font-medium disabled:opacity-60"
                 />
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setSelectedSeller(null)}
-                    className="w-1/2 py-2 rounded-full border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+                    disabled={isSendingDirect || !!directMsgSuccess}
+                    onClick={() => {
+                      setSelectedSeller(null);
+                      setDirectMsgError(null);
+                    }}
+                    className="w-1/2 py-2 rounded-full border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
                   >
                     Back
                   </button>
                   <button
                     type="submit"
-                    disabled={isSendingDirect || !directMsgText.trim()}
-                    className="w-1/2 py-2 rounded-full bg-[#0B1F3A] hover:bg-[#132A4C] text-white font-black text-xs transition cursor-pointer disabled:opacity-50"
+                    disabled={isSendingDirect || !directMsgText.trim() || !!directMsgSuccess}
+                    className="w-1/2 py-2 rounded-full bg-[#0B1F3A] hover:bg-[#132A4C] text-white font-black text-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {isSendingDirect ? 'Sending...' : 'Send Private Message'}
+                    {isSendingDirect ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : directMsgSuccess ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Message Sent!</span>
+                      </>
+                    ) : (
+                      'Send Private Message'
+                    )}
                   </button>
                 </div>
               </form>

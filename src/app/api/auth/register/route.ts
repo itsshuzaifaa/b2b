@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
+import { saveVerificationCode } from '@/lib/auth/verification-store';
 
 export async function POST(request: NextRequest) {
   try {
@@ -221,6 +222,8 @@ B2B LINK Support Team`;
 
     // 4. Dispatch the ONE official branded B2B LINK verification email via Resend
     if (otpCode) {
+      saveVerificationCode(email, otpCode);
+
       const emailResult = await sendVerificationEmail(email, {
         recipientEmail: email,
         contactName: firstName || contactName || undefined,

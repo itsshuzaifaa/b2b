@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CsvImportModal } from '@/components/dashboard/CsvImportModal';
+import { useAuth } from '@/lib/auth/auth-context';
+import { RequestBulkCsvModal } from '@/components/modals/RequestBulkCsvModal';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
+import { WHOLESALE_CONDITIONS, WholesaleCondition } from '@/lib/constants/conditions';
+import { TRADING_HUB_LOCATIONS } from '@/lib/constants/locations';
 import {
   Search,
   Plus,
@@ -13,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flame,
+  HelpCircle,
 } from 'lucide-react';
 
 export interface ListingItem {
@@ -20,7 +24,7 @@ export interface ListingItem {
   title: string;
   brand?: string;
   itemCode?: string;
-  condition?: 'new' | 'used' | 'refurbished' | 'worn_out';
+  condition?: WholesaleCondition | string;
   description: string;
   ean: string;
   category: string;
@@ -69,14 +73,15 @@ const STORAGE_KEY = 'b2b_seller_listings_v3';
 
 const INITIAL_LISTINGS: ListingItem[] = [];
 
-import { useAuth } from '@/lib/auth/auth-context';
-
-export default function DashboardListingsPage() {
+export default function ListingsPage() {
   const { company } = useAuth();
   const [listings, setListings] = useState<ListingItem[]>([]);
-  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [isRequestBulkCsvOpen, setIsRequestBulkCsvOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'Hot' | 'Drafts'>('All');
+
+  const currentTier = ((company?.tier || (company as any)?.membership_tier || 'bronze') as string).toLowerCase();
+  const isGold = currentTier === 'gold';
 
   // Multi-step modal state (shared for Add and Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -90,7 +95,7 @@ export default function DashboardListingsPage() {
   const [brandSearch, setBrandSearch] = useState('');
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
   const [formItemCode, setFormItemCode] = useState('');
-  const [formCondition, setFormCondition] = useState<'new' | 'used' | 'refurbished' | 'worn_out'>('new');
+  const [formCondition, setFormCondition] = useState<WholesaleCondition | string>('New');
   const [formCategory, setFormCategory] = useState(WHOLESALE_CATEGORIES[0].name);
   const [formCustomCategory, setFormCustomCategory] = useState('');
   const [formEan, setFormEan] = useState('');
@@ -101,6 +106,7 @@ export default function DashboardListingsPage() {
   const [formMoq, setFormMoq] = useState('10');
   const [formIsHot, setFormIsHot] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [showLocationHelp, setShowLocationHelp] = useState(false);
 
   // Load listings from localStorage
   useEffect(() => {
@@ -152,7 +158,7 @@ export default function DashboardListingsPage() {
     setBrandSearch('');
     setIsBrandDropdownOpen(false);
     setFormItemCode('');
-    setFormCondition('new');
+    setFormCondition('New');
     setFormCategory(WHOLESALE_CATEGORIES[0].name);
     setFormCustomCategory('');
     setFormEan('');
@@ -175,7 +181,7 @@ export default function DashboardListingsPage() {
     setBrandSearch('');
     setIsBrandDropdownOpen(false);
     setFormItemCode(item.itemCode || '');
-    setFormCondition(item.condition || 'new');
+    setFormCondition(item.condition || 'New');
     const knownCategory = WHOLESALE_CATEGORIES.some((c) => c.name === item.category);
     if (knownCategory) {
       setFormCategory(item.category);
@@ -232,8 +238,8 @@ export default function DashboardListingsPage() {
       return;
     }
 
-    const finalSku = formEan.trim() || `SKU-${Date.now().toString().slice(-8)}`;
-    const finalItemCode = formItemCode.trim() || `MDL-${Date.now().toString().slice(-5)}`;
+    const finalSku = formEan.trim() || 'n/a';
+    const finalItemCode = formItemCode.trim() || (finalSku !== 'n/a' ? finalSku.slice(0, 8) : `MDL-${Date.now().toString().slice(-5)}`);
     const finalCategory = formCategory === 'Other' && formCustomCategory.trim() ? formCustomCategory.trim() : formCategory;
 
     if (modalMode === 'edit' && editingId) {
@@ -291,7 +297,7 @@ export default function DashboardListingsPage() {
             brand: formBrand,
             condition: formCondition,
             description: formDescription.trim() || formTitle.trim(),
-            barcodeOrSku: finalSku,
+            barcodeOrSku: finalSku !== 'n/a' ? finalSku : undefined,
             categorySlug: finalCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
             unitPrice: priceNum,
             quantityAvailable: availNum,
@@ -339,18 +345,20 @@ export default function DashboardListingsPage() {
             Product listings
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            {listings.length} active wholesale listings on your Gold plan.
+            {listings.length} active wholesale listings on your {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)} plan.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setCsvModalOpen(true)}
-            className="bg-white hover:bg-[#F8FAFC] text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-5 py-2.5 rounded-full transition cursor-pointer shadow-2xs"
-          >
-            Upload CSV
-          </button>
+          {isGold && (
+            <button
+              type="button"
+              onClick={() => setIsRequestBulkCsvOpen(true)}
+              className="bg-white hover:bg-[#F8FAFC] text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-5 py-2.5 rounded-full transition cursor-pointer shadow-2xs"
+            >
+              Request to upload Bulk CSV
+            </button>
+          )}
           <button
             type="button"
             onClick={handleOpenAdd}
@@ -457,17 +465,25 @@ export default function DashboardListingsPage() {
                       )}
                     </td>
                     <td className="py-3.5 px-5 font-mono text-[12px] text-[#5B6B82] whitespace-nowrap">
-                      {item.ean}
+                      {item.ean && item.ean !== '195949048735' && item.ean !== '8806095087286' ? item.ean : 'n/a'}
                     </td>
                     <td className="py-3.5 px-5 whitespace-nowrap">
                       <span
                         className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                          item.condition === 'new' || !item.condition
+                          item.condition === 'New' || item.condition === 'new' || !item.condition
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : item.condition === 'refurbished'
+                            : item.condition === 'CPO' || item.condition === '14 Day'
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : item.condition === 'A Grade' || item.condition === 'refurbished'
                             ? 'bg-purple-50 text-purple-700 border-purple-200'
-                            : item.condition === 'worn_out'
+                            : item.condition === 'B Grade'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                            : item.condition === 'C Grade'
                             ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : item.condition === 'Untested'
+                            ? 'bg-orange-50 text-orange-700 border-orange-200'
+                            : item.condition === 'Ber' || item.condition === 'worn_out'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
                             : 'bg-slate-100 text-slate-700 border-slate-200'
                         }`}
                       >
@@ -476,8 +492,8 @@ export default function DashboardListingsPage() {
                           : item.condition === 'refurbished'
                           ? 'Refurbished'
                           : item.condition === 'worn_out'
-                          ? 'Worn Out'
-                          : 'Used'}
+                          ? 'Ber'
+                          : item.condition}
                       </span>
                     </td>
                     <td className="py-3.5 px-5 font-bold text-[#0B1F3A] whitespace-nowrap">
@@ -685,17 +701,14 @@ export default function DashboardListingsPage() {
                     </label>
                     <select
                       value={formCondition}
-                      onChange={(e) =>
-                        setFormCondition(
-                          e.target.value as 'new' | 'used' | 'refurbished' | 'worn_out'
-                        )
-                      }
+                      onChange={(e) => setFormCondition(e.target.value)}
                       className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white text-[#0B1F3A]"
                     >
-                      <option value="new">Brand New (Factory Sealed)</option>
-                      <option value="refurbished">Refurbished (Grade A/B)</option>
-                      <option value="used">Used (Functional)</option>
-                      <option value="worn_out">Worn Out (For Parts)</option>
+                      {WHOLESALE_CONDITIONS.map((cond) => (
+                        <option key={cond} value={cond}>
+                          {cond}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -720,13 +733,13 @@ export default function DashboardListingsPage() {
                   </div>
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Barcode (EAN / UPC) *
+                      Barcode (EAN / UPC) <span className="font-normal text-[11px]">(Optional)</span>
                     </label>
                     <input
                       type="text"
                       value={formEan}
                       onChange={(e) => setFormEan(e.target.value)}
-                      placeholder="e.g. 195949048735"
+                      placeholder="Optional (e.g. 195949048735)"
                       className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono"
                     />
                   </div>
@@ -826,18 +839,57 @@ export default function DashboardListingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Warehouse Location (Country) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={4}
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <label className="text-[12px] font-bold uppercase text-[#8A9BB0]">
+                        Warehouse Location (Country) *
+                      </label>
+                      <div className="relative inline-flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => setShowLocationHelp((prev) => !prev)}
+                          onMouseEnter={() => setShowLocationHelp(true)}
+                          onMouseLeave={() => setShowLocationHelp(false)}
+                          className="p-0.5 text-slate-400 hover:text-[#0A6CFF] rounded-full focus:outline-none transition cursor-pointer"
+                          aria-label="Location guidance help"
+                          title="Hub Location Guidance: In WTS this is where items are situated; in WTB this is where items are delivered."
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                        </button>
+                        {showLocationHelp && (
+                          <div
+                            role="tooltip"
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 sm:w-80 p-3.5 bg-[#0B1F3A] text-white text-[12px] rounded-2xl shadow-2xl z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150 border border-slate-700 normal-case"
+                          >
+                            <div className="font-bold text-[12.5px] text-[#38BDF8] flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-700/60">
+                              <HelpCircle className="w-3.5 h-3.5 text-[#38BDF8]" />
+                              <span>Hub Location Guide</span>
+                            </div>
+                            <div className="space-y-2 leading-relaxed text-slate-200">
+                              <p>
+                                <span className="inline-block px-1.5 py-0.2 bg-sky-500/20 text-sky-400 rounded font-bold mr-1">WTS</span>
+                                <strong>In WTS:</strong> This is where the items currently are situated.
+                              </p>
+                              <p>
+                                <span className="inline-block px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 rounded font-bold mr-1">WTB</span>
+                                <strong>In WTB:</strong> This is where you want these items delivered.
+                              </p>
+                            </div>
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0B1F3A]" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <select
                       value={formLocation}
-                      onChange={(e) => setFormLocation(e.target.value.toUpperCase())}
-                      placeholder="e.g. DE, NL, UK, PL"
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono font-bold"
-                    />
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium bg-white text-[#0B1F3A]"
+                    >
+                      {TRADING_HUB_LOCATIONS.map((loc) => (
+                        <option key={loc.code} value={loc.code}>
+                          {loc.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -889,10 +941,11 @@ export default function DashboardListingsPage() {
         </div>
       )}
 
-      {/* CSV MODAL */}
-      <CsvImportModal
-        isOpen={csvModalOpen}
-        onClose={() => setCsvModalOpen(false)}
+      {/* REQUEST BULK CSV MODAL (GOLD EXCLUSIVE) */}
+      <RequestBulkCsvModal
+        isOpen={isRequestBulkCsvOpen}
+        onClose={() => setIsRequestBulkCsvOpen(false)}
+        company={company}
       />
     </>
   );

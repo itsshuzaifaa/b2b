@@ -46,6 +46,8 @@ function parseMessagesFromRow(rawMessage: string, row: RawInquiryRow): ChatMessa
         isRead: m.isRead,
         isBroadcast: m.isBroadcast || row.status?.startsWith('broadcast'),
         targetAudience: m.targetAudience,
+        broadcastKind: m.broadcastKind,
+        broadcastDetails: m.broadcastDetails,
       }));
     }
   } catch {
@@ -85,7 +87,9 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
   const isSellerBroadcast = row.status === 'broadcast_seller';
   const isBuyerBroadcast = row.status === 'broadcast_buyer';
   const isGenericBroadcast = row.status === 'broadcast';
-  const isBroadcast = isSellerBroadcast || isBuyerBroadcast || isGenericBroadcast;
+  const isMemberWtbBroadcast = row.status === 'broadcast_wtb';
+  const isMemberWtsBroadcast = row.status === 'broadcast_wts';
+  const isBroadcast = isSellerBroadcast || isBuyerBroadcast || isGenericBroadcast || isMemberWtbBroadcast || isMemberWtsBroadcast || row.status?.startsWith('broadcast');
   const isAdminDesk = row.status === 'admin_desk';
 
   const convType: 'buyer_seller' | 'seller_admin' | 'broadcast' = isBroadcast
@@ -98,8 +102,18 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
   if (isSellerBroadcast) targetAudience = 'seller';
   else if (isBuyerBroadcast) targetAudience = 'buyer';
 
+  const firstBroadcastMsg = messages.find((m) => m.broadcastDetails);
+  const broadcastDetails = firstBroadcastMsg?.broadcastDetails;
+  const broadcastKind = isMemberWtbBroadcast ? 'wtb' : isMemberWtsBroadcast ? 'wts' : (firstBroadcastMsg?.broadcastKind || (isBroadcast ? 'admin' : undefined));
+
   let title = row.products?.title || 'Verified Global Stock Lot';
-  if (isSellerBroadcast || isBuyerBroadcast || isGenericBroadcast || isAdminDesk) {
+  if (broadcastDetails?.title) {
+    title = `[${broadcastDetails.itemType.toUpperCase()} BROADCAST] ${broadcastDetails.title}`;
+  } else if (isMemberWtbBroadcast) {
+    title = row.buyer_company?.startsWith('[WTB') ? row.buyer_company : `[WTB BROADCAST] ${row.buyer_company || 'Wholesale Sourcing Request'}`;
+  } else if (isMemberWtsBroadcast) {
+    title = row.buyer_company?.startsWith('[WTS') ? row.buyer_company : `[WTS BROADCAST] ${row.buyer_company || 'Wholesale Inventory Offer'}`;
+  } else if (isSellerBroadcast || isBuyerBroadcast || isGenericBroadcast || isAdminDesk) {
     title = 'Jeff Vetting Director (B2B LINK Desk)';
   }
 
@@ -117,6 +131,9 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
   } else if (isBuyerBroadcast) {
     unreadByBuyer = !lastMsg?.isRead;
     unreadBySeller = false;
+  } else if (isMemberWtbBroadcast || isMemberWtsBroadcast) {
+    unreadBySeller = true;
+    unreadByBuyer = true;
   } else if (isAdminDesk) {
     unreadBySeller = isAdminLast;
     unreadByBuyer = isAdminLast;
@@ -140,13 +157,21 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
       'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800',
     productPrice: row.products?.unit_price || row.target_price || 0,
     productMoq: row.products?.moq || row.requested_quantity || 1,
-    productCategory: isBroadcast ? 'Platform Broadcast' : isAdminDesk ? 'Compliance Desk' : 'Wholesale Trade',
+    productCategory: isBroadcast ? (broadcastDetails?.category || 'Member Broadcast') : isAdminDesk ? 'Compliance Desk' : 'Wholesale Trade',
     sellerCompanyId: row.seller_company_id,
     sellerCompanyName: row.seller_company?.company_name || 'Verified Supplier',
     sellerContactName: row.seller_company?.contact_name || 'Trade Desk',
     buyerCompanyId: undefined,
-    buyerCompanyName: isBroadcast || isAdminDesk ? 'B2B LINK OÜ (Platform Desk)' : row.buyer_company || `${row.buyer_name} Commercial`,
-    buyerContactName: isBroadcast || isAdminDesk ? 'Jeff Vetting Director' : row.buyer_name,
+    buyerCompanyName: isMemberWtbBroadcast || isMemberWtsBroadcast
+      ? (broadcastDetails?.ownerCompanyName || row.buyer_company || 'Verified Commercial Member')
+      : isBroadcast || isAdminDesk
+      ? 'B2B LINK OÜ (Platform Desk)'
+      : row.buyer_company || `${row.buyer_name} Commercial`,
+    buyerContactName: isMemberWtbBroadcast || isMemberWtsBroadcast
+      ? (broadcastDetails?.ownerContactName || row.buyer_name)
+      : isBroadcast || isAdminDesk
+      ? 'Jeff Vetting Director'
+      : row.buyer_name,
     buyerEmail: row.buyer_email,
     buyerContactEmail: row.buyer_email,
     buyerPhone: row.buyer_phone || undefined,
@@ -157,6 +182,8 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
     unreadByBuyer,
     unreadByAdmin,
     messages,
+    broadcastKind,
+    broadcastDetails,
   };
 }
 
@@ -252,6 +279,47 @@ export async function GET(req: NextRequest) {
   }
 }
 
+async function getSystemProductId(supabase: any): Promise<string> {
+  const SYSTEM_PROD_ID = '00000000-0000-0000-0000-000000000001';
+  try {
+    const { data: sysProd } = await supabase
+      .from('products')
+      .select('id')
+      .eq('id', SYSTEM_PROD_ID)
+      .maybeSingle();
+
+    if (sysProd?.id) return sysProd.id;
+
+    const { data: anyProd } = await supabase
+      .from('products')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (anyProd?.id) return anyProd.id;
+
+    // Create system product for admin desk communications
+    const { data: cat } = await supabase.from('categories').select('id').limit(1).maybeSingle();
+    await supabase.from('products').upsert({
+      id: SYSTEM_PROD_ID,
+      company_id: 'facbb93f-080f-480f-b54b-8ef26664da86',
+      category_id: cat?.id || null,
+      title: 'B2B LINK Admin Desk Communication',
+      barcode_or_sku: 'SYS-ADMIN-DESK',
+      unit_price: 0,
+      quantity_available: 1,
+      moq: 1,
+      status: 'draft',
+      is_hot: false,
+    });
+
+    return SYSTEM_PROD_ID;
+  } catch (err) {
+    console.warn('[getSystemProductId error]', err);
+    return SYSTEM_PROD_ID;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -262,8 +330,10 @@ export async function POST(req: NextRequest) {
     if (action === 'get_sellers') {
       const { data: sellers, error: sErr } = await supabase
         .from('companies')
-        .select('id, company_name, contact_name, contact_email, phone, approval_status')
+        .select('id, company_name, contact_name, contact_email, phone, approval_status, role')
         .eq('role', 'seller')
+        .neq('approval_status', 'suspended')
+        .neq('approval_status', 'rejected')
         .order('company_name');
 
       if (sErr) {
@@ -280,10 +350,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Seller ID and message text required' }, { status: 400 });
       }
 
+      // Verify seller company exists
+      const { data: sellerComp } = await supabase
+        .from('companies')
+        .select('id, company_name, contact_name, contact_email')
+        .eq('id', sellerCompanyId)
+        .maybeSingle();
+
+      if (!sellerComp) {
+        return NextResponse.json({
+          success: false,
+          error: 'This seller account no longer exists in the platform or has been deleted.',
+        }, { status: 404 });
+      }
+
       const newChatMessage: ChatMessage = {
         id: `msg-admin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         senderId: adminId || 'facbb93f-080f-480f-b54b-8ef26664da86',
-        senderName: adminName || 'Jeff Vetting Director (B2B LINK Desk)',
+        senderName: adminName || 'Platform Administrator (Executive Desk)',
         senderRole: 'admin',
         text: text.trim(),
         timestamp: new Date().toISOString(),
@@ -332,16 +416,15 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // If no thread exists, create one
-      const { data: prod } = await supabase.from('products').select('id').limit(1).single();
-      const productId = prod?.id || '72b3f798-e032-4dac-83f7-6b98e2504386';
+      // If no thread exists, use safe system product ID
+      const productId = await getSystemProductId(supabase);
 
       const { data: newRow, error: insertErr } = await supabase
         .from('product_inquiries')
         .insert({
           product_id: productId,
           seller_company_id: sellerCompanyId,
-          buyer_name: 'Jeff Vetting Director',
+          buyer_name: 'Platform Administrator',
           buyer_email: 'admin@b2blink.eu',
           buyer_phone: '+372 612 3456',
           buyer_company: 'B2B LINK OÜ (Admin Desk)',
@@ -521,11 +604,10 @@ export async function POST(req: NextRequest) {
       }
 
       // If not existing, insert fresh
-      const { data: prod } = await supabase.from('products').select('id').limit(1).single();
       const { data: sellerComp } = await supabase.from('companies').select('id').eq('role', 'seller').limit(1).single();
 
-      const productId = prod?.id || '72b3f798-e032-4dac-83f7-6b98e2504386';
-      const sellerCompanyId = sellerComp?.id || '04822686-210f-45c2-bb96-c4bec6be0451';
+      const productId = await getSystemProductId(supabase);
+      const sellerCompanyId = sellerComp?.id || 'facbb93f-080f-480f-b54b-8ef26664da86';
 
       const { data: newRow, error: insertErr } = await supabase
         .from('product_inquiries')
@@ -570,12 +652,152 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // 4.1 Create Member Broadcast (Gold accounts WTB or WTS broadcast to all members)
+    if (action === 'create_member_broadcast') {
+      const {
+        broadcastKind, // 'wtb' | 'wts'
+        itemId,
+        title,
+        category,
+        brand,
+        condition,
+        quantity,
+        price,
+        moq,
+        barcode,
+        notes,
+        senderCompanyId,
+        senderCompanyName,
+        senderContactName,
+        senderEmail,
+        senderPhone,
+        targetAudience,
+      } = body;
+
+      const kind: 'wtb' | 'wts' = broadcastKind === 'wts' ? 'wts' : 'wtb';
+      const statusValue = kind === 'wtb' ? 'broadcast_wtb' : 'broadcast_wts';
+
+      const initialMsgText = kind === 'wtb'
+        ? `📢 INTERNAL WTB BROADCAST\nProduct: ${title}\nTarget Quantity: ${quantity} units\nTarget Price: £${Number(price).toFixed(2)}/unit\nTotal Estimated Value: £${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/SKU: ${barcode || 'N/A'}\nNotes: ${notes || 'None provided'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`
+        : `📢 INTERNAL WTS BROADCAST\nProduct: ${title}\nBrand: ${brand || 'Generic'}\nCondition: ${condition || 'New'}\nAvailable Quantity: ${quantity} pcs\nUnit Price: £${Number(price).toFixed(2)}/pc\nMinimum Order (MOQ): ${moq || 1} pcs\nTotal Lot Value: £${(Number(quantity) * Number(price)).toLocaleString()}\nCategory: ${category || 'General'}\nBarcode/EAN: ${barcode || 'N/A'}\nDescription: ${notes || 'Ready for immediate dispatch'}\n\n🔒 Trader details locked. Counterparty must unlock contact details to connect.`;
+
+      const broadcastDetails = {
+        itemType: kind,
+        itemId: itemId || `item-${Date.now()}`,
+        title,
+        brand,
+        category,
+        condition,
+        quantity: Number(quantity) || 1,
+        price: Number(price) || 0,
+        moq: Number(moq) || 1,
+        barcode,
+        notes,
+        ownerCompanyId: senderCompanyId,
+        ownerCompanyName: senderCompanyName || 'Commercial Member',
+        ownerContactName: senderContactName || 'Trading Representative',
+        ownerEmail: senderEmail,
+        ownerPhone: senderPhone,
+      };
+
+      const broadcastMessage: ChatMessage = {
+        id: `broadcast-msg-${Date.now()}`,
+        senderId: senderCompanyId,
+        senderName: `${kind.toUpperCase()} Broadcast Desk`,
+        senderRole: kind === 'wtb' ? 'buyer' : 'seller',
+        text: initialMsgText,
+        timestamp: new Date().toISOString(),
+        isRead: false,
+        isBroadcast: true,
+        targetAudience: targetAudience || 'all',
+        broadcastKind: kind,
+        broadcastDetails,
+      };
+
+      const productId = await getSystemProductId(supabase);
+
+      const { data: newRow, error: insertErr } = await supabase
+        .from('product_inquiries')
+        .insert({
+          product_id: productId,
+          seller_company_id: senderCompanyId,
+          buyer_name: senderContactName || 'Trading Representative',
+          buyer_email: senderEmail || 'member@b2blink.eu',
+          buyer_phone: senderPhone || null,
+          buyer_company: `[${kind.toUpperCase()} BROADCAST] ${title}`,
+          requested_quantity: Number(quantity) || 1,
+          target_price: Number(price) || 0,
+          message: JSON.stringify([broadcastMessage]),
+          status: statusValue,
+        })
+        .select(`
+          id,
+          product_id,
+          seller_company_id,
+          buyer_name,
+          buyer_email,
+          buyer_phone,
+          buyer_company,
+          requested_quantity,
+          target_price,
+          message,
+          status,
+          created_at,
+          products:products(id, title, unit_price, moq, image_urls),
+          seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+        `)
+        .single();
+
+      if (insertErr || !newRow) {
+        console.warn('[MEMBER BROADCAST DB INSERT NOTICE]', insertErr?.message);
+        return NextResponse.json({
+          success: true,
+          broadcast: broadcastMessage,
+          conversation: {
+            id: `broadcast-${kind}-${Date.now()}`,
+            type: 'broadcast',
+            targetAudience: targetAudience || 'all',
+            status: statusValue,
+            productId: itemId || productId,
+            productTitle: `[${kind.toUpperCase()} BROADCAST] ${title}`,
+            productPrice: Number(price) || 0,
+            productMoq: Number(moq) || 1,
+            productCategory: category,
+            sellerCompanyId: senderCompanyId,
+            sellerCompanyName: senderCompanyName || 'Commercial Member',
+            sellerContactName: senderContactName || 'Trading Representative',
+            buyerCompanyId: senderCompanyId,
+            buyerCompanyName: senderCompanyName,
+            buyerContactName: senderContactName,
+            buyerEmail: senderEmail,
+            buyerPhone: senderPhone,
+            lastMessageText: initialMsgText,
+            lastMessageTime: 'Just now',
+            unreadBySeller: true,
+            unreadByBuyer: true,
+            messages: [broadcastMessage],
+            broadcastKind: kind,
+            broadcastDetails,
+          },
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        broadcast: broadcastMessage,
+        conversation: {
+          ...rowToConversation(newRow as unknown as RawInquiryRow),
+          broadcastKind: kind,
+          broadcastDetails,
+        },
+      });
+    }
+
     // 5. Contact Admin Desk
     if (action === 'contact_admin') {
       const { sellerCompanyId, initialMessage, contactName, contactEmail } = body;
 
-      const { data: prod } = await supabase.from('products').select('id').limit(1).single();
-      const productId = prod?.id || '72b3f798-e032-4dac-83f7-6b98e2504386';
+      const productId = await getSystemProductId(supabase);
 
       const initialChatMessage: ChatMessage = {
         id: `msg-admin-contact-${Date.now()}`,

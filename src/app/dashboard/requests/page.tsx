@@ -134,7 +134,7 @@ export default function BuyerRequestsPage() {
           </div>
           <div className="text-[12px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Broadcasted across EU suppliers</span>
+            <span>Broadcasted across global suppliers</span>
           </div>
         </div>
 

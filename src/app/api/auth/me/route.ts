@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
       companyRow = newComp;
     }
 
-    const effectiveTier = (companyRow?.tier || companyRow?.membership_tier || metadata.membership_tier || 'bronze') as MembershipTier;
+    const rawTiers = [companyRow?.tier, companyRow?.membership_tier, metadata.membership_tier, metadata.tier].filter(Boolean);
+    const effectiveTier = (rawTiers.includes('gold') ? 'gold' : rawTiers.includes('silver') ? 'silver' : 'bronze') as MembershipTier;
     const effectiveApprovalStatus = (companyRow?.approval_status || metadata.approval_status || approvalStatus) as ApprovalStatus;
 
     const normalizedCompany: Company = {

@@ -20,7 +20,7 @@ envContent.split('\n').forEach((line) => {
 const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  const { data: companies } = await supabase.from('companies').select('id, company_name, contact_name, contact_email, role');
+  const { data: companies } = await supabase.from('companies').select('id, company_name, contact_name, contact_email, role, tier');
   const { data: products } = await supabase.from('products').select('id, title, company_id, unit_price, moq');
   const { data: inquiries } = await supabase.from('product_inquiries').select('id, product_id, seller_company_id, buyer_name, buyer_email, buyer_company, status');
 

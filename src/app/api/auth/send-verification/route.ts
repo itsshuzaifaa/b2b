@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
+import { saveVerificationCode } from '@/lib/auth/verification-store';
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,6 +45,11 @@ export async function POST(request: NextRequest) {
       : `${appUrl}/verify-email?email=${encodeURIComponent(rawEmail)}`;
     const otpCode = linkData.properties.email_otp || 'VERIFY';
 
+    // Register active OTP: valid for 15 minutes, immediately invalidating any prior code
+    if (otpCode) {
+      saveVerificationCode(rawEmail, otpCode);
+    }
+
     // 2. Dispatch branded email via Resend
     const emailResult = await sendVerificationEmail(rawEmail, {
       recipientEmail: rawEmail,
@@ -59,6 +65,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `Verification code sent to ${rawEmail}.`,
+      expiresIn: 900, // 15 minutes
+      resendCooldown: 60, // 1 minute
       // For seamless local testing only: return otp in non-production
       ...(process.env.NODE_ENV !== 'production' ? { devOtp: otpCode } : {}),
     });
