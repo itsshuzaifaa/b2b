@@ -84,6 +84,7 @@ function RegisterContent() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Username validation state
   const [usernameStatus, setUsernameStatus] = useState<
@@ -308,6 +309,10 @@ function RegisterContent() {
         setErrorMsg('Passwords do not match. Please retype carefully.');
         return;
       }
+      if (!agreedToTerms) {
+        setErrorMsg('Please read and agree to the Terms & Conditions and Privacy Policy to create your account.');
+        return;
+      }
 
       void handleFinalSubmit();
     }
@@ -334,6 +339,7 @@ function RegisterContent() {
           companyName: companyName.trim(),
           regNumber: regNumber.trim(),
           vatNumber: vatNumber.trim(),
+          agreedToTerms: true,
           role: 'seller', // Unified account for both buying and selling
           membershipTier: selectedTier, // User-selected membership package
           selectedNiches: selectedNiches.map((niche) =>
@@ -1336,6 +1342,51 @@ function RegisterContent() {
                   </div>
                 </div>
               </div>
+
+              {/* Terms and Privacy Policy Agreement Checkbox */}
+              <div className="pt-2 pb-1">
+                <label className="flex items-start gap-3 cursor-pointer select-none group">
+                  <div className="relative flex items-center justify-center mt-0.5">
+                    <input
+                      type="checkbox"
+                      id="terms-checkbox"
+                      required
+                      checked={agreedToTerms}
+                      onChange={(e) => {
+                        setAgreedToTerms(e.target.checked);
+                        if (e.target.checked && errorMsg) setErrorMsg(null);
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-5 h-5 rounded-md border border-[#CBD5E1] bg-white peer-checked:bg-[#0A6CFF] peer-checked:border-[#0A6CFF] peer-focus-visible:ring-2 peer-focus-visible:ring-[#0A6CFF]/30 transition flex items-center justify-center shadow-xs">
+                      {agreedToTerms && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
+                    </div>
+                  </div>
+                  <span className="text-[13px] text-[#5B6B82] leading-snug">
+                    I agree to the{' '}
+                    <Link
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[#0A6CFF] font-semibold hover:underline"
+                    >
+                      Terms and Conditions
+                    </Link>{' '}
+                    and have read the{' '}
+                    <Link
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[#0A6CFF] font-semibold hover:underline"
+                    >
+                      Privacy Policy
+                    </Link>
+                    . <span className="text-red-500 font-bold">*</span>
+                  </span>
+                </label>
+              </div>
             </div>
 
             {/* Step 5 Action Buttons */}
@@ -1351,9 +1402,9 @@ function RegisterContent() {
               </button>
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || !agreedToTerms}
                 onClick={handleNextStep}
-                className="w-2/3 min-h-[50px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center gap-2 transition shadow-xs cursor-pointer disabled:opacity-50"
+                className="w-2/3 min-h-[50px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center gap-2 transition shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>

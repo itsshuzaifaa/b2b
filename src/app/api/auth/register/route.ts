@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
         role: 'seller',
         membership_tier: membershipTier || 'bronze',
         approval_status: 'pending',
+        agreed_to_terms: true,
+        terms_agreed_at: new Date().toISOString(),
       },
     });
 
