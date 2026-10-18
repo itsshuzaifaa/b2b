@@ -26,6 +26,11 @@ export function LiveTradingBoard() {
   // Modals
   const [selectedDetailItem, setSelectedDetailItem] = useState<TradingBoardItem | null>(null);
   const [authGateOpen, setAuthGateOpen] = useState(false);
+  const [authGateConfig, setAuthGateConfig] = useState<{
+    title?: string;
+    subtitle?: string;
+    redirectUrl?: string;
+  }>({});
 
   // Load live user sell listings and buy requests
   const refreshBoard = useCallback(async () => {
@@ -228,10 +233,45 @@ export function LiveTradingBoard() {
   // Handle row click
   const handleRowClick = (item: TradingBoardItem) => {
     if (!isLoggedIn || !company) {
+      setAuthGateConfig({
+        title: item.type === 'BUY' ? 'Sign In to View WTB Request' : 'Sign In to View WTS Deal',
+        subtitle: 'Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries.',
+        redirectUrl: item.type === 'BUY' ? '/requests' : '/marketplace',
+      });
       setAuthGateOpen(true);
       return;
     }
     setSelectedDetailItem(item);
+  };
+
+  // Handle "View all" click for BUY offers (Want to Buy)
+  const handleViewAllBuy = (e: React.MouseEvent) => {
+    if (!isLoggedIn || !company) {
+      e.preventDefault();
+      setAuthGateConfig({
+        title: 'Sign In to View All WTB Deals',
+        subtitle: 'Sign in or create a free commercial account to access all active Want-To-Buy (WTB) sourcing requests from verified buyers.',
+        redirectUrl: '/requests',
+      });
+      setAuthGateOpen(true);
+      return;
+    }
+    router.push('/requests');
+  };
+
+  // Handle "View all" click for SELL offers (Available Inventory)
+  const handleViewAllSell = (e: React.MouseEvent) => {
+    if (!isLoggedIn || !company) {
+      e.preventDefault();
+      setAuthGateConfig({
+        title: 'Sign In to View All WTS Deals',
+        subtitle: 'Sign in or create a free commercial account to browse all live Want-To-Sell (WTS) stock lots, compare wholesale pricing, and submit inquiries.',
+        redirectUrl: '/marketplace?tab=sell',
+      });
+      setAuthGateOpen(true);
+      return;
+    }
+    router.push('/marketplace?tab=sell');
   };
 
   return (
@@ -296,13 +336,14 @@ export function LiveTradingBoard() {
                     Want To Buy
                   </span>
                 </div>
-                <Link
-                  href="/marketplace?tab=buy"
-                  className="text-[#16A34A] hover:underline font-bold text-[12px] sm:text-[13px] flex items-center gap-1 group"
+                <button
+                  type="button"
+                  onClick={handleViewAllBuy}
+                  className="text-[#16A34A] hover:underline font-bold text-[12px] sm:text-[13px] flex items-center gap-1 group cursor-pointer"
                 >
                   <span>View all ({buyItems.length})</span>
                   <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                </Link>
+                </button>
               </div>
 
               {/* Table */}
@@ -376,13 +417,14 @@ export function LiveTradingBoard() {
                     Available Stock
                   </span>
                 </div>
-                <Link
-                  href="/marketplace?tab=sell"
-                  className="text-[#0A6CFF] hover:underline font-bold text-[12px] sm:text-[13px] flex items-center gap-1 group"
+                <button
+                  type="button"
+                  onClick={handleViewAllSell}
+                  className="text-[#0A6CFF] hover:underline font-bold text-[12px] sm:text-[13px] flex items-center gap-1 group cursor-pointer"
                 >
                   <span>View all ({sellItems.length})</span>
                   <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                </Link>
+                </button>
               </div>
 
               {/* Table */}
@@ -459,8 +501,9 @@ export function LiveTradingBoard() {
       <AuthGateModal
         isOpen={authGateOpen}
         onClose={() => setAuthGateOpen(false)}
-        title="Verified Wholesale Access Required"
-        subtitle="Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries."
+        title={authGateConfig.title || 'Verified Wholesale Access Required'}
+        subtitle={authGateConfig.subtitle || 'Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries.'}
+        redirectUrl={authGateConfig.redirectUrl}
       />
     </section>
   );

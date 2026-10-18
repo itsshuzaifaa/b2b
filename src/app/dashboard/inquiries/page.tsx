@@ -37,6 +37,7 @@ import {
   Check,
   ArrowRight,
   Eye,
+  ChevronLeft,
 } from 'lucide-react';
 
 function InquiriesContent() {
@@ -48,6 +49,7 @@ function InquiriesContent() {
 
   const [conversations, setConversations] = useState<InquiryConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(targetId || '');
+  const [mobileActiveView, setMobileActiveView] = useState<'list' | 'chat'>(targetId ? 'chat' : 'list');
   const [filterTab, setFilterTab] = useState<'all' | 'buyers' | 'admin' | 'broadcast'>('all');
   const [searchFilter, setSearchFilter] = useState('');
   const [replyText, setReplyText] = useState('');
@@ -78,8 +80,10 @@ function InquiriesContent() {
         );
         if (found) {
           setActiveConversationId(found.id);
+          setMobileActiveView('chat');
         } else {
           setActiveConversationId(targetId);
+          setMobileActiveView('chat');
         }
       } else if (!hasInitializedRef.current && convs.length > 0) {
         hasInitializedRef.current = true;
@@ -374,9 +378,9 @@ function InquiriesContent() {
       </div>
 
       {/* Main Split Layout Container */}
-      <div className="bg-white border border-[#E2E8F0] rounded-[24px] shadow-[0_2px_14px_rgba(0,0,0,0.03)] overflow-hidden grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-[580px] max-h-[calc(100vh-140px)]">
+      <div className="bg-white border border-[#E2E8F0] rounded-[20px] sm:rounded-[24px] shadow-[0_2px_14px_rgba(0,0,0,0.03)] overflow-hidden flex flex-col lg:grid lg:grid-cols-12 flex-1 min-h-[500px] lg:min-h-[580px] h-[calc(100dvh-13.5rem)] sm:h-[calc(100dvh-11rem)] max-h-[calc(100dvh-7.5rem)]">
         {/* LEFT COLUMN: Conversation Threads List (5 Cols) */}
-        <div className="lg:col-span-5 border-r border-[#E2E8F0] bg-white flex flex-col justify-between overflow-hidden">
+        <div className={`lg:col-span-5 border-r border-[#E2E8F0] bg-white flex flex-col justify-between overflow-hidden h-full ${mobileActiveView === 'chat' ? 'hidden lg:flex' : 'flex'}`}>
           {/* Search Bar Header */}
           <div className="p-3.5 border-b border-[#F1F5F9] shrink-0">
             <div className="relative">
@@ -482,7 +486,10 @@ function InquiriesContent() {
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => setActiveConversationId(conv.id)}
+                    onClick={() => {
+                      setActiveConversationId(conv.id);
+                      setMobileActiveView('chat');
+                    }}
                     className={`relative flex items-start gap-3 p-3.5 transition cursor-pointer select-none ${
                       isSelected
                         ? 'border-l-[3.5px] border-l-[#0A6CFF] bg-[#F8FAFC]/90'
@@ -562,7 +569,7 @@ function InquiriesContent() {
         </div>
 
         {/* RIGHT COLUMN: Active Chat Window (7 Cols) */}
-        <div className="lg:col-span-7 flex flex-col justify-between bg-white overflow-hidden">
+        <div className={`lg:col-span-7 flex flex-col justify-between bg-white overflow-hidden h-full ${mobileActiveView === 'list' ? 'hidden lg:flex' : 'flex'}`}>
           {activeConv ? (
             <>
               {/* Chat Header Bar */}
@@ -594,11 +601,22 @@ function InquiriesContent() {
                   : getMonogram(activeHeaderName);
 
                 return (
-                  <div className="p-4 bg-white border-b border-[#E2E8F0] shrink-0 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-3.5 sm:p-4 bg-white border-b border-[#E2E8F0] shrink-0 flex items-center justify-between gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      {/* Mobile Back Button to Chat List */}
+                      <button
+                        type="button"
+                        onClick={() => setMobileActiveView('list')}
+                        className="lg:hidden p-1.5 -ml-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] transition flex items-center gap-0.5 text-[12px] font-bold shrink-0 cursor-pointer"
+                        title="Back to conversations"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span className="text-[11px] pr-0.5">Chats</span>
+                      </button>
+
                       {/* Square rounded avatar */}
                       <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-[13px] shrink-0 ${
+                        className={`w-9 sm:w-10 h-9 sm:h-10 rounded-xl flex items-center justify-center font-bold text-[12px] sm:text-[13px] shrink-0 ${
                           isAdminDesk
                             ? 'bg-[#0B1528] text-[#00E5FF]'
                             : isMemberBroadcast
@@ -626,7 +644,7 @@ function InquiriesContent() {
                     </div>
 
                     {/* Right Badges & Action */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                       {isMemberBroadcast ? (
                         isBroadcastOwner ? (
                           <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold px-2.5 py-1 rounded-full">
@@ -999,13 +1017,22 @@ function InquiriesContent() {
               <p className="text-[13px] text-[#5B6B82] max-w-md mt-1.5 leading-relaxed">
                 When you initiate a direct product inquiry with a supplier on Marketplace, or when you receive a broadcast response, your real-time messages appear here.
               </p>
-              <Link
-                href="/marketplace"
-                className="mt-6 px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition shadow-xs inline-flex items-center gap-2"
-              >
-                <span>Browse Marketplace Products</span>
-                <ExternalLink className="w-4 h-4" />
-              </Link>
+              <div className="flex items-center gap-3 mt-6 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveView('list')}
+                  className="lg:hidden px-5 py-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] transition cursor-pointer"
+                >
+                  &larr; View All Conversations
+                </button>
+                <Link
+                  href="/marketplace"
+                  className="px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition shadow-xs inline-flex items-center gap-2"
+                >
+                  <span>Browse Marketplace Products</span>
+                  <ExternalLink className="w-4 h-4" />
+                </Link>
+              </div>
             </div>
           )}
         </div>

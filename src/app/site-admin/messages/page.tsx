@@ -36,6 +36,7 @@ import {
   UserCheck,
   Store,
   Layers,
+  ChevronLeft,
 } from 'lucide-react';
 
 function SiteAdminMessagesContent() {
@@ -45,6 +46,7 @@ function SiteAdminMessagesContent() {
 
   const [conversations, setConversations] = useState<InquiryConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(targetId || '');
+  const [mobileActiveView, setMobileActiveView] = useState<'list' | 'chat'>(targetId ? 'chat' : 'list');
   // Requirement 05: Primary tab on top separating Admin Desk from Buyer & Seller trade chats
   const [mainTab, setMainTab] = useState<'admin_desk' | 'buyer_seller_chats'>('admin_desk');
   const [subFilter, setSubFilter] = useState<'all' | 'direct' | 'broadcast'>('all');
@@ -304,11 +306,11 @@ function SiteAdminMessagesContent() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 w-full sm:w-auto">
           <button
             type="button"
             onClick={handleOpenDirectSellerModal}
-            className="bg-[#0B1F3A] hover:bg-[#132A4C] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
+            className="w-full sm:w-auto justify-center bg-[#0B1F3A] hover:bg-[#132A4C] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
           >
             <PlusCircle className="w-4 h-4 text-[#00E5FF]" />
             <span>+ Message Seller Privately</span>
@@ -317,7 +319,7 @@ function SiteAdminMessagesContent() {
           <button
             type="button"
             onClick={() => setShowBroadcastModal(true)}
-            className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
+            className="w-full sm:w-auto justify-center bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
           >
             <Radio className="w-4 h-4" />
             <span>+ Platform Broadcast</span>
@@ -338,11 +340,11 @@ function SiteAdminMessagesContent() {
       {/* ========================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 pb-2 border-b border-slate-200">
         {/* Main Tabs on Top */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full [scrollbar-width:none]">
           <button
             type="button"
             onClick={() => handleTabSwitch('admin_desk')}
-            className={`flex items-center gap-2 text-[13px] font-bold px-4 py-2 rounded-full transition cursor-pointer ${
+            className={`flex items-center gap-2 text-[13px] font-bold px-4 py-2 rounded-full transition cursor-pointer whitespace-nowrap ${
               mainTab === 'admin_desk'
                 ? 'bg-[#0B1F3A] text-white shadow-xs'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -358,7 +360,7 @@ function SiteAdminMessagesContent() {
           <button
             type="button"
             onClick={() => handleTabSwitch('buyer_seller_chats')}
-            className={`flex items-center gap-2 text-[13px] font-bold px-4 py-2 rounded-full transition cursor-pointer ${
+            className={`flex items-center gap-2 text-[13px] font-bold px-4 py-2 rounded-full transition cursor-pointer whitespace-nowrap ${
               mainTab === 'buyer_seller_chats'
                 ? 'bg-[#0B1F3A] text-white shadow-xs'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -374,13 +376,13 @@ function SiteAdminMessagesContent() {
 
         {/* Subfilter for Admin Desk */}
         {mainTab === 'admin_desk' && (
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-xs overflow-x-auto pb-1 max-w-full [scrollbar-width:none]">
             {(['all', 'direct', 'broadcast'] as const).map((filterKey) => (
               <button
                 key={filterKey}
                 type="button"
                 onClick={() => setSubFilter(filterKey)}
-                className={`px-3 py-1.5 rounded-full font-bold transition cursor-pointer capitalize ${
+                className={`px-3 py-1.5 rounded-full font-bold transition cursor-pointer capitalize whitespace-nowrap ${
                   subFilter === filterKey
                     ? 'bg-blue-100 text-[#0A6CFF]'
                     : 'text-slate-500 hover:text-slate-900'
@@ -394,9 +396,9 @@ function SiteAdminMessagesContent() {
       </div>
 
       {/* Main Split Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 rounded-2xl border border-slate-200 overflow-hidden flex-1 mt-4 shadow-sm bg-white min-h-[560px]">
+      <div className="flex flex-col lg:grid lg:grid-cols-12 rounded-2xl border border-slate-200 overflow-hidden flex-1 mt-4 shadow-sm bg-white min-h-[500px] lg:min-h-[560px] h-[calc(100dvh-15.5rem)] sm:h-[calc(100dvh-13rem)] max-h-[calc(100dvh-8rem)]">
         {/* Left Column: Conversation Threads (5 Cols) */}
-        <div className="lg:col-span-5 border-r border-slate-200 flex flex-col justify-between overflow-hidden bg-white">
+        <div className={`lg:col-span-5 border-r border-slate-200 flex flex-col justify-between overflow-hidden bg-white h-full ${mobileActiveView === 'chat' ? 'hidden lg:flex' : 'flex'}`}>
           {/* Search bar */}
           <div className="p-3 border-b border-slate-100 shrink-0">
             <div className="relative">
@@ -437,7 +439,10 @@ function SiteAdminMessagesContent() {
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => setActiveConversationId(conv.id)}
+                    onClick={() => {
+                      setActiveConversationId(conv.id);
+                      setMobileActiveView('chat');
+                    }}
                     className={`p-3.5 cursor-pointer transition flex items-start gap-3 select-none ${
                       isSelected
                         ? 'bg-blue-50/70 border-l-4 border-[#0A6CFF]'
@@ -507,28 +512,39 @@ function SiteAdminMessagesContent() {
         </div>
 
         {/* Right Column: Chat View (7 Cols) */}
-        <div className="lg:col-span-7 flex flex-col justify-between overflow-hidden bg-slate-50/50">
+        <div className={`lg:col-span-7 flex flex-col justify-between overflow-hidden bg-slate-50/50 h-full ${mobileActiveView === 'list' ? 'hidden lg:flex' : 'flex'}`}>
           {activeConv ? (
             <>
               {/* Active Conversation Top Bar */}
-              <div className="p-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-sm text-slate-900 truncate">
-                      {activeConv.productTitle}
-                    </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 shrink-0">
-                      {isTradeChat(activeConv) ? 'Marketplace Inquiry' : 'Admin Channel'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-                    <span>
-                      Seller: <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
-                    </span>
-                    <span>•</span>
-                    <span>
-                      Buyer: <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
-                    </span>
+              <div className="p-3.5 sm:p-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileActiveView('list')}
+                    className="lg:hidden p-1.5 -ml-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition flex items-center gap-0.5 text-[12px] font-bold shrink-0 cursor-pointer"
+                    title="Back to conversation list"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span className="text-[11px] pr-0.5">Threads</span>
+                  </button>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-sm text-slate-900 truncate">
+                        {activeConv.productTitle}
+                      </h3>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 shrink-0">
+                        {isTradeChat(activeConv) ? 'Marketplace' : 'Admin Desk'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 mt-1 truncate">
+                      <span>
+                        Seller: <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Buyer: <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -608,10 +624,17 @@ function SiteAdminMessagesContent() {
               </form>
             </>
           ) : (
-            <div className="p-12 text-center text-slate-400 my-auto">
+            <div className="p-12 text-center text-slate-400 my-auto flex flex-col items-center justify-center">
               <MessageSquare className="w-12 h-12 text-slate-300 mx-auto mb-3" />
               <h3 className="font-bold text-slate-700 text-sm">Select a Conversation</h3>
               <p className="text-xs mt-1">Select any conversation thread from the left to view details.</p>
+              <button
+                type="button"
+                onClick={() => setMobileActiveView('list')}
+                className="mt-4 lg:hidden px-4 py-2 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition cursor-pointer"
+              >
+                &larr; Back to Threads List
+              </button>
             </div>
           )}
         </div>

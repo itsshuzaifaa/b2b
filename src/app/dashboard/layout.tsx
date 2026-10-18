@@ -21,6 +21,8 @@ import {
   Mail,
   Lock,
   RefreshCw,
+  Menu,
+  X,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -32,8 +34,14 @@ export default function DashboardLayout({
   const { company, signOut, role, isLoading } = useAuth();
   const isBuyer = role === 'buyer' || company?.role === 'buyer';
 
-  // Sidebar collapse state
+  // Sidebar collapse state (desktop) & Mobile drawer state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+
+  // Close mobile drawer whenever route changes
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [pathname]);
 
   // Restore collapse preference from localStorage
   useEffect(() => {
@@ -209,13 +217,154 @@ export default function DashboardLayout({
   const verificationMailto = 'mailto:newcustomers@b2blink.eu';
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-3 sm:p-4 lg:p-5 gap-4 sm:gap-6 font-sans">
+    <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
       {/* ========================================================= */}
-      {/* SIDEBAR                                                  */}
+      {/* MOBILE TOP BAR (< md)                                     */}
+      {/* ========================================================= */}
+      <div className="md:hidden flex items-center justify-between bg-white rounded-2xl py-2 px-3.5 shadow-sm shrink-0">
+        <Link href="/dashboard" className="flex items-center">
+          <Image
+            src="/b2b-link-logo-tight.png"
+            alt="B2B LINK"
+            width={110}
+            height={32}
+            priority
+            className="h-6 w-auto object-contain"
+          />
+        </Link>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#0A6CFF]/10 text-[#0A6CFF] border border-[#0A6CFF]/20">
+            {membershipTier}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen(true)}
+            aria-label="Open navigation menu"
+            className="p-1.5 rounded-xl bg-slate-100 text-[#0B1F3A] hover:bg-slate-200 transition cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* MOBILE SLIDE-OUT DRAWER                                   */}
+      {/* ========================================================= */}
+      {mobileDrawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setMobileDrawerOpen(false)}
+          />
+
+          {/* Drawer Panel */}
+          <div className="relative w-[280px] max-w-[85vw] h-full bg-[#050E1D] text-white p-4 flex flex-col justify-between overflow-y-auto z-10 shadow-2xl animate-in slide-in-from-left duration-250">
+            <div>
+              {/* Header with Logo and Close Button */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+                <div className="bg-white rounded-xl py-1.5 px-3">
+                  <Image
+                    src="/b2b-link-logo-tight.png"
+                    alt="B2B LINK"
+                    width={100}
+                    height={28}
+                    className="h-5 w-auto object-contain"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileDrawerOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase px-2 mb-2 select-none flex items-center justify-between">
+                <span>TRADING PLATFORM</span>
+                {isPendingVerification && (
+                  <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
+                    LOCKED
+                  </span>
+                )}
+              </div>
+
+              {/* Navigation links */}
+              <nav className="space-y-1">
+                {navItems.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
+                  const isLockedItem = isPendingVerification && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={isLockedItem ? '/dashboard' : item.href}
+                      onClick={() => setMobileDrawerOpen(false)}
+                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-[13.5px] transition ${
+                        active
+                          ? 'bg-[#0A6CFF] text-white shadow-sm'
+                          : isLockedItem
+                          ? 'text-slate-500 hover:text-slate-400'
+                          : 'text-slate-300 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {isLockedItem && (
+                        <span className="text-[9px] text-amber-400/80 font-normal">KYC</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Bottom info & Logout */}
+            <div className="pt-4 border-t border-slate-800 mt-4 space-y-3">
+              <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-3">
+                <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                  <span>Contact unlocks</span>
+                  <span className="bg-[#0A6CFF] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                    {membershipTier}
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-slate-400">
+                  {maxUnlocks === Infinity ? 'Unlimited unlocks' : `${unlockedCount} of ${maxUnlocks} used`}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 px-1">
+                <div className="w-8 h-8 rounded-full bg-[#0A6CFF] text-white font-extrabold text-[12px] flex items-center justify-center shrink-0">
+                  {initials}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-bold text-white truncate">{sellerFullName}</div>
+                  <div className="text-[10.5px] text-slate-400 truncate">{companyName}</div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full py-2 px-3 rounded-xl bg-red-600/15 hover:bg-red-600 border border-red-500/25 text-red-400 hover:text-white font-bold text-[12px] flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Log out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* DESKTOP SIDEBAR                                           */}
       {/* ========================================================= */}
       <aside
-        className={`shrink-0 h-full flex flex-col justify-between overflow-hidden transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-full md:w-[76px]' : 'w-full md:w-[250px] lg:w-[270px]'
+        className={`hidden md:flex shrink-0 h-full flex-col justify-between overflow-hidden transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'md:w-[76px]' : 'md:w-[250px] lg:w-[270px]'
         }`}
       >
         {/* Top of Sidebar */}
@@ -443,7 +592,7 @@ export default function DashboardLayout({
       {/* ========================================================= */}
       {/* MAIN WHITE CANVAS CONTENT                                */}
       {/* ========================================================= */}
-      <main className="flex-1 h-full max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[32px] sm:rounded-[36px] p-6 sm:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 w-full min-h-0 h-full max-h-[calc(100dvh-4.5rem)] md:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[22px] sm:rounded-[32px] md:rounded-[36px] p-4 sm:p-6 md:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         {/* If account is suspended, show suspension banner */}
         {isSuspended ? (
           <div className="py-12 max-w-2xl mx-auto text-center space-y-6">

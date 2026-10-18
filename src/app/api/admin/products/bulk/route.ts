@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
       const { data: inserted, error: insertError } = await admin
         .from('products')
-        .insert(preparedRows as any)
+        .upsert(preparedRows as any, { onConflict: 'company_id,barcode_or_sku' })
         .select('id');
 
       if (insertError) {
@@ -164,7 +164,6 @@ export async function POST(req: NextRequest) {
     if (buyProducts.length > 0) {
       const preparedWtbRows = buyProducts.map((item: any, idx: number) => {
         let catId = item.categoryId;
-        let catSlug = 'general';
         if (!catId && item.category) {
           const itemCatLower = String(item.category).toLowerCase();
           const match = dbCategories?.find(
@@ -175,50 +174,54 @@ export async function POST(req: NextRequest) {
           );
           if (match) {
             catId = match.id;
-            catSlug = match.slug;
           }
         }
         if (!catId) {
           catId = defaultCategoryId;
-          catSlug = dbCategories?.[0]?.slug || 'general';
         }
 
         const rawBarcode = item.barcodeOrSku?.trim() || item.ean?.trim() || item.itemCode?.trim();
         const safeBarcode = rawBarcode && rawBarcode !== 'n/a' ? rawBarcode : null;
-        const buyerCompanyId = isUuid(effectiveCompanyId) ? effectiveCompanyId : null;
-        const buyerUserId = comp.user_id && isUuid(comp.user_id) ? comp.user_id : buyerCompanyId;
+        const buyerUserId = comp.user_id && isUuid(comp.user_id) ? comp.user_id : null;
 
         return {
-          buyer_company_id: buyerCompanyId,
           buyer_user_id: buyerUserId,
           buyer_company: comp.company_name || companyName || 'Verified Procurement Partner',
           buyer_name: comp.contact_name || comp.company_name || 'Procurement Desk',
           buyer_email: comp.contact_email || email || 'procurement@b2blink.eu',
           buyer_phone: comp.phone || null,
           category_id: catId,
-          category_slug: catSlug,
           product_name: item.title?.trim() || `Procurement Request ${idx + 1}`,
           barcode_or_sku: safeBarcode,
           target_quantity: Number(item.quantityAvailable ?? item.available ?? item.targetQuantity) || 1,
           target_price: Number(item.unitPrice ?? item.targetPrice) || 0,
+          delivery_deadline: null,
           notes: item.description?.trim() || `${item.brand || ''} ${item.title || ''} | Condition: ${item.condition || 'New'} | Delivery: ${item.location || 'EU'}`.trim(),
           status: 'open',
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         };
       });
 
-      const { data: insertedWtb, error: insertWtbError } = await admin
+      let insertResult = await admin
         .from('wtb_requests')
         .insert(preparedWtbRows as any)
         .select('id');
 
-      if (insertWtbError) {
-        console.error('[ADMIN BULK CSV BUY INSERT ERROR]', insertWtbError.message);
-        return NextResponse.json({ success: false, error: insertWtbError.message }, { status: 500 });
+      if (insertResult.error && (insertResult.error.message?.includes('buyer_user_id') || (insertResult.error as any).code === '23503')) {
+        // Fallback without buyer_user_id in case user_id is not present in auth.users
+        const sanitizedRows = preparedWtbRows.map((r: any) => ({ ...r, buyer_user_id: null }));
+        insertResult = await admin
+          .from('wtb_requests')
+          .insert(sanitizedRows as any)
+          .select('id');
       }
 
-      insertedBuyCount = insertedWtb ? insertedWtb.length : preparedWtbRows.length;
+      if (insertResult.error) {
+        console.error('[ADMIN BULK CSV BUY INSERT ERROR]', insertResult.error.message);
+        return NextResponse.json({ success: false, error: insertResult.error.message }, { status: 500 });
+      }
+
+      insertedBuyCount = insertResult.data ? insertResult.data.length : preparedWtbRows.length;
     }
 
     return NextResponse.json({

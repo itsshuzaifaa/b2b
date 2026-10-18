@@ -8,6 +8,7 @@ interface AuthGateModalProps {
   onClose: () => void;
   title?: string;
   subtitle?: string;
+  redirectUrl?: string;
 }
 
 export function AuthGateModal({
@@ -15,6 +16,7 @@ export function AuthGateModal({
   onClose,
   title = 'Verified Wholesale Access Required',
   subtitle = 'Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries.',
+  redirectUrl,
 }: AuthGateModalProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -87,7 +89,7 @@ export function AuthGateModal({
 
         {/* Full-Width Action Button */}
         <a
-          href="/register"
+          href={redirectUrl ? `/register?redirect=${encodeURIComponent(redirectUrl)}` : '/register'}
           className="w-full flex items-center justify-center gap-2 bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] py-3.5 px-6 rounded-full shadow-lg shadow-blue-500/20 transition-colors"
         >
           <span>Create Free Account</span>
@@ -96,7 +98,7 @@ export function AuthGateModal({
         {/* Small Underlined Sign In Link */}
         <div className="mt-4 text-center">
           <a
-            href="/login"
+            href={redirectUrl ? `/login?redirect=${encodeURIComponent(redirectUrl)}` : '/login'}
             className="text-[13px] text-[#5B6B82] hover:text-[#0B1F3A] transition-colors"
           >
             Already have an account?{' '}

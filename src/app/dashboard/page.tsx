@@ -216,14 +216,14 @@ export default function OverviewPage() {
         </div>
 
         {/* Dual Buy & Sell Action Buttons */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
           <button
             type="button"
             onClick={() => {
               setTradeModalMode('WTB');
               setCreateWtbOpen(true);
             }}
-            className="bg-[#10B981] hover:bg-[#059669] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
+            className="w-full sm:w-auto justify-center bg-[#10B981] hover:bg-[#059669] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4 text-white" />
             <span>Post Buy (WTB) Request</span>
@@ -235,7 +235,7 @@ export default function OverviewPage() {
               setTradeModalMode('WTS');
               setCreateWtbOpen(true);
             }}
-            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
+            className="w-full sm:w-auto justify-center bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-4 py-2.5 rounded-full transition flex items-center gap-2 shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4 text-white" />
             <span>Post Sell (WTS) Request</span>

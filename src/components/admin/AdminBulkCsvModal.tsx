@@ -429,25 +429,35 @@ export function AdminBulkCsvModal({
           const existingWtbs = rawWtb ? JSON.parse(rawWtb) : [];
           const newLocalWtbs = buyRows.map((item, idx) => ({
             id: `admin_wtb_imported_${Date.now()}_${idx}`,
-            type: 'BUY',
-            category: item.category,
-            brand: item.brand,
-            itemCode: item.itemCode || (item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : `WTB-${Date.now()}-${idx}`),
-            description: item.title || item.description,
-            ean: item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : 'n/a',
-            qty: item.quantityAvailable,
-            condition: item.condition,
-            price: item.unitPrice,
-            currency: '€',
-            location: item.location,
-            match: '98%',
+            type: 'BUY' as const,
+            company_id: account.id,
             companyName: account.name,
             contactEmail: account.email,
             contactName: account.contact_name,
             contactPhone: account.phone || '',
+            category: item.category,
+            brand: item.brand,
+            itemCode: item.itemCode || (item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : `WTB-${Date.now()}-${idx}`),
+            description: item.title || item.description,
+            title: item.title,
+            ean: item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : 'n/a',
+            qty: item.quantityAvailable,
+            available: item.quantityAvailable,
+            condition: item.condition,
+            price: item.unitPrice,
+            unitPrice: item.unitPrice,
+            currency: '€',
+            location: item.location,
+            match: '98%',
             moq: item.moq,
+            status: 'Active',
+            moderation_status: 'active',
           }));
           localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify([...existingWtbs, ...newLocalWtbs]));
+
+          const rawAdmin = localStorage.getItem('b2b_admin_listings_v5');
+          const existingAdmin = rawAdmin ? JSON.parse(rawAdmin) : [];
+          localStorage.setItem('b2b_admin_listings_v5', JSON.stringify([...existingAdmin, ...newLocalWtbs]));
         }
       } catch (err) {
         console.warn('Local storage listing sync warning:', err);
@@ -480,10 +490,10 @@ export function AdminBulkCsvModal({
   if (!isOpen || !account) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B1F3A]/60">
-      <div className="relative w-full max-w-6xl bg-white rounded-[24px] shadow-xl border border-[#D5DFEC] overflow-hidden flex flex-col h-[90vh] max-h-[920px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#0B1F3A]/60">
+      <div className="relative w-full max-w-6xl bg-white rounded-[18px] sm:rounded-[24px] shadow-xl border border-[#D5DFEC] overflow-hidden flex flex-col h-[92dvh] max-h-[920px]">
         {/* Main Modal Header */}
-        <div className="bg-[#0B1F3A] px-6 py-3.5 text-white flex items-center justify-between border-b border-[#1E3A66] shrink-0">
+        <div className="bg-[#0B1F3A] px-4 sm:px-6 py-3.5 text-white flex items-center justify-between border-b border-[#1E3A66] shrink-0">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#0A6CFF]/20 border border-[#0A6CFF]/40 text-[#60A5FA] text-[10.5px] font-extrabold uppercase tracking-wider mb-0.5">
               <Package className="w-3.5 h-3.5 text-[#0A6CFF]" />

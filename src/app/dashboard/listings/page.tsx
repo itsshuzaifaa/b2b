@@ -349,12 +349,12 @@ export default function ListingsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
           {isGold && (
             <button
               type="button"
               onClick={() => setIsRequestBulkCsvOpen(true)}
-              className="bg-white hover:bg-[#F8FAFC] text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-5 py-2.5 rounded-full transition cursor-pointer shadow-2xs"
+              className="w-full sm:w-auto justify-center bg-white hover:bg-[#F8FAFC] text-[#0B1F3A] border border-[#EAEFF6] font-bold text-[13px] px-5 py-2.5 rounded-full transition cursor-pointer shadow-2xs text-center"
             >
               Request to upload Bulk CSV
             </button>
@@ -362,7 +362,7 @@ export default function ListingsPage() {
           <button
             type="button"
             onClick={handleOpenAdd}
-            className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] px-6 py-2.5 rounded-full flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            className="w-full sm:w-auto justify-center bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] px-6 py-2.5 rounded-full flex items-center gap-1.5 transition cursor-pointer shadow-xs text-center"
           >
             <Plus className="w-4 h-4" />
             <span>+ Add product</span>
@@ -373,7 +373,7 @@ export default function ListingsPage() {
       {/* Tabs & Search Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-7 mb-6">
         {/* Tabs */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full [scrollbar-width:none]">
           {(['All', 'Active', 'Hot', 'Drafts'] as const).map((tab) => {
             const count =
               tab === 'All'
@@ -390,7 +390,7 @@ export default function ListingsPage() {
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`text-[13px] font-bold px-4 py-1.5 rounded-full transition cursor-pointer ${
+                className={`text-[13px] font-bold px-4 py-1.5 rounded-full transition cursor-pointer whitespace-nowrap ${
                   isSelected
                     ? 'bg-[#0B1F3A] text-white shadow-xs'
                     : 'text-[#5B6B82] hover:text-[#0B1F3A] bg-transparent'
@@ -553,8 +553,8 @@ export default function ListingsPage() {
 
       {/* 2-STEP POPUP MODAL (CLEAN WHOLESALE SPECIFICATIONS, NO IMAGES) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 max-h-[90dvh] overflow-y-auto">
             {/* Modal Header & Step Indicator */}
             <div className="pb-4 border-b border-[#F1F5F9]">
               <div className="flex items-center justify-between mb-3">

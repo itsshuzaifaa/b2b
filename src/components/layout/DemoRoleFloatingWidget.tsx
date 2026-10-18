@@ -66,10 +66,10 @@ export function DemoRoleFloatingWidget() {
   const currentRoleObj = roles.find((r) => r.id === demoRole) || roles[0];
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end">
+    <div className="fixed bottom-3 right-3 sm:bottom-5 sm:right-5 z-50 flex flex-col items-end">
       {/* Expanded Popover Modal */}
       {isOpen && (
-        <div className="w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-4 mb-3 text-slate-900 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div className="w-[calc(100vw-1.5rem)] max-w-sm sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-4 mb-2 sm:mb-3 text-slate-900 animate-in fade-in slide-in-from-bottom-3 duration-200 max-h-[80dvh] overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
             <div className="flex items-center gap-2">

@@ -18,6 +18,8 @@ import {
   Shield,
   ExternalLink,
   Share2,
+  Menu,
+  X,
 } from 'lucide-react';
 
 export default function AdminLayout({
@@ -31,6 +33,12 @@ export default function AdminLayout({
 
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+
+  // Close mobile drawer on route change
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [pathname]);
 
   // Restore collapse preference from localStorage
   useEffect(() => {
@@ -80,13 +88,148 @@ export default function AdminLayout({
   };
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-3 sm:p-4 lg:p-5 gap-4 sm:gap-6 font-sans">
+    <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
       {/* ========================================================= */}
-      {/* SIDEBAR                                                  */}
+      {/* MOBILE TOP BAR (Visible only on < md screens)            */}
+      {/* ========================================================= */}
+      <div className="md:hidden flex items-center justify-between bg-[#0B1528] border border-white/10 rounded-2xl px-3.5 py-2.5 shrink-0 z-20 shadow-md">
+        <Link href="/admin" className="flex items-center gap-2">
+          <div className="bg-white rounded-xl py-1 px-2.5 flex items-center">
+            <Image
+              src="/b2b-link-logo-tight.png"
+              alt="B2B LINK"
+              width={86}
+              height={24}
+              priority
+              className="h-5 w-auto object-contain"
+            />
+          </div>
+          <span className="bg-[#0A6CFF]/20 text-[#00E5FF] text-[9.5px] font-extrabold px-2 py-0.5 rounded-md border border-[#0A6CFF]/30 tracking-wider">
+            ADMIN DESK
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setMobileDrawerOpen(true)}
+          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 transition cursor-pointer"
+          aria-label="Open Admin Menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* ========================================================= */}
+      {/* MOBILE SLIDE-OUT DRAWER                                   */}
+      {/* ========================================================= */}
+      {mobileDrawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setMobileDrawerOpen(false)}
+          />
+
+          {/* Drawer Panel */}
+          <div className="relative w-[280px] max-w-[85vw] h-full bg-[#050E1D] text-white p-4 flex flex-col justify-between overflow-y-auto z-10 shadow-2xl animate-in slide-in-from-left duration-250">
+            <div>
+              {/* Header with Logo and Close Button */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+                <div className="bg-white rounded-xl py-1.5 px-3">
+                  <Image
+                    src="/b2b-link-logo-tight.png"
+                    alt="B2B LINK"
+                    width={100}
+                    height={28}
+                    className="h-5 w-auto object-contain"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileDrawerOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between px-2 mb-2 select-none">
+                <span className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase">
+                  ADMIN CONTROL
+                </span>
+                <span className="bg-[#0A6CFF]/20 text-[#00E5FF] text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-[#0A6CFF]/30">
+                  ROOT
+                </span>
+              </div>
+
+              {/* Navigation links */}
+              <nav className="space-y-1">
+                {navItems.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileDrawerOpen(false)}
+                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-[13.5px] transition ${
+                        active
+                          ? 'bg-[#0A6CFF] text-white shadow-sm'
+                          : 'text-slate-300 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                      {item.badge && (
+                        <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Bottom info & Actions */}
+            <div className="pt-4 border-t border-slate-800 mt-4 space-y-3">
+              <div className="flex items-center gap-2.5 px-1">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[12px] flex items-center justify-center shrink-0">
+                  JV
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-bold text-white truncate">Jeff Vetting Director</div>
+                  <div className="text-[10.5px] text-slate-400 truncate">Platform Administrator</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/"
+                  target="_blank"
+                  className="flex-1 py-2 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-200 text-center font-bold text-[11px] transition"
+                >
+                  Public Site
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleExitAdmin}
+                  className="flex-1 py-2 px-3 rounded-xl bg-red-600/15 hover:bg-red-600 border border-red-500/25 text-red-400 hover:text-white font-bold text-[11px] transition cursor-pointer"
+                >
+                  Exit Admin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* DESKTOP SIDEBAR                                           */}
       {/* ========================================================= */}
       <aside
-        className={`shrink-0 h-full flex flex-col justify-between overflow-hidden transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-full md:w-[76px]' : 'w-full md:w-[250px] lg:w-[270px]'
+        className={`hidden md:flex shrink-0 h-full flex-col justify-between overflow-hidden transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'md:w-[76px]' : 'md:w-[250px] lg:w-[270px]'
         }`}
       >
         {/* Top of Sidebar */}
@@ -291,7 +434,7 @@ export default function AdminLayout({
       {/* ========================================================= */}
       {/* MAIN WHITE CANVAS CONTENT                                */}
       {/* ========================================================= */}
-      <main className="flex-1 h-full max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[32px] sm:rounded-[36px] p-6 sm:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 h-full max-h-[calc(100dvh-4.5rem)] md:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] lg:max-h-[calc(100dvh-2.5rem)] bg-white rounded-[22px] sm:rounded-[32px] md:rounded-[36px] p-4 sm:p-6 md:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden min-w-0">
         {children}
       </main>
     </div>

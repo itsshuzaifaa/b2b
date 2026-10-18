@@ -689,8 +689,8 @@ export default function SiteAdminUsersPage() {
 
       {/* DOSSIER MODAL */}
       {selectedDossier && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-[#EBF3FF] text-[#0A6CFF] font-black text-[16px] flex items-center justify-center">
@@ -763,7 +763,7 @@ export default function SiteAdminUsersPage() {
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between border-t border-[#F1F5F9]">
+            <div className="pt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-[#F1F5F9]">
               <button
                 type="button"
                 onClick={() => {
@@ -771,7 +771,7 @@ export default function SiteAdminUsersPage() {
                   setSelectedDossier(null);
                   handleToggleSuspend(target);
                 }}
-                className={`text-[13px] font-bold transition ${
+                className={`text-[13px] font-bold transition text-center sm:text-left ${
                   selectedDossier.account_status === 'suspended'
                     ? 'text-emerald-600 hover:underline'
                     : 'text-amber-600 hover:underline'
@@ -780,7 +780,7 @@ export default function SiteAdminUsersPage() {
                 {selectedDossier.account_status === 'suspended' ? 'Reactivate Client' : 'Suspend Access'}
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -789,7 +789,7 @@ export default function SiteAdminUsersPage() {
                     setBulkCsvMode('WTS');
                     setBulkCsvAccount(target);
                   }}
-                  className="bg-blue-50 text-[#0A6CFF] hover:bg-blue-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                  className="bg-blue-50 text-[#0A6CFF] hover:bg-blue-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center justify-center gap-1.5 text-center"
                 >
                   <ArrowUpRight className="w-3.5 h-3.5" />
                   <span>Upload WTS (Sell)</span>
@@ -803,7 +803,7 @@ export default function SiteAdminUsersPage() {
                     setBulkCsvMode('WTB');
                     setBulkCsvAccount(target);
                   }}
-                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center justify-center gap-1.5 text-center"
                 >
                   <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Upload WTB (Buy)</span>
@@ -816,7 +816,7 @@ export default function SiteAdminUsersPage() {
                     setSelectedDossier(null);
                     router.push(`/site-admin/messages?to=${target.id}`);
                   }}
-                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5 text-center"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>Message Client</span>
@@ -829,8 +829,8 @@ export default function SiteAdminUsersPage() {
 
       {/* EDIT TIER MODAL */}
       {editingTierAccount && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6]">
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-7 max-w-md w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] max-h-[90dvh] overflow-y-auto">
             <h3 className="text-[17px] font-bold text-[#0B1F3A]">
               Modify Membership Tier
             </h3>

@@ -49,10 +49,10 @@ export function RequestBulkCsvModal({ isOpen, onClose, company }: RequestBulkCsv
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-[28px] shadow-2xl border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B1F3A]/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl bg-white rounded-[22px] sm:rounded-[28px] shadow-2xl border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[92dvh]">
         {/* Header with Gold accents */}
-        <div className="relative bg-gradient-to-r from-[#0B1F3A] via-[#11294D] to-[#0B1F3A] px-7 py-6 text-white shrink-0 overflow-hidden">
+        <div className="relative bg-gradient-to-r from-[#0B1F3A] via-[#11294D] to-[#0B1F3A] px-5 sm:px-7 py-5 sm:py-6 text-white shrink-0 overflow-hidden">
           <div className="absolute right-0 top-0 translate-x-10 -translate-y-6 w-48 h-48 bg-[#E5A638]/10 rounded-full blur-2xl pointer-events-none" />
 
           <div className="flex items-start justify-between relative z-10">

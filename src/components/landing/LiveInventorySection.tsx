@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, MessageSquare, ArrowRight, Package } from 'lucide-react';
 import { InquiryModal } from '@/components/modals/InquiryModal';
+import { AuthGateModal } from '@/components/modals/AuthGateModal';
 import { useAuth } from '@/lib/auth/auth-context';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
 import { MOCK_PRODUCTS } from '@/lib/mock-data';
@@ -19,6 +20,7 @@ export function LiveInventorySection() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [authGateOpen, setAuthGateOpen] = useState(false);
 
   // Fetch live products from /api/products (falling back to initial mock dataset if network is down)
   useEffect(() => {
@@ -121,14 +123,21 @@ export function LiveInventorySection() {
           </div>
 
           {/* Slider Controls beside View all listings */}
-          <div className="flex items-center gap-3 self-start sm:self-auto">
-            <Link
-              href="/marketplace"
-              className="text-[15px] font-bold text-[#0B1F3A] hover:text-[#0A6CFF] border border-[#E3E9F2] bg-white px-5 py-2.5 rounded-full transition-colors flex items-center gap-1.5"
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isLoggedIn || !company) {
+                  setAuthGateOpen(true);
+                } else {
+                  router.push('/marketplace');
+                }
+              }}
+              className="text-[15px] font-bold text-[#0B1F3A] hover:text-[#0A6CFF] border border-[#E3E9F2] bg-white px-5 py-2.5 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <span>View all listings</span>
               <ArrowRight className="w-4 h-4" />
-            </Link>
+            </button>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -327,6 +336,15 @@ export function LiveInventorySection() {
           onClose={() => setSelectedProduct(null)}
         />
       )}
+
+      {/* Auth Gate Modal when visitor is not logged in */}
+      <AuthGateModal
+        isOpen={authGateOpen}
+        onClose={() => setAuthGateOpen(false)}
+        title="Verified Wholesale Access Required"
+        subtitle="Sign in or create a free commercial account to view full lot specifications, unlock direct contact details, and send quotations or inquiries."
+        redirectUrl="/marketplace"
+      />
     </section>
   );
 }
