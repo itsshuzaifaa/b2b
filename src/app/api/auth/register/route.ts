@@ -104,10 +104,12 @@ export async function POST(request: NextRequest) {
       .map((n) => categoryUuidMap[n] || (n.length === 36 ? n : null))
       .filter((id): id is string => Boolean(id));
 
-    // Accounts start as pending until KYC documents are received and verified by Jeff
+    // All newly registered accounts begin on bronze (free). Paid tiers (Silver/Gold)
+    // are only activated after successful email verification AND successful card payment,
+    // ensuring no user is charged without an active, verified account or granted paid access on cancel.
     const approvalStatus = 'pending';
     const effectiveCompanyName = companyName || contactName || `${firstName} ${lastName}`.trim() || 'Wholesale Member';
-    const effectiveTier = membershipTier || 'bronze';
+    const effectiveTier = 'bronze';
 
     const { data: compInsert } = await admin.from('companies').insert({
       user_id: userId,

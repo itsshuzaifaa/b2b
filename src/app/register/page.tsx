@@ -45,8 +45,7 @@ function RegisterContent() {
 
   const [step, setStep] = useState<number>(1);
   const [selectedTier, setSelectedTier] = useState<'bronze' | 'silver' | 'gold'>('bronze');
-  const isPaidTier = selectedTier !== 'bronze';
-  const totalSteps = isPaidTier ? 6 : 5;
+  const totalSteps = 5;
 
   // Step 1: Personal Details
   const [firstName, setFirstName] = useState('');
@@ -84,27 +83,6 @@ function RegisterContent() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy' | null>(null);
-
-  // Step 5 (Paid Plans): Card Payment Details
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardholderName, setCardholderName] = useState('');
-  const [cardExpMonth, setCardExpMonth] = useState('12');
-  const [cardExpYear, setCardExpYear] = useState('28');
-  const [cardCvc, setCardCvc] = useState('');
-  const [cardZip, setCardZip] = useState('10117');
-  const [sampleCardNotice, setSampleCardNotice] = useState(false);
-
-  const handleFillSampleCard = () => {
-    const defaultName = `${firstName} ${lastName}`.trim() || companyName.trim() || 'Habib Rehman';
-    setCardholderName(defaultName);
-    setCardNumber('4242 4242 4242 4242');
-    setCardExpMonth('12');
-    setCardExpYear('28');
-    setCardCvc('123');
-    setCardZip('10117');
-    setSampleCardNotice(true);
-    setErrorMsg(null);
-  };
 
   // Username validation state
   const [usernameStatus, setUsernameStatus] = useState<
@@ -306,48 +284,12 @@ function RegisterContent() {
       if (!selectedTier) {
         setSelectedTier('bronze');
       }
-
-      if (selectedTier !== 'bronze' && !cardholderName.trim()) {
-        const defaultName = `${firstName} ${lastName}`.trim() || companyName.trim();
-        setCardholderName(defaultName);
-      }
-
       setStep(5);
       return;
     }
 
-    // Step 5 Validation (for Paid Tier: Card Payment Details)
-    if (step === 5 && selectedTier !== 'bronze') {
-      const cleanCard = cardNumber.replace(/\s+/g, '');
-      if (!cardholderName.trim()) {
-        setErrorMsg('Please enter the name on your card (or click Autofill Test Card).');
-        return;
-      }
-      if (cleanCard.length < 15) {
-        setErrorMsg('Please enter a valid 16-digit card number (or click Autofill Test Card).');
-        return;
-      }
-      const m = parseInt(cardExpMonth, 10);
-      if (!cardExpMonth || isNaN(m) || m < 1 || m > 12) {
-        setErrorMsg('Please enter a valid expiry month (01-12).');
-        return;
-      }
-      if (!cardExpYear || cardExpYear.length < 2) {
-        setErrorMsg('Please enter a valid 2-digit expiry year (e.g. 28).');
-        return;
-      }
-      if (!cardCvc || cardCvc.length < 3) {
-        setErrorMsg('Please enter a valid 3 or 4-digit CVC code.');
-        return;
-      }
-
-      setStep(6);
-      return;
-    }
-
-    // Step 5 Validation (for Bronze: Credentials) OR Step 6 Validation (for Paid Tier: Credentials)
-    const isCredentialsStep = (step === 5 && selectedTier === 'bronze') || (step === 6 && selectedTier !== 'bronze');
-    if (isCredentialsStep) {
+    // Step 5 Validation: Account Credentials
+    if (step === 5) {
       if (!username.trim()) {
         setErrorMsg('Please enter a username for your account.');
         return;
@@ -397,7 +339,7 @@ function RegisterContent() {
           vatNumber: vatNumber.trim(),
           agreedToTerms: true,
           role: 'seller', // Unified account for both buying and selling
-          membershipTier: selectedTier, // User-selected membership package
+          membershipTier: selectedTier, // User-selected membership package (activated after email verification & payment)
           selectedNiches: selectedNiches.map((niche) =>
             niche === 'other' && customOtherNiche.trim() ? customOtherNiche.trim() : niche
           ),
@@ -412,40 +354,20 @@ function RegisterContent() {
         return;
       }
 
-      // If user chose a paid membership, process the card checkout
-      if (selectedTier !== 'bronze' && data.companyId) {
-        try {
-          const { processRegistrationCardCheckout } = await import('@/lib/billing/billing-store');
-          const cleanCard = cardNumber.replace(/\s+/g, '');
-          const brand = cleanCard.startsWith('5') ? 'mastercard' : cleanCard.startsWith('3') ? 'amex' : 'visa';
-
-          processRegistrationCardCheckout({
-            companyId: data.companyId,
-            userId: data.userId,
-            companyName: companyName.trim() || `${firstName} ${lastName}`.trim(),
-            contactEmail: email.trim().toLowerCase(),
-            tier: selectedTier,
-            cardData: {
-              cardNumber: cleanCard,
-              cardholderName: cardholderName.trim(),
-              expMonth: cardExpMonth.trim(),
-              expYear: cardExpYear.trim(),
-              brand,
-            },
-          });
-        } catch (checkoutErr) {
-          console.error('[CARD CHECKOUT PROCESS ERROR]', checkoutErr);
-        }
-      }
-
       // Switch auth context & redirect to verification screen
       switchDemoRole('seller');
       if (typeof window !== 'undefined') {
         localStorage.setItem('b2b_pending_verification_email', email.trim().toLowerCase());
+        localStorage.setItem('b2b_pending_tier', selectedTier);
         localStorage.setItem('b2b_registered_tier', selectedTier);
+        localStorage.setItem('b2b_pending_company_name', companyName.trim() || `${firstName} ${lastName}`.trim());
+        localStorage.setItem('b2b_pending_contact_name', `${firstName} ${lastName}`.trim() || companyName.trim());
+        if (data.companyId) {
+          localStorage.setItem('b2b_pending_company_id', data.companyId);
+        }
       }
       const redirectQuery = redirectParam ? `&redirect=${encodeURIComponent(redirectParam)}` : '';
-      router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}&role=seller${redirectQuery}`);
+      router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}&role=seller&tier=${selectedTier}${redirectQuery}`);
     } catch (err) {
       console.error('Registration exception:', err);
       setErrorMsg(err instanceof Error ? err.message : 'Registration failed. Please try again.');
@@ -472,7 +394,7 @@ function RegisterContent() {
       </div>
 
       {/* Main Sign Up Card */}
-      <div className={`w-full ${step === 4 ? 'max-w-[1040px]' : (step === 5 && selectedTier !== 'bronze') ? 'max-w-[620px]' : 'max-w-[540px]'} bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_10px_30px_rgba(11,31,58,0.06)] p-6 sm:p-10 transition-all duration-300`}>
+      <div className={`w-full ${step === 4 ? 'max-w-[1040px]' : 'max-w-[540px]'} bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_10px_30px_rgba(11,31,58,0.06)] p-6 sm:p-10 transition-all duration-300`}>
         {/* Dynamic Segmented Progress Bar */}
         <div className="flex items-center gap-2 mb-6">
           {Array.from({ length: totalSteps }, (_, i) => i + 1).map((idx) => (
@@ -1312,11 +1234,7 @@ function RegisterContent() {
                 onClick={handleNextStep}
                 className="w-2/3 min-h-[50px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center gap-2 transition shadow-xs cursor-pointer"
               >
-                <span>
-                  {selectedTier === 'bronze'
-                    ? 'Continue to Step 5'
-                    : 'Continue to Payment (Step 5 of 6)'}
-                </span>
+                <span>Continue to Step 5</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -1324,241 +1242,13 @@ function RegisterContent() {
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 5 (PAID TIERS): Payment Card Details                                  */}
+        {/* STEP 5: Account Credentials                                               */}
         {/* ========================================================================= */}
-        {step === 5 && selectedTier !== 'bronze' && (
-          <div>
-            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF] mb-2 flex items-center gap-1.5">
-              <CreditCard className="w-3.5 h-3.5" />
-              <span>STEP 5 OF 6 &bull; PAYMENT &amp; CARD DETAILS</span>
-            </div>
-            <h1 className="text-[26px] sm:text-[30px] font-extrabold text-[#0B1F3A] tracking-[-0.025em] mb-1.5 leading-tight">
-              Add Payment Method
-            </h1>
-            <p className="text-[14px] text-[#5B6B82] mb-6">
-              Enter your corporate card to activate your {selectedTier === 'silver' ? 'Silver' : 'Gold VIP'} membership plan.
-            </p>
-
-            {/* Plan Summary Card */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#0B1F3A] to-[#14325A] text-white mb-6 shadow-md relative overflow-hidden">
-              <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-32 h-32 bg-[#0A6CFF]/20 rounded-full blur-2xl pointer-events-none" />
-              <div className="relative z-10 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wider bg-[#0A6CFF] text-white px-2.5 py-0.5 rounded-full">
-                      Selected Plan
-                    </span>
-                    <span className="text-[12px] text-blue-200">
-                      {selectedTier === 'silver' ? 'Wholesale Growth' : 'High-Volume Enterprise'}
-                    </span>
-                  </div>
-                  <h3 className="text-[20px] font-black text-white mt-1">
-                    {selectedTier === 'silver' ? 'Silver Membership' : 'Gold VIP Membership'}
-                  </h3>
-                  <p className="text-[12px] text-slate-300 mt-0.5">
-                    {selectedTier === 'silver'
-                      ? '50 Active Listings • 20 Contact Unlocks / mo • CSV Bulk Uploads'
-                      : 'Unlimited Active Listings • Unlimited Contacts • Deal Spotlight Promotion'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <div className="text-[28px] font-black text-white leading-none">
-                    {selectedTier === 'silver' ? '£79' : '£179'}
-                  </div>
-                  <div className="text-[11px] text-blue-200 font-medium">/ month</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Sample Card / Sandbox Fast-Fill Helper Box */}
-            <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200/80 mb-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 font-bold text-[14px]">
-                    🧪
-                  </div>
-                  <div>
-                    <div className="text-[13px] font-bold text-amber-950 flex items-center gap-1.5">
-                      <span>Test Payment Mode Active</span>
-                    </div>
-                    <p className="text-[12px] text-amber-800 leading-snug mt-0.5">
-                      Production Stripe will be connected soon. For current testing, use our sample test card or enter your own demo details. No actual funds will be charged.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleFillSampleCard}
-                  className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[12px] font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Autofill Test Card</span>
-                </button>
-              </div>
-
-              {sampleCardNotice && (
-                <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-center gap-1.5 text-[12px] font-bold text-emerald-700 animate-in fade-in">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Sample Visa card ending in 4242 loaded successfully</span>
-                </div>
-              )}
-            </div>
-
-            {/* Card Fields Form */}
-            <div className="space-y-4 mb-7">
-              {/* Cardholder Name */}
-              <div>
-                <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                  Name on card <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={cardholderName}
-                    onChange={(e) => setCardholderName(e.target.value)}
-                    placeholder="e.g. Alexander Weber"
-                    className="w-full px-4 py-3 text-[14px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
-                  />
-                  <User className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-
-              {/* Card Number */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[13px] font-bold text-[#0B1F3A]">
-                    Card number <span className="text-red-500">*</span>
-                  </label>
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                    {cardNumber.replace(/\s+/g, '').startsWith('4')
-                      ? 'Visa'
-                      : cardNumber.replace(/\s+/g, '').startsWith('5')
-                      ? 'Mastercard'
-                      : cardNumber.replace(/\s+/g, '').startsWith('3')
-                      ? 'Amex'
-                      : 'Credit or Debit'}
-                  </span>
-                </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    maxLength={19}
-                    value={cardNumber}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, '').slice(0, 16);
-                      setCardNumber(v.replace(/(.{4})/g, '$1 ').trim());
-                    }}
-                    placeholder="4242 •••• •••• 4242"
-                    className="w-full pl-11 pr-4 py-3 text-[14px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] font-mono transition"
-                  />
-                  <CreditCard className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-
-              {/* Expiry, CVC & Postal Code Grid */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Expiration (MM / YY) */}
-                <div>
-                  <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1.5">
-                    Expires <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      maxLength={2}
-                      placeholder="MM"
-                      value={cardExpMonth}
-                      onChange={(e) => setCardExpMonth(e.target.value.replace(/\D/g, ''))}
-                      className="w-full px-2 py-3 text-center text-[13px] bg-white border border-[#E3E9F2] rounded-2xl font-mono focus:outline-none focus:border-[#0A6CFF]"
-                    />
-                    <span className="text-slate-400 font-bold">/</span>
-                    <input
-                      type="text"
-                      maxLength={2}
-                      placeholder="YY"
-                      value={cardExpYear}
-                      onChange={(e) => setCardExpYear(e.target.value.replace(/\D/g, ''))}
-                      className="w-full px-2 py-3 text-center text-[13px] bg-white border border-[#E3E9F2] rounded-2xl font-mono focus:outline-none focus:border-[#0A6CFF]"
-                    />
-                  </div>
-                </div>
-
-                {/* CVC Security Code */}
-                <div>
-                  <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1.5">
-                    CVC <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      maxLength={4}
-                      placeholder="123"
-                      value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, ''))}
-                      className="w-full px-3 py-3 text-center text-[13px] bg-white border border-[#E3E9F2] rounded-2xl font-mono focus:outline-none focus:border-[#0A6CFF]"
-                    />
-                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                </div>
-
-                {/* Postal Code */}
-                <div>
-                  <label className="block text-[12px] font-bold text-[#0B1F3A] mb-1.5">
-                    Postal code
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="10117"
-                    value={cardZip}
-                    onChange={(e) => setCardZip(e.target.value)}
-                    className="w-full px-3 py-3 text-center text-[13px] bg-white border border-[#E3E9F2] rounded-2xl focus:outline-none focus:border-[#0A6CFF]"
-                  />
-                </div>
-              </div>
-
-              {/* Security badges */}
-              <div className="pt-2 flex items-center justify-between text-[11px] text-[#64748B] border-t border-slate-100">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>256-Bit Encrypted Simulation</span>
-                </span>
-                <span>Billed monthly &bull; Cancel anytime</span>
-              </div>
-            </div>
-
-            {/* Step 5 (Paid) Action Buttons */}
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setStep(4)}
-                className="w-1/3 min-h-[50px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[14px] flex items-center justify-center gap-1.5 transition cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleNextStep}
-                className="w-2/3 min-h-[50px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center gap-2 transition shadow-xs cursor-pointer"
-              >
-                <span>Continue to Step 6</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP 5 (FOR BRONZE) OR STEP 6 (FOR PAID): Account Credentials            */}
-        {/* ========================================================================= */}
-        {((step === 5 && selectedTier === 'bronze') || (step === 6 && selectedTier !== 'bronze')) && (
+        {step === 5 && (
           <div>
             <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF] mb-2 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>STEP {selectedTier === 'bronze' ? '5 OF 5' : '6 OF 6'} &bull; ACCOUNT CREDENTIALS</span>
+              <span>STEP 5 OF 5 &bull; ACCOUNT CREDENTIALS</span>
             </div>
             <h1 className="text-[26px] sm:text-[30px] font-extrabold text-[#0B1F3A] tracking-[-0.025em] mb-1.5 leading-tight">
               Create Your Login Credentials
@@ -1716,7 +1406,7 @@ function RegisterContent() {
               <button
                 type="button"
                 disabled={loading}
-                onClick={() => setStep(selectedTier === 'bronze' ? 4 : 5)}
+                onClick={() => setStep(4)}
                 className="w-1/3 min-h-[50px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[14px] flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -1735,11 +1425,7 @@ function RegisterContent() {
                   </>
                 ) : (
                   <>
-                    <span>
-                      {selectedTier === 'bronze'
-                        ? 'Create Free Account & Send Code'
-                        : `Complete Registration & Activate ${selectedTier === 'silver' ? 'Silver (£79)' : 'Gold (£179)'}`}
-                    </span>
+                    <span>Create Account & Send Code</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
