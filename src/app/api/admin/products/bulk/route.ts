@@ -109,6 +109,8 @@ export async function POST(req: NextRequest) {
 
     // 6. Insert SELL products if any
     if (sellProducts.length > 0) {
+      const seenBarcodesInBatch = new Map<string, number>();
+
       const preparedRows = sellProducts.map((item: any, idx: number) => {
         let catId = item.categoryId;
         if (!catId && item.category) {
@@ -124,13 +126,35 @@ export async function POST(req: NextRequest) {
         if (!catId) catId = defaultCategoryId;
 
         const rawBarcode = item.barcodeOrSku?.trim() || item.ean?.trim() || item.itemCode?.trim();
-        const safeBarcode = rawBarcode && rawBarcode !== 'n/a' ? rawBarcode : `SKU-${Date.now()}-${idx}`;
+        let safeBarcode = rawBarcode && rawBarcode !== 'n/a' ? rawBarcode : `SKU-${Date.now()}-${idx}`;
+        const rowCondition = (item.condition || '').trim();
+
+        if (safeBarcode && safeBarcode !== 'n/a' && !safeBarcode.startsWith('SKU-')) {
+          const barcodeKey = safeBarcode.toUpperCase();
+          if (seenBarcodesInBatch.has(barcodeKey)) {
+            const count = seenBarcodesInBatch.get(barcodeKey)! + 1;
+            seenBarcodesInBatch.set(barcodeKey, count);
+            const conditionTag = rowCondition ? rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+            safeBarcode = `${safeBarcode}-${conditionTag || count}`;
+          } else {
+            seenBarcodesInBatch.set(barcodeKey, 1);
+            if (rowCondition && rowCondition.toLowerCase() !== 'new') {
+              const conditionTag = rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '');
+              safeBarcode = `${safeBarcode}-${conditionTag}`;
+            }
+          }
+        }
+
+        const descBase = item.description?.trim() || `${item.brand || ''} ${item.title || ''}`.trim() || 'Wholesale Lot';
+        const finalDescription = rowCondition && !descBase.toLowerCase().includes('condition:')
+          ? `${descBase} | Condition: ${rowCondition}`
+          : descBase;
 
         return {
           company_id: effectiveCompanyId,
           category_id: catId,
           title: item.title?.trim() || `Wholesale Item ${idx + 1}`,
-          description: item.description?.trim() || `${item.brand || ''} ${item.title || ''}`.trim() || 'Wholesale Lot',
+          description: finalDescription,
           barcode_or_sku: safeBarcode,
           unit_price: Number(item.unitPrice) || 0,
           quantity_available: Number(item.quantityAvailable ?? item.available) || 0,

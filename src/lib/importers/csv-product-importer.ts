@@ -20,6 +20,7 @@ interface RawCsvProductRow {
   title?: string;
   category_slug?: string;
   barcode_or_sku?: string;
+  condition?: string;
   unit_price?: string | number;
   quantity_available?: string | number;
   moq?: string | number;
@@ -47,6 +48,9 @@ function normalizeHeader(rawHeader: string): string {
     case 'upc':
     case 'ean':
       return 'barcode_or_sku';
+    case 'condition':
+    case 'grade':
+      return 'condition';
     case 'unit_price':
     case 'price':
     case 'cost':
@@ -236,19 +240,23 @@ export async function importProductsFromCsv({
     }
 
     const barcodeOrSku = row.barcode_or_sku?.trim();
+    const rowCondition = (row.condition || 'New').trim();
     if (!barcodeOrSku) {
       errors.push({ row: rowNum, message: 'Missing required field: "barcode_or_sku".' });
     } else {
-      // Duplicate barcode check within file
+      // Duplicate barcode check within file, allowing differences in condition
       const normalizedBarcode = barcodeOrSku.toUpperCase();
-      if (seenBarcodes.has(normalizedBarcode)) {
-        const originalRow = seenBarcodes.get(normalizedBarcode)!;
+      const normalizedCondition = rowCondition.toLowerCase();
+      const dedupeKey = `${normalizedBarcode}:::${normalizedCondition}`;
+
+      if (seenBarcodes.has(dedupeKey)) {
+        const originalRow = seenBarcodes.get(dedupeKey)!;
         errors.push({
           row: rowNum,
-          message: `Duplicate barcode/SKU "${barcodeOrSku}" detected in CSV (first defined on row ${originalRow}).`,
+          message: `Duplicate barcode/SKU "${barcodeOrSku}" with identical condition "${rowCondition}" detected in CSV (first defined on row ${originalRow}).`,
         });
       } else {
-        seenBarcodes.set(normalizedBarcode, rowNum);
+        seenBarcodes.set(dedupeKey, rowNum);
       }
     }
 
@@ -286,12 +294,21 @@ export async function importProductsFromCsv({
         .filter(Boolean);
     }
 
+    const descWithCondition = row.description?.trim()
+      ? (rowCondition ? `${row.description.trim()} | Condition: ${rowCondition}` : row.description.trim())
+      : (rowCondition ? `Condition: ${rowCondition}` : null);
+
+    // Disambiguate barcode_or_sku for secondary conditions to satisfy Postgres unique_seller_barcode constraint
+    const isNew = rowCondition.toLowerCase() === 'new';
+    const conditionTag = rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const safeDbBarcode = isNew ? barcodeOrSku : `${barcodeOrSku}-${conditionTag}`;
+
     validProductsToInsert.push({
       company_id: companyId,
       category_slug: categorySlug,
       title,
-      description: row.description?.trim() || null,
-      barcode_or_sku: barcodeOrSku,
+      description: descWithCondition,
+      barcode_or_sku: safeDbBarcode,
       unit_price: unitPrice,
       quantity_available: quantityAvailable,
       moq,

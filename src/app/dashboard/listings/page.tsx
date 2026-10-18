@@ -266,7 +266,7 @@ export default function ListingsPage() {
       saveListings(updated);
     } else {
       const newItem: ListingItem = {
-        id: `lst-${Date.now()}`,
+        id: `lst-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         title: formTitle.trim(),
         brand: formBrand,
         itemCode: finalItemCode,

@@ -276,15 +276,19 @@ export function AdminBulkCsvModal({
           }
 
           const barcodeOrSku = (row.barcode_or_sku || '').trim();
+          const rowCondition = (row.condition || 'New').trim();
           if (barcodeOrSku) {
             const normalizedBarcode = barcodeOrSku.toUpperCase();
-            if (seenBarcodes.has(normalizedBarcode)) {
-              const prevRow = seenBarcodes.get(normalizedBarcode)!;
+            const normalizedCondition = rowCondition.toLowerCase();
+            const dedupeKey = `${normalizedBarcode}:::${normalizedCondition}`;
+
+            if (seenBarcodes.has(dedupeKey)) {
+              const prevRow = seenBarcodes.get(dedupeKey)!;
               rowErrors.push(
-                `Duplicate Barcode/SKU "${barcodeOrSku}" (already defined on Row ${prevRow}).`
+                `Duplicate Barcode/SKU "${barcodeOrSku}" with identical condition "${rowCondition}" (already defined on Row ${prevRow}).`
               );
             } else {
-              seenBarcodes.set(normalizedBarcode, rowNumber);
+              seenBarcodes.set(dedupeKey, rowNumber);
             }
           }
 

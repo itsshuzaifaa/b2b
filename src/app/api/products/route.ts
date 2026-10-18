@@ -133,12 +133,36 @@ export async function POST(req: NextRequest) {
       await admin.from('companies').update({ approval_status: 'approved' }).eq('id', companyId);
     }
 
+    const rowCondition = (body.condition || '').trim();
+    let descBase = description?.trim() || null;
+    if (rowCondition && (!descBase || !descBase.toLowerCase().includes('condition:'))) {
+      descBase = descBase ? `${descBase} | Condition: ${rowCondition}` : `Condition: ${rowCondition}`;
+    }
+
+    let safeBarcode = barcodeOrSku?.trim() && barcodeOrSku.trim() !== 'n/a' ? barcodeOrSku.trim() : null;
+
+    if (!id && safeBarcode) {
+      // Check if this seller already has a product with this exact barcode_or_sku
+      const { data: existing } = await admin
+        .from('products')
+        .select('id, barcode_or_sku')
+        .eq('company_id', effectiveCompanyId)
+        .eq('barcode_or_sku', safeBarcode)
+        .maybeSingle();
+
+      if (existing) {
+        // Disambiguate duplicate barcode by condition to satisfy database unique_seller_barcode constraint
+        const conditionTag = rowCondition ? rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+        safeBarcode = `${safeBarcode}-${conditionTag || Date.now().toString().slice(-4)}`;
+      }
+    }
+
     const payload: any = {
       company_id: effectiveCompanyId,
       category_id: resolvedCategoryId,
       title: title.trim(),
-      description: description?.trim() || null,
-      barcode_or_sku: barcodeOrSku?.trim() && barcodeOrSku.trim() !== 'n/a' ? barcodeOrSku.trim() : null,
+      description: descBase,
+      barcode_or_sku: safeBarcode,
       unit_price: Number(unitPrice) || 0,
       quantity_available: Number(quantityAvailable) || 0,
       moq: Number(moq) || 1,

@@ -119,7 +119,7 @@ export function LiveTradingBoard() {
             description: req.product_name + (req.notes ? ` — ${req.notes}` : ''),
             ean: req.barcode_or_sku || 'n/a',
             qty: req.target_quantity || 50,
-            condition: 'New',
+            condition: (req.notes?.match(/Condition:\s*([^.|]+)/i)?.[1]?.trim()) || 'New',
             price: req.target_price || 0,
             currency: '€',
             location: 'EU',

@@ -97,7 +97,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           const localKey = 'b2b_seller_listings_v3';
           const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
           const newListingItem = {
-            id: `lst-${Date.now()}`,
+            id: `lst-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
             brand,
             itemCode: itemCode || 'WTS-LOT',
@@ -140,7 +140,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           const localKey = 'b2b_user_wtb_requests_v2';
           const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
           const newWtbItem = {
-            id: `wtb-usr-${Date.now()}`,
+            id: `wtb-usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             type: 'BUY',
             category: finalCategory,
             brand,
