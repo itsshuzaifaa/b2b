@@ -109,7 +109,6 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
         buyer_phone: data.buyerPhone?.trim() || null,
         buyer_company: data.buyerCompany?.trim() || null,
         category_id: resolvedCategoryId,
-        category_slug: resolvedCategorySlug,
         product_name: data.productName.trim(),
         barcode_or_sku: data.barcodeOrSku?.trim() || null,
         target_quantity: data.targetQuantity,
@@ -117,7 +116,7 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
         delivery_deadline: data.deliveryDeadline || null,
         notes: data.notes?.trim() || null,
         status: 'open',
-      })
+      } as any)
       .select('id')
       .single();
 

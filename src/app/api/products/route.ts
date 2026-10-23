@@ -4,7 +4,7 @@ import type { Product } from '@/types/database';
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const searchParams = req.nextUrl.searchParams;
     const productId = searchParams.get('id');
     const companyId = searchParams.get('companyId');
     const categorySlug = searchParams.get('category');

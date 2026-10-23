@@ -25,7 +25,7 @@ const RESERVED_USERNAMES = new Set([
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const rawUsername = searchParams.get('username') || '';
     const username = rawUsername.trim().toLowerCase();
 
@@ -98,7 +98,10 @@ export async function GET(request: NextRequest) {
       available: true,
       message: 'Username is available!',
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.digest?.startsWith('NEXT_')) {
+      throw err;
+    }
     console.error('[CHECK USERNAME EXCEPTION]', err);
     return NextResponse.json({
       available: false,

@@ -21,9 +21,10 @@ async function check() {
   const res = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/?apikey=${env.SUPABASE_SERVICE_ROLE_KEY}`);
   if (res.ok) {
     const swagger = await res.json();
-    console.log('quotations properties:', Object.keys(swagger.definitions.quotations?.properties || {}));
-    console.log('quotations definitions:', swagger.definitions.quotations);
-    console.log('companies properties:', Object.keys(swagger.definitions.companies?.properties || {}));
+    console.log('ALL TABLES:', Object.keys(swagger.definitions || {}));
+    for (const key of Object.keys(swagger.definitions || {})) {
+      console.log(`- ${key}:`, Object.keys(swagger.definitions[key].properties || {}));
+    }
   }
 }
 

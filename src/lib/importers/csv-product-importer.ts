@@ -1,8 +1,8 @@
 'use server';
 
 import Papa from 'papaparse';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
-import type { Product, MembershipTier } from '@/types/database';
+import { createAdminClient } from '@/lib/supabase/server';
+import type { Product, MembershipTier, ProductStatus } from '@/types/database';
 
 export interface CsvRowError {
   row: number;
@@ -93,11 +93,10 @@ export async function importProductsFromCsv({
   csvContent: string;
 }): Promise<CsvImportResult> {
   const errors: CsvRowError[] = [];
-  const client = await createClient();
   const admin = createAdminClient();
 
   // 1. Verify Company & Vetting Status
-  const { data: company, error: companyError } = await client
+  const { data: company, error: companyError } = await admin
     .from('companies')
     .select('id, company_name, tier, approval_status')
     .eq('id', companyId)
@@ -174,7 +173,7 @@ export async function importProductsFromCsv({
 
   // 5. Tier Quota Check for Silver
   if (tier === 'silver') {
-    const { count: activeCount, error: countError } = await client
+    const { count: activeCount, error: countError } = await admin
       .from('products')
       .select('*', { count: 'exact', head: true })
       .eq('company_id', companyId)
@@ -205,24 +204,32 @@ export async function importProductsFromCsv({
     }
   }
 
+  // Pre-fetch categories for slug/name to UUID mapping
+  const { data: dbCategories } = await admin.from('categories').select('id, name, slug');
+  const defaultCategoryId = dbCategories?.[0]?.id;
+  const categoryMap = new Map<string, string>();
+  if (dbCategories) {
+    for (const c of dbCategories) {
+      if (c.slug) categoryMap.set(c.slug.toLowerCase().trim(), c.id);
+      if (c.name) categoryMap.set(c.name.toLowerCase().trim(), c.id);
+    }
+  }
+
   // 6. Row-by-Row Validation & Duplicate Barcode Check
   const seenBarcodes = new Map<string, number>();
-  const validProductsToInsert: Array<
-    Pick<
-      Product,
-      | 'company_id'
-      | 'category_slug'
-      | 'title'
-      | 'description'
-      | 'barcode_or_sku'
-      | 'unit_price'
-      | 'quantity_available'
-      | 'moq'
-      | 'status'
-      | 'is_hot'
-      | 'images'
-    >
-  > = [];
+  const validProductsToInsert: Array<{
+    company_id: string;
+    category_id: string;
+    title: string;
+    description: string | null;
+    barcode_or_sku: string | null;
+    unit_price: number;
+    quantity_available: number;
+    moq: number;
+    status: ProductStatus;
+    is_hot: boolean;
+    image_urls: string[];
+  }> = [];
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 2; // +1 for 0-index, +1 for header row
@@ -303,9 +310,30 @@ export async function importProductsFromCsv({
     const conditionTag = rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const safeDbBarcode = isNew ? barcodeOrSku : `${barcodeOrSku}-${conditionTag}`;
 
+    // Resolve Category UUID
+    let resolvedCategoryId = categoryMap.get(categorySlug.toLowerCase().trim());
+    if (!resolvedCategoryId && dbCategories) {
+      const match = dbCategories.find(
+        (c) =>
+          c.slug.toLowerCase().includes(categorySlug.toLowerCase().trim()) ||
+          categorySlug.toLowerCase().trim().includes(c.slug.toLowerCase()) ||
+          c.name.toLowerCase().includes(categorySlug.toLowerCase().trim()) ||
+          categorySlug.toLowerCase().trim().includes(c.name.toLowerCase())
+      );
+      if (match) resolvedCategoryId = match.id;
+    }
+    if (!resolvedCategoryId) {
+      resolvedCategoryId = defaultCategoryId;
+    }
+
+    if (!resolvedCategoryId) {
+      errors.push({ row: rowNum, message: `Could not resolve category for "${categorySlug}".` });
+      continue;
+    }
+
     validProductsToInsert.push({
       company_id: companyId,
-      category_slug: categorySlug,
+      category_id: resolvedCategoryId,
       title,
       description: descWithCondition,
       barcode_or_sku: safeDbBarcode,
@@ -314,7 +342,7 @@ export async function importProductsFromCsv({
       moq,
       status: 'active',
       is_hot: false, // CSV uploads start non-hot; only gold tier can manually toggle
-      images,
+      image_urls: images.length > 0 ? images : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
     });
   }
 
@@ -331,7 +359,7 @@ export async function importProductsFromCsv({
   // 8. Insert valid products into Supabase
   const { data: insertedData, error: insertError } = await admin
     .from('products')
-    .insert(validProductsToInsert)
+    .insert(validProductsToInsert as any)
     .select('id');
 
   if (insertError) {

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
         success: true,
         message: `We've sent a 6-digit verification code to ${rawEmail}. Please check your inbox.`,
         // In local development sandbox return devOtp for seamless testing if needed
-        ...(process.env.NODE_ENV !== 'production' ? { devOtp: otpCode } : {}),
+        ...(process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_OTP === 'true' ? { devOtp: otpCode } : {}),
       });
     }
 

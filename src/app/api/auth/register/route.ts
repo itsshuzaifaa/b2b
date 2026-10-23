@@ -112,12 +112,11 @@ export async function POST(request: NextRequest) {
     const effectiveCompanyName = companyName || contactName || `${firstName} ${lastName}`.trim() || 'Wholesale Member';
     const effectiveTier = 'bronze';
 
-    const { data: compInsert } = await admin.from('companies').insert({
+    const { data: compInsert, error: compInsertError } = await admin.from('companies').insert({
       user_id: userId,
       company_name: effectiveCompanyName,
       company_number: regNumber || null,
       vat_number: vatNumber || null,
-      address: address || null,
       contact_name: contactName,
       contact_email: email,
       phone: phone || null,
@@ -126,6 +125,10 @@ export async function POST(request: NextRequest) {
       tier: effectiveTier,
       niches: selectedNiches,
     }).select('id').single();
+
+    if (compInsertError) {
+      console.error('[REGISTER COMPANY INSERT ERROR]', compInsertError);
+    }
 
     const companyId = compInsert?.id || userId;
 

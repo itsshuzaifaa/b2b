@@ -97,14 +97,15 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
       .insert({
         product_id: productData.id,
         seller_company_id: productData.company_id,
-        buyer_company_id: data.buyerCompanyId || null,
         buyer_name: data.buyerName.trim(),
         buyer_email: data.buyerEmail.trim().toLowerCase(),
         buyer_phone: data.buyerPhone?.trim() || null,
-        target_quantity: data.targetQuantity,
-        offered_price: data.offeredPrice ?? null,
+        buyer_company: `${data.buyerName} Commercial`,
+        requested_quantity: data.targetQuantity,
+        target_price: data.offeredPrice ?? 0,
         message: data.message.trim(),
-      })
+        status: 'new',
+      } as any)
       .select('id')
       .single();
 

@@ -54,7 +54,6 @@ export async function GET() {
               company_name: effectiveCompanyName,
               company_number: meta.company_number || null,
               vat_number: meta.vat_number || null,
-              address: meta.address || null,
               contact_name: effectiveContactName,
               contact_email: u.email,
               phone: meta.phone || null,
@@ -163,7 +162,7 @@ export async function GET() {
         };
       });
 
-    return NextResponse.json({ accounts });
+    return NextResponse.json({ success: true, accounts });
   } catch (err) {
     console.error('Error fetching admin accounts:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -224,7 +223,6 @@ export async function POST(req: Request) {
           .from('companies')
           .update({
             approval_status: 'suspended',
-            rejection_reason: reason || 'Account suspended by compliance officer.',
             updated_at: new Date().toISOString(),
           })
           .eq('id', companyId)
@@ -380,9 +378,7 @@ export async function POST(req: Request) {
           try { await admin.from('products').delete().eq('company_id', tId); } catch {}
           try { await admin.from('quotations').delete().eq('seller_company_id', tId); } catch {}
           try { await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', tId); } catch {}
-          try { await admin.from('wtb_requests').delete().eq('buyer_company_id', tId); } catch {}
           try { await admin.from('product_inquiries').delete().eq('seller_company_id', tId); } catch {}
-          try { await admin.from('product_inquiries').delete().eq('buyer_company_id', tId); } catch {}
           try { await admin.from('companies').delete().eq('id', tId); } catch {}
         }
 

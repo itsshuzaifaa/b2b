@@ -198,7 +198,7 @@ export type Database = {
         Insert: Partial<Product> &
           Pick<
             Product,
-            'company_id' | 'category_slug' | 'title' | 'unit_price' | 'quantity_available' | 'moq'
+            'company_id' | 'title' | 'unit_price' | 'quantity_available' | 'moq'
           >;
         Update: Partial<Product>;
         Relationships: [];
@@ -214,7 +214,7 @@ export type Database = {
         Insert: Partial<WtbRequest> &
           Pick<
             WtbRequest,
-            'buyer_name' | 'buyer_email' | 'product_name' | 'category_slug' | 'target_quantity' | 'target_price'
+            'buyer_name' | 'buyer_email' | 'product_name' | 'target_quantity' | 'target_price'
           >;
         Update: Partial<WtbRequest>;
         Relationships: [];

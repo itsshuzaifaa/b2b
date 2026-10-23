@@ -190,7 +190,7 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const searchParams = req.nextUrl.searchParams;
     const role = searchParams.get('role');
     const email = searchParams.get('email')?.toLowerCase();
     const companyId = searchParams.get('companyId');
@@ -281,7 +281,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function getSystemProductId(supabase: any): Promise<string> {
-  const SYSTEM_PROD_ID = '00000000-0000-0000-0000-000000000001';
+  const SYSTEM_PROD_ID = '00000000-0000-4000-a000-000000000001';
   try {
     const { data: sysProd } = await supabase
       .from('products')
@@ -631,7 +631,6 @@ export async function POST(req: NextRequest) {
           id,
           product_id,
           seller_company_id,
-          buyer_company_id,
           buyer_name,
           buyer_email,
           buyer_phone,
@@ -655,7 +654,6 @@ export async function POST(req: NextRequest) {
               id,
               product_id,
               seller_company_id,
-              buyer_company_id,
               buyer_name,
               buyer_email,
               buyer_phone,
