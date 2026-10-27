@@ -214,7 +214,10 @@ export default function DashboardLayout({
       ? 20
       : 2;
 
-  const verificationMailto = 'mailto:newcustomers@b2blink.eu';
+  const targetCompanyName = company?.name || company?.company_name || '';
+  const verificationMailto = `mailto:newcustomers@b2blink.eu?subject=${encodeURIComponent(
+    `Action Required: Submit verification documents to activate your account${targetCompanyName ? ` - ${targetCompanyName}` : ''} - B2B LINK`
+  )}`;
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">

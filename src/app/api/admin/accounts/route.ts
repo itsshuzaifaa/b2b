@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { sendAccountApprovalEmail, sendAccountSuspensionEmail } from '@/lib/email/dispatcher';
 
+// In-memory deduplication cache to prevent duplicate verification/approval emails
+const approvalEmailDedupeCache = new Map<string, number>();
+
 export async function GET() {
   try {
     const admin = createAdminClient();
@@ -203,13 +206,21 @@ export async function POST(req: Request) {
       }
 
       if (email) {
-        try {
-          await sendAccountApprovalEmail(email, {
-            companyName: companyName || 'Wholesale Partner',
-            contactName: contactName || 'Valued Member',
-          });
-        } catch (mailErr) {
-          console.warn('[ADMIN APPROVAL EMAIL WARNING]', mailErr);
+        const dedupeKey = `${(email || '').toLowerCase().trim()}:${companyId}`;
+        const lastSent = approvalEmailDedupeCache.get(dedupeKey);
+        const now = Date.now();
+        const alreadySentRecently = Boolean(lastSent && now - lastSent < 120000);
+
+        if (!alreadySentRecently) {
+          approvalEmailDedupeCache.set(dedupeKey, now);
+          try {
+            await sendAccountApprovalEmail(email, {
+              companyName: companyName || 'Wholesale Partner',
+              contactName: contactName || 'Valued Member',
+            });
+          } catch (mailErr) {
+            console.warn('[ADMIN APPROVAL EMAIL WARNING]', mailErr);
+          }
         }
       }
 

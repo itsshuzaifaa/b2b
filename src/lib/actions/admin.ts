@@ -84,14 +84,14 @@ export async function updateSellerVetting(
           contactName: contName,
           reason: notes?.trim() || 'Verification documents incomplete or criteria not met.',
         });
-      }
 
-      await sendVettingDecisionEmail(company.email, {
-        companyName: compName,
-        decision: status,
-        notes: notes?.trim(),
-        companyId: company.id,
-      });
+        await sendVettingDecisionEmail(company.email, {
+          companyName: compName,
+          decision: status,
+          notes: notes?.trim(),
+          companyId: company.id,
+        });
+      }
     }
 
     return { success: true };

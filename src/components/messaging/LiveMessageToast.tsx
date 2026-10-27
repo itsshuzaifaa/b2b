@@ -77,7 +77,7 @@ export function LiveMessageToast() {
     if (!company) return;
 
     // Background sync without intrusive initial popups on login
-    void syncWithSupabase(role || undefined, company.id, company.email);
+    void syncWithSupabase(role || undefined, company.id, company.email, company?.membership_tier || company?.tier || 'bronze');
   }, [company, role]);
 
   useEffect(() => {

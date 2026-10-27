@@ -44,13 +44,13 @@ function AdminMessagesContent() {
 
   const [conversations, setConversations] = useState<InquiryConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(targetId || '');
-  const [filterType, setFilterType] = useState<'all' | 'admin_desk' | 'broadcast_seller' | 'broadcast_buyer'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'admin_desk' | 'broadcast'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [replyText, setReplyText] = useState('');
 
   // Broadcast modal state
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
-  const [broadcastTarget, setBroadcastTarget] = useState<'seller' | 'buyer'>('seller');
+  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'free' | 'silver' | 'gold' | 'seller' | 'buyer'>('all');
   const [broadcastTitle, setBroadcastTitle] = useState('New Platform Update for Sellers');
   const [broadcastText, setBroadcastText] = useState('');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -99,12 +99,7 @@ function AdminMessagesContent() {
     setFilterType(newType);
     const inTab = conversations.filter((c) => {
       if (newType === 'admin_desk') return c.type === 'seller_admin';
-      if (newType === 'broadcast_seller') {
-        return c.type === 'broadcast' && (c.targetAudience === 'seller' || c.status === 'broadcast_seller');
-      }
-      if (newType === 'broadcast_buyer') {
-        return c.type === 'broadcast' && (c.targetAudience === 'buyer' || c.status === 'broadcast_buyer');
-      }
+      if (newType === 'broadcast') return c.type === 'broadcast';
       return true;
     });
 
@@ -121,12 +116,7 @@ function AdminMessagesContent() {
   const filteredConversations = conversations.filter((c) => {
     // Type filter
     if (filterType === 'admin_desk' && c.type !== 'seller_admin') return false;
-    if (filterType === 'broadcast_seller') {
-      return c.type === 'broadcast' && (c.targetAudience === 'seller' || c.status === 'broadcast_seller');
-    }
-    if (filterType === 'broadcast_buyer') {
-      return c.type === 'broadcast' && (c.targetAudience === 'buyer' || c.status === 'broadcast_buyer');
-    }
+    if (filterType === 'broadcast' && c.type !== 'broadcast') return false;
 
     // Search query
     const q = searchQuery.toLowerCase().trim();
@@ -140,7 +130,12 @@ function AdminMessagesContent() {
   });
 
   const activeConv =
-    filteredConversations.find((c) => c.id === activeConversationId) ||
+    filteredConversations.find(
+      (c) =>
+        c.id === activeConversationId ||
+        c.sellerCompanyId === activeConversationId ||
+        (targetId && (c.sellerCompanyId === targetId || c.buyerEmail?.toLowerCase() === targetId.toLowerCase()))
+    ) ||
     filteredConversations[0] ||
     null;
 
@@ -196,11 +191,17 @@ function AdminMessagesContent() {
     if (conv) {
       setShowBroadcastModal(false);
       setBroadcastText('');
-      setBroadcastNotice(
-        broadcastTarget === 'seller'
-          ? '📢 Broadcast successfully dispatched to all sellers! (Delivered as a personal direct message from Jeff)'
-          : '📢 Broadcast successfully dispatched to all buyers!'
-      );
+      const targetLabel =
+        broadcastTarget === 'all'
+          ? 'all platform members'
+          : broadcastTarget === 'free'
+          ? 'all Free (Bronze) members'
+          : broadcastTarget === 'silver'
+          ? 'all Silver members'
+          : broadcastTarget === 'gold'
+          ? 'all Gold members'
+          : `all ${broadcastTarget}s`;
+      setBroadcastNotice(`📢 Broadcast successfully dispatched to ${targetLabel}! (Email notifications sent to member inboxes)`);
       setTimeout(() => setBroadcastNotice(null), 5000);
       setActiveConversationId(conv.id);
       loadData();
@@ -309,7 +310,7 @@ function AdminMessagesContent() {
             className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
           >
             <Radio className="w-4 h-4 animate-pulse" />
-            <span>+ Platform Broadcast</span>
+            <span>+ Member Broadcast</span>
           </button>
         </div>
       </div>
@@ -326,9 +327,8 @@ function AdminMessagesContent() {
       <div className="flex items-center gap-2.5 mt-4 overflow-x-auto pb-1 select-none">
         {[
           { id: 'all', label: 'All Admin Channels', count: conversations.length },
-          { id: 'admin_desk', label: '🛡️ Seller <-> Admin Desk', count: conversations.filter((c) => c.type === 'seller_admin').length },
-          { id: 'broadcast_seller', label: '📢 Sellers Broadcast', count: conversations.filter((c) => c.type === 'broadcast' && (c.targetAudience === 'seller' || c.status === 'broadcast_seller')).length },
-          { id: 'broadcast_buyer', label: '📢 Buyers Broadcast', count: conversations.filter((c) => c.type === 'broadcast' && (c.targetAudience === 'buyer' || c.status === 'broadcast_buyer')).length },
+          { id: 'admin_desk', label: '🛡️ Member <-> Admin Desk', count: conversations.filter((c) => c.type === 'seller_admin').length },
+          { id: 'broadcast', label: '📢 Member Broadcasts', count: conversations.filter((c) => c.type === 'broadcast').length },
         ].map((tab) => {
           const isActive = filterType === tab.id;
           return (
@@ -779,8 +779,8 @@ function AdminMessagesContent() {
                   <Radio className="w-4 h-4 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Platform Broadcast Composer</h3>
-                  <p className="text-xs text-slate-500">Dispatch updates to sellers or buyers.</p>
+                  <h3 className="text-base font-black text-slate-900">Member Broadcast Composer</h3>
+                  <p className="text-xs text-slate-500">Dispatch announcements to members segmented by package tier.</p>
                 </div>
               </div>
               <button
@@ -796,58 +796,112 @@ function AdminMessagesContent() {
               {/* Target Audience Segment Selector */}
               <div>
                 <label className="block text-xs font-extrabold text-slate-800 mb-2">
-                  Target Audience:
+                  Target Package / Audience:
                 </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {/* All Members */}
+                  <div
                     onClick={() => {
-                      setBroadcastTarget('seller');
-                      setBroadcastTitle('Platform Update for Verified Sellers');
+                      setBroadcastTarget('all');
+                      setBroadcastTitle('Official Platform Announcement');
                     }}
-                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col gap-1 ${
-                      broadcastTarget === 'seller'
-                        ? 'border-cyan-500 bg-cyan-50/60 text-cyan-950'
+                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col justify-between ${
+                      broadcastTarget === 'all'
+                        ? 'border-blue-600 bg-blue-50/80 text-blue-950 ring-2 ring-blue-500/20'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs">All Sellers</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-black text-xs">🌐 All</span>
                       <input
                         type="radio"
-                        checked={broadcastTarget === 'seller'}
+                        checked={broadcastTarget === 'all'}
                         onChange={() => {}}
-                        className="text-cyan-600"
+                        className="text-blue-600 pointer-events-none"
                       />
                     </div>
-                    <span className="text-[11px] text-slate-500">
-                      Looks like a personal direct message from Jeff to each seller.
+                    <span className="text-[11px] text-slate-500 leading-tight">
+                      All registered platform members.
                     </span>
-                  </label>
+                  </div>
 
-                  <label
+                  {/* Free Members */}
+                  <div
                     onClick={() => {
-                      setBroadcastTarget('buyer');
-                      setBroadcastTitle('Global Wholesale Sourcing Update for Buyers');
+                      setBroadcastTarget('free');
+                      setBroadcastTitle('Special Member Promotion & Trading Updates');
                     }}
-                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col gap-1 ${
-                      broadcastTarget === 'buyer'
-                        ? 'border-amber-500 bg-amber-50/60 text-amber-950'
+                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col justify-between ${
+                      broadcastTarget === 'free'
+                        ? 'border-amber-600 bg-amber-50/80 text-amber-950 ring-2 ring-amber-500/20'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs">All Buyers</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-black text-xs">🥉 Free only</span>
                       <input
                         type="radio"
-                        checked={broadcastTarget === 'buyer'}
+                        checked={broadcastTarget === 'free'}
                         onChange={() => {}}
-                        className="text-amber-600"
+                        className="text-amber-600 pointer-events-none"
                       />
                     </div>
-                    <span className="text-[11px] text-slate-500">
-                      Dispatched strictly to retail buyers and procurement leads.
+                    <span className="text-[11px] text-slate-500 leading-tight">
+                      Free (Bronze) only (promo, discounts).
                     </span>
-                  </label>
+                  </div>
+
+                  {/* Silver Members */}
+                  <div
+                    onClick={() => {
+                      setBroadcastTarget('silver');
+                      setBroadcastTitle('Silver Partner Network Update');
+                    }}
+                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col justify-between ${
+                      broadcastTarget === 'silver'
+                        ? 'border-slate-600 bg-slate-100 text-slate-950 ring-2 ring-slate-400/20'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-black text-xs">🥈 Silver only</span>
+                      <input
+                        type="radio"
+                        checked={broadcastTarget === 'silver'}
+                        onChange={() => {}}
+                        className="text-slate-600 pointer-events-none"
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-500 leading-tight">
+                      Silver members only.
+                    </span>
+                  </div>
+
+                  {/* Gold Members */}
+                  <div
+                    onClick={() => {
+                      setBroadcastTarget('gold');
+                      setBroadcastTitle('Exclusive Gold VIP Trading Desk Announcement');
+                    }}
+                    className={`p-3 rounded-2xl border cursor-pointer transition flex flex-col justify-between ${
+                      broadcastTarget === 'gold'
+                        ? 'border-yellow-500 bg-yellow-50/80 text-yellow-950 ring-2 ring-yellow-400/30'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-black text-xs">🥇 Gold only</span>
+                      <input
+                        type="radio"
+                        checked={broadcastTarget === 'gold'}
+                        onChange={() => {}}
+                        className="text-yellow-600 pointer-events-none"
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-500 leading-tight">
+                      Gold VIP members only.
+                    </span>
+                  </div>
                 </div>
               </div>
 

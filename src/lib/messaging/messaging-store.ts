@@ -2,7 +2,7 @@
 
 import type { Product, Company, WtbRequest } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
-import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { isAccountDeleted, getAdminAccounts } from '@/lib/admin/admin-store';
 
 export interface ChatMessage {
   id: string;
@@ -13,7 +13,7 @@ export interface ChatMessage {
   timestamp: string;
   isRead?: boolean;
   isBroadcast?: boolean;
-  targetAudience?: 'seller' | 'buyer' | 'all';
+  targetAudience?: 'seller' | 'buyer' | 'all' | 'free' | 'bronze' | 'silver' | 'gold';
   broadcastKind?: 'wtb' | 'wts' | 'admin';
   broadcastDetails?: BroadcastDetails;
 }
@@ -42,7 +42,8 @@ export type InquiryMessage = ChatMessage;
 export interface InquiryConversation {
   id: string;
   type?: 'buyer_seller' | 'seller_admin' | 'broadcast';
-  targetAudience?: 'seller' | 'buyer' | 'all';
+  targetAudience?: 'seller' | 'buyer' | 'all' | 'free' | 'bronze' | 'silver' | 'gold';
+  sellerContactEmail?: string;
   status?: string;
   productId: string;
   productTitle: string;
@@ -230,13 +231,14 @@ export function saveStoredConversations(
 export const saveConversations = saveStoredConversations;
 
 // Sync conversations with Supabase backend
-export async function syncWithSupabase(role?: string, companyId?: string, email?: string): Promise<InquiryConversation[]> {
+export async function syncWithSupabase(role?: string, companyId?: string, email?: string, tier?: string): Promise<InquiryConversation[]> {
   if (typeof window === 'undefined') return [];
   try {
     const params = new URLSearchParams();
     if (role) params.set('role', role);
     if (companyId) params.set('companyId', companyId);
     if (email) params.set('email', email);
+    if (tier) params.set('tier', tier);
 
     const url = `/api/inquiries${params.toString() ? `?${params.toString()}` : ''}`;
     const res = await fetch(url);
@@ -284,18 +286,37 @@ export function getConversationsForUser(company: Company | null): InquiryConvers
   const contactEmail = company.contact_email?.toLowerCase().trim();
 
   return all.filter((c) => {
-    // 1. Broadcasts
+    // 1. Broadcasts - filtered by role or membership package tier
     if (c.type === 'broadcast') {
-      return c.targetAudience === 'all' || !c.targetAudience || (company.role ? c.targetAudience === company.role : true);
+      const aud = c.targetAudience;
+      if (!aud || aud === 'all') return true;
+      const userTier = (company.membership_tier || company.tier || 'bronze').toLowerCase();
+      if ((aud === 'free' || aud === 'bronze') && (userTier === 'bronze' || userTier === 'free')) return true;
+      if (aud === 'silver' && userTier === 'silver') return true;
+      if (aud === 'gold' && userTier === 'gold') return true;
+      if (aud === 'seller' && company.role === 'seller') return true;
+      if (aud === 'buyer' && company.role === 'buyer') return true;
+      return false;
     }
 
     // 2. Direct Admin Desk support thread or personal welcome message from Jeff
-    // Strictly scoped to this user's email or company ID only (never leaks other users like Bostan!)
+    // Strictly scoped to this user whether they are on the buyer or seller side of the desk thread
     if (c.type === 'seller_admin' || c.status === 'admin_desk') {
       const isMyDeskThread = Boolean(
-        (userEmail && (c.buyerEmail?.toLowerCase().trim() === userEmail || c.buyerContactEmail?.toLowerCase().trim() === userEmail)) ||
-        (contactEmail && (c.buyerEmail?.toLowerCase().trim() === contactEmail || c.buyerContactEmail?.toLowerCase().trim() === contactEmail)) ||
-        (company.id && c.buyerCompanyId === company.id)
+        (userEmail && (
+          c.buyerEmail?.toLowerCase().trim() === userEmail ||
+          c.buyerContactEmail?.toLowerCase().trim() === userEmail ||
+          c.sellerContactEmail?.toLowerCase().trim() === userEmail
+        )) ||
+        (contactEmail && (
+          c.buyerEmail?.toLowerCase().trim() === contactEmail ||
+          c.buyerContactEmail?.toLowerCase().trim() === contactEmail ||
+          c.sellerContactEmail?.toLowerCase().trim() === contactEmail
+        )) ||
+        (company.id && (
+          c.buyerCompanyId === company.id ||
+          c.sellerCompanyId === company.id
+        ))
       );
       return isMyDeskThread;
     }
@@ -381,8 +402,8 @@ export function sendInquiryMessage(
 export async function broadcastToTargetAudience(
   title: string,
   text: string,
-  targetAudience: 'seller' | 'buyer' = 'seller',
-  adminName: string = 'Jeff Vetting Director (B2B LINK Desk)',
+  targetAudience: 'seller' | 'buyer' | 'all' | 'free' | 'silver' | 'gold' = 'all',
+  adminName: string = 'Jeff (B2B LINK Desk)',
   adminId: string = 'admin-desk'
 ): Promise<InquiryConversation | null> {
   try {
@@ -586,6 +607,9 @@ export async function sendAdminDirectMessage(
       body: JSON.stringify({
         action: 'admin_direct_message',
         sellerCompanyId,
+        sellerEmail: sellerInfo?.contact_email,
+        companyName: sellerInfo?.company_name,
+        contactName: sellerInfo?.contact_name,
         text: text.trim(),
         adminName,
         adminId,
@@ -668,7 +692,7 @@ export async function sendAdminDirectMessage(
   return { success: false, conversation: null, error: 'Failed to send direct message to seller.' };
 }
 
-// Fetch list of registered sellers for Admin Direct Messaging
+// Fetch list of registered members for Admin Direct Messaging
 export async function fetchAllSellersForAdmin(): Promise<any[]> {
   try {
     const res = await fetch('/api/inquiries', {
@@ -676,12 +700,42 @@ export async function fetchAllSellersForAdmin(): Promise<any[]> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'get_sellers' }),
     });
+    let apiSellers: any[] = [];
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.sellers)) {
-        return data.sellers.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
+        apiSellers = data.sellers;
       }
     }
+
+    // Reconcile with local admin accounts so every registered member appears
+    const localAccounts = getAdminAccounts();
+    const map = new Map<string, any>();
+
+    for (const s of apiSellers) {
+      if (s.id) map.set(s.id, s);
+      if (s.contact_email) map.set(s.contact_email.toLowerCase(), s);
+    }
+
+    for (const a of localAccounts) {
+      if (a.role === 'admin' || a.email?.toLowerCase() === 'admin@b2blink.eu') continue;
+      const key = a.id || a.email?.toLowerCase();
+      if (!map.has(a.id) && (!a.email || !map.has(a.email.toLowerCase()))) {
+        map.set(key, {
+          id: a.id,
+          company_name: a.name,
+          contact_name: a.contact_name,
+          contact_email: a.email,
+          phone: a.phone,
+          approval_status: a.approval_status,
+          role: a.role,
+          tier: a.membership_tier,
+        });
+      }
+    }
+
+    const all = Array.from(new Set(map.values()));
+    return all.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
   } catch {
     // fallback
   }

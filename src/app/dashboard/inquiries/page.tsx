@@ -92,7 +92,7 @@ function InquiriesContent() {
     };
 
     refresh();
-    void syncWithSupabase(role || undefined, companyId, companyEmail).then(() => {
+    void syncWithSupabase(role || undefined, companyId, companyEmail, company?.membership_tier || company?.tier || 'bronze').then(() => {
       if (isMounted) refresh();
     });
 

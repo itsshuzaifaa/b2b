@@ -473,9 +473,13 @@ export function markPaymentCompleted(paymentId: string): boolean {
   );
   saveAdminPayments(updatedPayments);
 
-  // If this payment was for a company, automatically approve that company!
+  // If this payment was for a company, automatically approve that company if not already approved!
   if (payment?.company_id) {
-    updateAccountApproval(payment.company_id, 'approved');
+    const accounts = getAdminAccounts();
+    const existing = accounts.find((a) => a.id === payment.company_id || (payment.contact_email && a.email?.toLowerCase() === payment.contact_email.toLowerCase().trim()));
+    if (existing && existing.approval_status !== 'approved') {
+      updateAccountApproval(payment.company_id, 'approved');
+    }
   }
 
   return true;

@@ -651,7 +651,8 @@ export function verificationEmail(props: VerificationEmailProps): { subject: str
 export function kycVerificationRequestEmail(
   props: KycVerificationRequestEmailProps
 ): { subject: string; html: string } {
-  const subject = 'Action Required: Submit verification documents to activate your account - B2B LINK';
+  const companySuffix = props.companyName ? ` - ${props.companyName}` : '';
+  const subject = `Action Required: Submit verification documents to activate your account${companySuffix} - B2B LINK`;
   const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
 
   const content = `
@@ -672,7 +673,7 @@ export function kycVerificationRequestEmail(
         Account Status: Pending Document Verification
       </div>
       <p style="font-size: 14px; line-height: 1.5; color: #92400E; margin: 0;">
-        Your email address has been verified. Because initial registration on B2B LINK requires only minimal information, we require official business documentation to verify your company identity, maintain trading security, and activate full wholesale platform access.
+        Your email address has been verified. Because the initial registration on B2B LINK requires only minimal information, we require official business documentation to verify your company identity, maintain trading security, and activate full wholesale platform access.
       </p>
     </div>
 
@@ -705,7 +706,7 @@ export function kycVerificationRequestEmail(
       <tr>
         <td style="padding: 12px 16px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
           <div style="font-size: 14px; font-weight: 700; color: #0B1F3A;">4. Wholesale Trade Invoices or Authorized Distributor Invoices</div>
-          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Recent commercial purchase invoices from official manufacturers, brand distributors, or wholesale trade references demonstrating active trading operations.</div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 3px; line-height: 1.4;">Recent commercial purchase invoices from official manufacturers, brand distributors, or wholesale trade references demonstrating active trading operations, and trading address utility bill.</div>
         </td>
       </tr>
     </table>

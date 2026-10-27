@@ -171,7 +171,7 @@ export default function OverviewPage() {
     window.addEventListener('b2b_billing_update', loadData);
     window.addEventListener('b2b_account_status_change', loadData);
     if (company) {
-      void syncWithSupabase(role || undefined, company.id, company.email).then(() => {
+      void syncWithSupabase(role || undefined, company.id, company.email, company?.membership_tier || company?.tier || 'bronze').then(() => {
         setInquiries(getConversationsForUser(company));
       });
     }

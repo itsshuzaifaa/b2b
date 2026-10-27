@@ -109,20 +109,6 @@ export default function SiteAdminUsersPage() {
     );
     updateAccountApproval(acc.id, 'approved');
     showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
-
-    try {
-      await fetch('/api/admin/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'verify',
-          companyId: acc.id,
-          email: acc.email,
-          contactName: acc.contact_name,
-          companyName: acc.name,
-        }),
-      });
-    } catch {}
     loadData();
   };
 
