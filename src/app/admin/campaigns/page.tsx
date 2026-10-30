@@ -19,6 +19,13 @@ import {
   Sparkles,
   RefreshCw,
   Share2,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  X,
+  Bell,
+  Zap,
 } from 'lucide-react';
 import type { CampaignLead } from '@/lib/campaigns/campaign-store';
 
@@ -28,8 +35,35 @@ export default function AdminCampaignsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer'>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'table' | 'emails' | 'whatsapp'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'emails' | 'whatsapp' | 'inactivity'>('table');
   const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  // Autonomous Inactivity Reminders State
+  const [inactivityScanning, setInactivityScanning] = useState(false);
+  const [inactivityResult, setInactivityResult] = useState<any | null>(null);
+  const [showInactivityEmailPreview, setShowInactivityEmailPreview] = useState(false);
+
+  const runInactivityCheck = async (force: boolean = false) => {
+    setInactivityScanning(true);
+    try {
+      const res = await fetch('/api/cron/inactivity-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 30, force }),
+      });
+      const data = await res.json();
+      setInactivityResult(data);
+      if (data.success) {
+        handleCopy('', `Scan Complete! Sent: ${data.emailsSent}, Skipped: ${data.emailsSkipped}`);
+      } else {
+        handleCopy('', `Scan Failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      handleCopy('', `Error running scan: ${err.message}`);
+    } finally {
+      setInactivityScanning(false);
+    }
+  };
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -337,6 +371,21 @@ export default function AdminCampaignsPage() {
             <Phone className="w-3 h-3 text-emerald-600" />
             <span>WhatsApp Numbers View</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('inactivity')}
+            className={`text-xs font-bold px-4 py-1.5 rounded-full transition cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'inactivity'
+                ? 'bg-[#0B1F3A] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Inactivity Reminders</span>
+            <span className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase">
+              Auto
+            </span>
+          </button>
         </div>
 
         {/* Filters */}
@@ -629,6 +678,296 @@ export default function AdminCampaignsPage() {
             <Share2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <div>
               <strong className="font-bold">WhatsApp Campaign Readiness:</strong> Numbers are automatically formatted with national dial codes (+44, +46, +33, +49, +31, +92) captured during the account onboarding flow.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: AUTONOMOUS INACTIVITY REMINDERS */}
+      {activeTab === 'inactivity' && (
+        <div className="space-y-6">
+          {/* Main Control Card */}
+          <div className="bg-white rounded-2xl border border-[#EAEFF6] p-6 shadow-xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    Autonomous Background Job
+                  </span>
+                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Cron Endpoint Active
+                  </span>
+                </div>
+                <h3 className="text-xl font-extrabold text-[#0B1F3A] tracking-tight">
+                  30-Day Inactivity Reminder Engine
+                </h3>
+                <p className="text-xs text-[#5B6B82] mt-1 max-w-2xl leading-relaxed">
+                  Automatically scans wholesale accounts that have had no login activity for over 30 days (1 month). Dispatches a personalized email urging members to log in and refresh their Want-To-Buy (WTB) and Want-To-Sell (WTS) requests, and posts a notification in their in-app desk.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowInactivityEmailPreview(true)}
+                  className="bg-white border border-[#E2E8F0] hover:bg-slate-50 text-[#0F172A] text-xs font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Eye className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Preview Email</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => runInactivityCheck(false)}
+                  disabled={inactivityScanning}
+                  className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-xs font-bold px-4 py-2.5 rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${inactivityScanning ? 'animate-spin' : ''}`} />
+                  <span>{inactivityScanning ? 'Scanning...' : 'Run Inactivity Check Now'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Config Specs Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-5">
+              <div className="bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-500">Autonomous Schedule</div>
+                <div className="text-sm font-black text-[#0B1F3A] mt-1">Daily at 08:00 UTC</div>
+                <div className="text-[11px] text-slate-500 font-mono mt-0.5">vercel.json &bull; cron</div>
+              </div>
+
+              <div className="bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-500">Inactivity Trigger</div>
+                <div className="text-sm font-black text-[#0B1F3A] mt-1">30 Days (1 Month)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Based on last active date</div>
+              </div>
+
+              <div className="bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-500">Cooldown Protection</div>
+                <div className="text-sm font-black text-[#0B1F3A] mt-1">30-Day Cooldown</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Zero spam guarantee</div>
+              </div>
+
+              <div className="bg-[#F8FAFC] border border-slate-200/80 rounded-xl p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-500">Channels Dispatched</div>
+                <div className="text-sm font-black text-[#0B1F3A] mt-1">Email + In-App Desk</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">support@b2blink.eu</div>
+              </div>
+            </div>
+
+            {/* Webhook & Cron Integration Note */}
+            <div className="mt-4 p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl text-xs text-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  <strong>Autonomous Cron Endpoint:</strong> <code className="font-mono bg-blue-100/80 text-blue-800 px-1.5 py-0.5 rounded text-[11px]">/api/cron/inactivity-reminders</code>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => runInactivityCheck(true)}
+                disabled={inactivityScanning}
+                className="text-[11px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+              >
+                Force Run (Bypass 30d Cooldown)
+              </button>
+            </div>
+          </div>
+
+          {/* Results Summary Box if scan was triggered */}
+          {inactivityResult && (
+            <div className="bg-white rounded-2xl border border-[#EAEFF6] p-6 shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h4 className="text-sm font-extrabold text-[#0B1F3A] flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Latest Scan Execution Results ({new Date(inactivityResult.timestamp).toLocaleTimeString()})</span>
+                </h4>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                    {inactivityResult.emailsSent} Sent
+                  </span>
+                  <span className="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                    {inactivityResult.emailsSkipped} Skipped (Recent)
+                  </span>
+                  {inactivityResult.emailsFailed > 0 && (
+                    <span className="bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-full">
+                      {inactivityResult.emailsFailed} Failed
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Details table */}
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                      <th className="py-2.5 px-3">Company / Contact</th>
+                      <th className="py-2.5 px-3">Email</th>
+                      <th className="py-2.5 px-3">Days Inactive</th>
+                      <th className="py-2.5 px-3">WTB / WTS Lots</th>
+                      <th className="py-2.5 px-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {inactivityResult.details?.map((d: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-3 font-bold text-slate-900">
+                          {d.companyName}
+                          <span className="block text-[11px] font-normal text-slate-500">{d.contactName}</span>
+                        </td>
+                        <td className="py-2.5 px-3 font-mono text-slate-700">{d.email}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`font-bold ${d.daysInactive >= 30 ? 'text-amber-600' : 'text-slate-600'}`}>
+                            {d.daysInactive} days
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-blue-600 font-bold">{d.activeWtbCount} WTB</span> ·{' '}
+                          <span className="text-emerald-600 font-bold">{d.activeWtsCount} WTS</span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {d.status === 'sent' && (
+                            <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                              Email Dispatched
+                            </span>
+                          )}
+                          {d.status === 'skipped_recent_notification' && (
+                            <span className="bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-full text-[10px]">
+                              Cooldown Skipped
+                            </span>
+                          )}
+                          {d.status === 'not_inactive' && (
+                            <span className="bg-blue-50 text-blue-700 font-medium px-2 py-0.5 rounded-full text-[10px]">
+                              Active (&lt;30d)
+                            </span>
+                          )}
+                          {d.status === 'failed' && (
+                            <span className="bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                              Failed: {d.error || 'Error'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL: INACTIVITY EMAIL PREVIEW */}
+      {showInactivityEmailPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1528]/80 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-xs z-10">
+              <div className="flex items-center gap-2">
+                <span className="bg-blue-50 text-[#0A6CFF] text-[10px] font-black uppercase px-2.5 py-1 rounded-full border border-blue-200">
+                  Email Preview
+                </span>
+                <h3 className="font-extrabold text-[#0B1F3A] text-sm">
+                  Monthly Inactivity Reminder (WTB &amp; WTS Refresh)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInactivityEmailPreview(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-full transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Email Canvas Preview */}
+            <div className="p-6 bg-[#F3F6FB]">
+              <div className="bg-white rounded-2xl border border-[#EAEFF6] p-6 shadow-xs space-y-4">
+                {/* Header branding */}
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div className="font-black text-[#0B1F3A] text-lg">
+                    B2B <span className="text-[#00C2FF]">LINK</span>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    Account Reminder
+                  </span>
+                </div>
+
+                {/* Email Body */}
+                <h2 className="text-xl font-extrabold text-[#0B1F3A] tracking-tight">
+                  Keep Your Trading Requirements Fresh
+                </h2>
+
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Hello <strong>Acme Electronics Representative</strong>,
+                </p>
+
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  It has been <strong>35 days (over 1 month)</strong> since your last activity on the <strong>B2B LINK</strong> wholesale network.
+                </p>
+
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Wholesale pricing, buyer demand, and stock availability across consumer technology move rapidly. To ensure your company continues to receive verified Buyer-Seller Matches, competitive quotations, and relevant trade inquiries, we recommend logging in to review and refresh your active listings:
+                </p>
+
+                {/* WTB & WTS Boxes */}
+                <div className="bg-[#F8FAFC] border border-slate-200 rounded-xl p-4 space-y-3">
+                  <div className="pb-3 border-b border-slate-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="bg-[#0A6CFF] text-white text-[10px] font-black px-1.5 py-0.5 rounded uppercase">
+                        WTB Sourcing
+                      </span>
+                      <strong className="text-xs text-[#0B1F3A]">Want-To-Buy Procurement Demands</strong>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-normal">
+                      You currently have <strong className="text-blue-600">3</strong> active procurement request(s). Refresh target purchase quantities and target prices, or mark fulfilled requests as closed to prevent outdated quotations.
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="bg-[#00C2FF] text-[#0B1F3A] text-[10px] font-black px-1.5 py-0.5 rounded uppercase">
+                        WTS Inventory
+                      </span>
+                      <strong className="text-xs text-[#0B1F3A]">Want-To-Sell Available Lots</strong>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-normal">
+                      You currently have <strong className="text-cyan-700">8</strong> active stock listing(s). Update available quantities, condition grades, and asking prices to ensure high visibility to active European buyers.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl p-3 text-[11px] text-blue-900 leading-normal">
+                  💡 <strong>Unified Wholesale Account:</strong> All B2B LINK accounts can both source demand and liquidate excess inventory with <strong>0% transaction commission</strong>.
+                </div>
+
+                <div className="pt-2 text-center">
+                  <span className="inline-block bg-[#0A6CFF] text-white text-xs font-bold px-6 py-2.5 rounded-full shadow-xs">
+                    Log In &amp; Update Listings
+                  </span>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 text-xs text-slate-600">
+                  Kind regards,<br />
+                  <strong className="text-[#0B1F3A]">B2B LINK Trading Support</strong><br />
+                  <span className="text-[11px] text-slate-400">Trading Board Desk &bull; support@b2blink.eu</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-xs text-slate-500">Sender: notifications@b2blink.eu</span>
+              <button
+                type="button"
+                onClick={() => setShowInactivityEmailPreview(false)}
+                className="bg-[#0B1F3A] hover:bg-[#081528] text-white text-xs font-bold px-4 py-2 rounded-full transition cursor-pointer"
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>

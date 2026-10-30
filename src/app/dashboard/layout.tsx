@@ -37,6 +37,7 @@ export default function DashboardLayout({
   // Sidebar collapse state (desktop) & Mobile drawer state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+  const [matchesCount, setMatchesCount] = useState<number>(0);
 
   // Close mobile drawer whenever route changes
   useEffect(() => {
@@ -120,6 +121,27 @@ export default function DashboardLayout({
       window.removeEventListener('b2b_account_status_change', handleAdminUpdate);
     };
   }, []);
+
+  // Sync smart matches count
+  useEffect(() => {
+    const checkMatches = () => {
+      if (!company) return;
+      const params = new URLSearchParams();
+      if (company.id) params.set('companyId', company.id);
+      if (company.email) params.set('email', company.email);
+      fetch(`/api/matches?${params.toString()}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.matches)) {
+            setMatchesCount(d.matches.length);
+          }
+        })
+        .catch(() => {});
+    };
+    checkMatches();
+    window.addEventListener('b2b_trade_matches_updated', checkMatches);
+    return () => window.removeEventListener('b2b_trade_matches_updated', checkMatches);
+  }, [company?.id, company?.email]);
 
   const adminStoreAccount = React.useMemo(() => {
     if (typeof window === 'undefined' || !company) return null;
@@ -316,6 +338,11 @@ export default function DashboardLayout({
                     >
                       <Icon className="w-4 h-4 shrink-0" />
                       <span className="flex-1 truncate">{item.label}</span>
+                      {item.href === '/dashboard' && matchesCount > 0 && (
+                        <span className="bg-emerald-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse">
+                          {matchesCount}
+                        </span>
+                      )}
                       {isLockedItem && (
                         <span className="text-[9px] text-amber-400/80 font-normal">KYC</span>
                       )}
@@ -467,10 +494,18 @@ export default function DashboardLayout({
                 >
                   <div className="relative shrink-0 flex items-center justify-center">
                     <Icon className="w-5 h-5" />
+                    {isCollapsed && item.href === '/dashboard' && matchesCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#050E1D] animate-pulse" />
+                    )}
                   </div>
                   {!isCollapsed && (
                     <div className="flex-1 flex items-center justify-between">
                       <span>{item.label}</span>
+                      {item.href === '/dashboard' && matchesCount > 0 && (
+                        <span className="bg-emerald-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse">
+                          {matchesCount}
+                        </span>
+                      )}
                       {isLockedItem && (
                         <span className="text-[10px] text-amber-400/80 font-normal">KYC</span>
                       )}

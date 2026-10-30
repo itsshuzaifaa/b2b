@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import { processWtbNotificationQueue } from '@/lib/email/dispatcher';
+import { processMatchesForNewWtb } from '@/lib/matching/match-service';
 import type { WtbRequest } from '@/types/database';
 
 export interface WtbInput {
@@ -135,6 +136,26 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       processedCount = queueResult.totalProcessed;
     } catch (qErr) {
       console.warn('[WTB QUEUE TRIGGER NOTICE]', qErr);
+    }
+
+    // 5. Trigger automatic matching with active WTS inventory & send immediate emails
+    try {
+      void processMatchesForNewWtb({
+        id: insertedWtb.id,
+        buyer_user_id: buyerUserId,
+        buyer_company_id: data.buyerCompanyId || null,
+        buyer_company: data.buyerCompany || null,
+        buyer_name: data.buyerName.trim(),
+        buyer_email: data.buyerEmail.trim().toLowerCase(),
+        buyer_phone: data.buyerPhone?.trim() || null,
+        product_name: data.productName.trim(),
+        target_quantity: data.targetQuantity,
+        target_price: data.targetPrice,
+        barcode_or_sku: data.barcodeOrSku?.trim() || null,
+        notes: data.notes?.trim() || null,
+      });
+    } catch (mErr) {
+      console.warn('[WTB MATCH PROCESS NOTICE]', mErr);
     }
 
     return {

@@ -3,6 +3,7 @@
 import Papa from 'papaparse';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { Product, MembershipTier, ProductStatus } from '@/types/database';
+import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
 export interface CsvRowError {
   row: number;
@@ -372,6 +373,24 @@ export async function importProductsFromCsv({
   }
 
   const insertedCount = insertedData ? insertedData.length : validProductsToInsert.length;
+
+  // 9. Trigger automatic matching for newly imported products
+  try {
+    for (const prod of validProductsToInsert) {
+      void processMatchesForNewProduct({
+        company_id: prod.company_id,
+        title: prod.title,
+        brand: (prod as any).brand || null,
+        barcode_or_sku: prod.barcode_or_sku,
+        unit_price: prod.unit_price,
+        quantity_available: prod.quantity_available,
+        condition: (prod as any).condition || 'New',
+        description: prod.description,
+      });
+    }
+  } catch (mErr) {
+    console.warn('[CSV MATCH NOTICE]', mErr);
+  }
 
   return {
     success: true,

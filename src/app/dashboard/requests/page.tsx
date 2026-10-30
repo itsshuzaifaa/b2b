@@ -23,15 +23,20 @@ import {
   ChevronUp,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
+import type { TradeMatch } from '@/lib/matching/match-types';
+import { getUserMatches } from '@/lib/matching/match-types';
 
 export default function BuyerRequestsPage() {
   const { company, role } = useAuth();
   const [searchFilter, setSearchFilter] = useState('');
   const [wtbList, setWtbList] = useState<WtbRequest[]>([]);
   const [receivedQuotes, setReceivedQuotes] = useState<ReceivedWtbQuote[]>([]);
+  const [matches, setMatches] = useState<TradeMatch[]>([]);
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
+  const [expandedMatchesReqId, setExpandedMatchesReqId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [createWtbOpen, setCreateWtbOpen] = useState(false);
 
@@ -64,6 +69,27 @@ export default function BuyerRequestsPage() {
       const quotes = getBuyerReceivedQuotes(buyerEmail);
       setReceivedQuotes(quotes);
 
+      // 3. Load trading matches
+      const loadMatches = () => {
+        const companyId = company?.id;
+        const email = company?.email;
+        const params = new URLSearchParams();
+        if (companyId) params.set('companyId', companyId);
+        if (email) params.set('email', email);
+
+        fetch(`/api/matches?${params.toString()}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.success && Array.isArray(data.matches)) {
+              setMatches(data.matches);
+            }
+          })
+          .catch(() => {
+            setMatches(getUserMatches(companyId, email));
+          });
+      };
+      loadMatches();
+
       // Listen for real-time received quotes updates
       const handleQuotesUpdate = (e: Event) => {
         const custom = e as CustomEvent<ReceivedWtbQuote[]>;
@@ -74,10 +100,14 @@ export default function BuyerRequestsPage() {
         }
       };
 
+      const handleMatchesUpdate = () => loadMatches();
+
       window.addEventListener('b2b_received_quotes_update', handleQuotesUpdate);
+      window.addEventListener('b2b_trade_matches_updated', handleMatchesUpdate);
       return () => {
         isMounted = false;
         window.removeEventListener('b2b_received_quotes_update', handleQuotesUpdate);
+        window.removeEventListener('b2b_trade_matches_updated', handleMatchesUpdate);
       };
     } else {
       setIsLoading(false);
@@ -199,7 +229,14 @@ export default function BuyerRequestsPage() {
               const quotesForThisReq = receivedQuotes.filter(
                 (q) => q.wtbRequestId === req.id || q.productName === req.product_name
               );
+              const matchesForThisReq = matches.filter(
+                (m) =>
+                  m.wtbId === req.id ||
+                  (m.wtbProductName && m.wtbProductName.toLowerCase() === req.product_name.toLowerCase()) ||
+                  (m.wtbBarcode && req.barcode_or_sku && m.wtbBarcode === req.barcode_or_sku)
+              );
               const isExpanded = expandedRequestId === req.id;
+              const isMatchesExpanded = expandedMatchesReqId === req.id;
 
               return (
                 <div key={req.id} className="p-5 space-y-4 hover:bg-slate-50/40 transition">
@@ -215,15 +252,24 @@ export default function BuyerRequestsPage() {
                           Active Broadcast
                         </span>
 
+                        {matchesForThisReq.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            <Zap className="w-3 h-3 text-emerald-600 fill-emerald-600" />
+                            <span>{matchesForThisReq.length} Matching Stock {matchesForThisReq.length === 1 ? 'Lot' : 'Lots'} Available</span>
+                          </span>
+                        )}
+
                         {quotesForThisReq.length > 0 ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
                             <Sparkles className="w-3 h-3 text-[#0A6CFF]" />
                             <span>{quotesForThisReq.length} Supplier {quotesForThisReq.length === 1 ? 'Quote' : 'Quotes'} Received</span>
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            Awaiting supplier offers
-                          </span>
+                          matchesForThisReq.length === 0 && (
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              Awaiting supplier offers
+                            </span>
+                          )
                         )}
                       </div>
 
@@ -253,6 +299,18 @@ export default function BuyerRequestsPage() {
                     </div>
 
                     <div className="flex items-center gap-2.5 shrink-0">
+                      {matchesForThisReq.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedMatchesReqId(isMatchesExpanded ? null : req.id)}
+                          className="text-[12px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-3.5 py-1.5 rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" />
+                          <span>{isMatchesExpanded ? 'Hide Stock Matches' : `View ${matchesForThisReq.length} Stock Matches`}</span>
+                          {isMatchesExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+
                       {quotesForThisReq.length > 0 && (
                         <button
                           type="button"
@@ -280,6 +338,71 @@ export default function BuyerRequestsPage() {
                       </Link>
                     </div>
                   </div>
+
+                  {/* Expandable Stock Matches list */}
+                  {matchesForThisReq.length > 0 && (isMatchesExpanded || (quotesForThisReq.length === 0 && matchesForThisReq.length > 0)) && (
+                    <div className="pt-2">
+                      <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-4 sm:p-5 space-y-3.5">
+                        <div className="text-[12px] font-bold uppercase tracking-wider text-emerald-800 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />
+                            <span>Verified Stock Matches Found ({matchesForThisReq.length})</span>
+                          </div>
+                          <span className="text-[11px] font-normal text-emerald-700">Immediate email dispatched</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          {matchesForThisReq.map((match) => (
+                            <div
+                              key={match.id}
+                              className="bg-white rounded-xl p-4 border border-emerald-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
+                            >
+                              <div className="space-y-1.5 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-bold text-[#0B1F3A] text-[14px]">
+                                    {match.wtsTitle}
+                                  </span>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    {match.matchType === 'exact_barcode' ? '100% Barcode Match' : `${match.confidence}% Model Match`}
+                                  </span>
+                                  <span className="text-[11px] text-[#64748B]">
+                                    Supplier: <strong className="text-[#0B1F3A]">{match.sellerCompanyName}</strong>
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-4 text-[12.5px] text-[#5B6B82]">
+                                  <div>
+                                    Supplier Unit Price:{' '}
+                                    <strong className="text-emerald-700 font-bold">€{match.wtsUnitPrice.toFixed(2)}</strong>
+                                    <span className="text-[11px] text-slate-400"> (Your target: €{match.wtbTargetPrice.toFixed(2)})</span>
+                                  </div>
+                                  <div>
+                                    Available:{' '}
+                                    <strong className="text-[#0B1F3A]">{match.wtsQuantityAvailable.toLocaleString()} units</strong>
+                                  </div>
+                                  {match.wtsBarcode && (
+                                    <div className="font-mono text-[11px] text-slate-500">
+                                      EAN: {match.wtsBarcode}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Link
+                                  href={`/dashboard/inquiries?startTrade=${encodeURIComponent(match.wtsProductId)}`}
+                                  className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>Contact Supplier</span>
+                                </Link>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Expandable Received Quotes list from Suppliers */}
                   {quotesForThisReq.length > 0 && (isExpanded || quotesForThisReq.length === 1) && (

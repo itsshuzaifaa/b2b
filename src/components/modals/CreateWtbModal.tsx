@@ -110,11 +110,40 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
             moq: Math.min(10, qtyNum),
             location,
             status: 'Active' as const,
+            createdAt: new Date().toISOString(),
+            activatedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
           };
           localStorage.setItem(localKey, JSON.stringify([newListingItem, ...existing]));
           window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
           window.dispatchEvent(new CustomEvent('b2b_admin_update'));
         } catch {}
+
+        // Persist to Supabase & trigger automatic matching with open WTB requests
+        if (company?.id) {
+          try {
+            await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: company.id,
+                title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
+                brand,
+                condition,
+                description: notes ? `${notes} | Stock Location: ${location}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.`,
+                barcodeOrSku: ean.trim() && ean.trim() !== 'n/a' ? ean.trim() : undefined,
+                categorySlug: finalCategory.toLowerCase().replace(/\s+/g, '-'),
+                unitPrice: priceNum,
+                quantityAvailable: qtyNum,
+                moq: Math.min(10, qtyNum),
+                isHot: true,
+                status: 'active',
+              }),
+            });
+          } catch (postErr) {
+            console.warn('[POST PRODUCT ERROR]', postErr);
+          }
+        }
       } else {
         // Submit WTB request
         const buyerName = company?.contact_name || company?.name || 'Verified Buyer';

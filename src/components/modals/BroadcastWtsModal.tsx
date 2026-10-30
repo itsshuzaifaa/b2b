@@ -244,11 +244,40 @@ export function BroadcastWtsModal({
             ean: broadcastEan,
             description: broadcastNotes,
             status: 'Active',
+            createdAt: new Date().toISOString(),
+            activatedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
           };
           current.unshift(newListing);
           localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(current));
         } catch (err) {
           console.warn('[SAVE LOCAL LISTING ERROR]', err);
+        }
+
+        // Persist to Supabase & trigger automatic matching with open WTB requests
+        if (company?.id) {
+          try {
+            await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: company.id,
+                title: broadcastTitle,
+                brand: broadcastBrand,
+                condition: broadcastCondition,
+                description: broadcastNotes,
+                barcodeOrSku: broadcastEan && broadcastEan !== 'n/a' ? broadcastEan : undefined,
+                categorySlug: broadcastCategory.toLowerCase().replace(/\s+/g, '-'),
+                unitPrice: broadcastPrice,
+                quantityAvailable: broadcastQty,
+                moq: broadcastMoq,
+                isHot: true,
+                status: 'active',
+              }),
+            });
+          } catch (postErr) {
+            console.warn('[POST PRODUCT ERROR]', postErr);
+          }
         }
       }
 

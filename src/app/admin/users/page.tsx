@@ -40,6 +40,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Package,
+  Clock,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
@@ -100,6 +101,25 @@ export default function AdminUsersPage() {
   const handleBulkCsvSuccess = (count: number) => {
     showNotice(`Successfully uploaded and published ${count} listings for ${bulkCsvAccount?.name}`);
     loadData();
+  };
+
+  const handleSendInactivityReminder = async (acc: AdminClientAccount) => {
+    showNotice(`Sending 30-day inactivity reminder to ${acc.email}...`);
+    try {
+      const res = await fetch('/api/cron/inactivity-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: acc.email, force: true }),
+      });
+      const data = await res.json();
+      if (data.success && data.emailsSent > 0) {
+        showNotice(`Inactivity reminder successfully sent to ${acc.email}!`);
+      } else {
+        showNotice(`Reminder dispatched to ${acc.email}`);
+      }
+    } catch {
+      showNotice(`Failed to send inactivity reminder to ${acc.email}`);
+    }
   };
 
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
@@ -257,6 +277,25 @@ export default function AdminUsersPage() {
       });
     } catch {}
     loadData();
+  };
+
+  const handleSendInactivityReminder = async (acc: AdminClientAccount) => {
+    showNotice(`Sending 30-day inactivity reminder to ${acc.email}...`);
+    try {
+      const res = await fetch('/api/cron/inactivity-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: acc.email, force: true }),
+      });
+      const data = await res.json();
+      if (data.success && data.emailsSent > 0) {
+        showNotice(`Inactivity reminder successfully sent to ${acc.email}!`);
+      } else {
+        showNotice(`Reminder dispatched to ${acc.email}`);
+      }
+    } catch {
+      showNotice(`Failed to send inactivity reminder to ${acc.email}`);
+    }
   };
 
   const filteredAccounts = useMemo(() => {
@@ -456,6 +495,14 @@ export default function AdminUsersPage() {
                       <td className="py-4 px-6 text-[#5B6B82]">
                         <div className="font-bold text-[#0B1F3A] text-[13px]">{acc.contact_name}</div>
                         <div className="text-[12px] text-[#0A6CFF]">{acc.email}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                          <span>Active: {acc.last_active || 'Recently'}</span>
+                          {(acc.last_active?.includes('mo ago') || (acc.last_active_at && (Date.now() - new Date(acc.last_active_at).getTime()) >= 30 * 24 * 60 * 60 * 1000)) && (
+                            <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded uppercase">
+                              30d+ Inactive
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Status */}
@@ -631,6 +678,18 @@ export default function AdminUsersPage() {
                                     <span>Clear All Lots ({acc.listings_count})</span>
                                   </button>
                                 )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    handleSendInactivityReminder(acc);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition cursor-pointer"
+                                >
+                                  <Clock className="w-4 h-4 text-amber-600" />
+                                  <span>Send Inactivity Reminder</span>
+                                </button>
 
                                 <div className="my-1 border-t border-slate-100" />
 

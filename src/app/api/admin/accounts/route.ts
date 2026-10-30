@@ -141,6 +141,17 @@ export async function GET() {
             .then(() => {});
         }
 
+        const lastActiveTimestamp = c.last_active_at || metaUser?.last_sign_in_at || c.updated_at || c.created_at;
+        let lastActiveLabel = 'Recently';
+        if (lastActiveTimestamp) {
+          const diffDays = Math.floor((Date.now() - new Date(lastActiveTimestamp).getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 0) lastActiveLabel = 'Today';
+          else if (diffDays === 1) lastActiveLabel = 'Yesterday';
+          else if (diffDays < 30) lastActiveLabel = `${diffDays}d ago`;
+          else if (diffDays < 60) lastActiveLabel = '1mo ago';
+          else lastActiveLabel = `${Math.floor(diffDays / 30)}mo ago`;
+        }
+
         return {
           id: c.id,
           name: c.company_name || meta.company_name || c.contact_name || 'Enterprise Account',
@@ -155,7 +166,9 @@ export async function GET() {
           vat_number: c.vat_number || meta.vat_number || null,
           country: c.role === 'seller' ? 'Estonia' : 'United Kingdom',
           created_at: c.created_at || metaUser?.created_at || new Date().toISOString(),
-          last_active: 'Recently',
+          last_active: lastActiveLabel,
+          last_active_at: lastActiveTimestamp || null,
+          last_inactivity_reminder_at: c.last_inactivity_reminder_at || null,
           listings_count: listingCounts[c.id] || 0,
           total_spend_or_sales:
             c.role === 'seller'

@@ -44,7 +44,9 @@ export function LiveTradingBoard() {
       const userListings = rawUserListings ? JSON.parse(rawUserListings) : [];
 
       const formattedUserSell: TradingBoardItem[] = Array.isArray(userListings)
-        ? userListings.map((l: any, idx: number) => ({
+        ? userListings
+            .filter((l: any) => l.status !== 'Unpublished' && l.status !== 'unpublished' && l.status !== 'Draft' && l.status !== 'draft')
+            .map((l: any, idx: number) => ({
             id: l.id || `user-lst-${idx}`,
             type: 'SELL',
             category: l.category || 'Mobile Phones',

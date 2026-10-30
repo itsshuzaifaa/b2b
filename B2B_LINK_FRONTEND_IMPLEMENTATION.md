@@ -207,3 +207,35 @@ The buyer registration flow is ready for you to test end-to-end:
 5. Click **"Create Free B2B Buyer Account"**.
 6. The system automatically creates your Supabase Auth user, writes your verified company profile to `companies`, activates your session, and redirects you directly to the **Marketplace** (`/marketplace`) with full wholesale catalog access!
 
+---
+
+## 6. Autonomous 30-Day Inactivity Reminder Engine (WTB & WTS Refresh)
+
+To keep the European wholesale trading catalog and buyer sourcing board updated with accurate demand and stock availability, an autonomous inactivity messaging engine has been implemented:
+
+### A. Lifecycle & Inactivity Detection
+- **Trigger**: Accounts with $\ge$ 30 days (1 month) of inactivity based on `last_active_at`, Supabase Auth `last_sign_in_at`, or account creation date.
+- **Cooldown Protection**: Enforces a 30-day quiet period between reminder emails (`last_inactivity_reminder_at`) to prevent repeat messaging within the same cycle.
+- **Activity Tracking**: When members authenticate or restore their session via `/api/auth/me`, their `last_active_at` timestamp is automatically refreshed.
+
+### B. Dual-Channel Autonomous Notification
+1. **Branded Email Notification**:
+   - Dispatched via transactional Resend sender (`notifications@b2blink.eu`).
+   - Dynamic copy highlighting active Want-To-Buy (WTB) procurement counts and Want-To-Sell (WTS) listing counts.
+   - Explains the rapid pace of wholesale secondary consumer tech and urges members to update quantities, prices, or close fulfilled requirements.
+   - One-click CTA: *"Log In & Update Listings"* directing to `/login?redirect=/dashboard`.
+   - Sign-off from **B2B LINK Trading Support**.
+2. **In-App Messaging Desk Notification**:
+   - Posts a notification thread in the user's messaging center (`/dashboard/inquiries`) from **B2B LINK Trading Support**, waiting for them when they sign in.
+
+### C. Execution & Scheduled Automation
+- **Cron API Route**: [`/api/cron/inactivity-reminders`](file:///c:/Users/mustu/Desktop/b2b-main/src/app/api/cron/inactivity-reminders/route.ts)
+  - Supports `GET` and `POST`.
+  - Authorized via `CRON_SECRET` header/query or platform administrator sessions.
+  - Configurable query flags: `?days=30`, `?force=true`, `?email=user@domain.eu`.
+- **Vercel Cron Automation**: Configured in [`vercel.json`](file:///c:/Users/mustu/Desktop/b2b-main/vercel.json) to execute automatically every day at 08:00 UTC (`0 8 * * *`).
+- **Admin Control UI**:
+  - Located under `/admin/campaigns` (**Inactivity Reminders** tab) with live execution buttons, stats cards, and an interactive **Email Preview** modal.
+  - Accounts Directory (`/admin/users`) highlights `30d+ Inactive` accounts with an on-demand *"Send Inactivity Reminder"* quick action.
+
+

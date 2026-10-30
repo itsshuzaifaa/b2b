@@ -64,6 +64,23 @@ export async function GET(request: NextRequest) {
     const effectiveTier = (rawTiers.includes('gold') ? 'gold' : rawTiers.includes('silver') ? 'silver' : 'bronze') as MembershipTier;
     const effectiveApprovalStatus = (companyRow?.approval_status || metadata.approval_status || approvalStatus) as ApprovalStatus;
 
+    // Track user active timestamp (throttled to at most once per hour)
+    const nowIso = new Date().toISOString();
+    if (companyRow?.id) {
+      const lastActive = companyRow.last_active_at;
+      const hoursSince = lastActive ? (Date.now() - new Date(lastActive).getTime()) / (1000 * 60 * 60) : 999;
+      if (hoursSince >= 1) {
+        admin
+          .from('companies')
+          .update({
+            last_active_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq('id', companyRow.id)
+          .then(() => {});
+      }
+    }
+
     const normalizedCompany: Company = {
       id: companyRow?.id || user.id,
       user_id: user.id,
@@ -81,7 +98,9 @@ export async function GET(request: NextRequest) {
       membership_tier: effectiveTier,
       approval_status: effectiveApprovalStatus,
       categories: companyRow?.niches || companyRow?.categories || metadata.selectedNiches || [],
-      created_at: companyRow?.created_at || user.created_at || new Date().toISOString(),
+      created_at: companyRow?.created_at || user.created_at || nowIso,
+      last_active_at: companyRow?.last_active_at || nowIso,
+      last_inactivity_reminder_at: companyRow?.last_inactivity_reminder_at || null,
     };
 
     return NextResponse.json({

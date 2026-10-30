@@ -216,6 +216,17 @@ function createAutomatedMessagesPdf(outputPath) {
     'Hello [Customer Name],\nThank you for contacting B2B LINK.\nOur Support Team has reviewed your enquiry regarding [Company Name].\nOur response: [Support Reply Message]\nYour original enquiry: [Customer Query]\nYou can reply directly to this email if you require any further assistance.\nKind regards,\nB2B LINK Support Team'
   );
 
+  // 9. Monthly Inactivity Reminder (WTB & WTS Refresh)
+  renderMessageItem(
+    '9',
+    'Monthly Inactivity Reminder (WTB & WTS Refresh)',
+    'EMAIL',
+    'Account inactive for 30+ days (no login or activity in 1 month)',
+    'Customer business email address',
+    'Reminder: Update your BUY & SELL (WTB / WTS) listings on B2B LINK',
+    'Hello [Contact Name],\nIt has been over a month since your last activity on B2B LINK.\nWholesale pricing, buyer demand, and stock availability move quickly in the electronics and technology markets. To ensure you continue receiving verified Buyer-Seller Matches and actionable trade inquiries, please log in to review your requirements:\n• Update or refresh your Want-To-Buy (WTB) procurement requests\n• Update stock quantities, grades, and prices on your Want-To-Sell (WTS) listings\n• Close fulfilled requirements so you only receive active opportunities\n[Log In & Update Listings]\nKind regards,\nB2B LINK Trading Support'
+  );
+
   // FINAL TERMINOLOGY STANDARD TABLE
   if (doc.y > 580) {
     doc.addPage();
