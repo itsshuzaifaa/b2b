@@ -142,6 +142,21 @@ export interface ListingInactivatedEmailProps {
   actionUrl: string;
 }
 
+export interface EmailChangeNoticeCurrentEmailProps {
+  contactName: string;
+  companyName: string;
+  currentEmail: string;
+  newEmail: string;
+  actionUrl: string;
+}
+
+export interface EmailChangeActivationNewEmailProps {
+  contactName: string;
+  companyName: string;
+  newEmail: string;
+  actionUrl: string;
+}
+
 function emailWrapper(title: string, badge: string, content: string, ctaUrl: string, ctaText: string): string {
   const logoUrl = 'https://qmosgopkjqrqogsdgwuy.supabase.co/storage/v1/object/public/public-assets/b2b-link-logo-tight.png';
 
@@ -1617,6 +1632,143 @@ export function listingInactivatedEmail(props: ListingInactivatedEmailProps): { 
     ),
   };
 }
+
+/**
+ * Dispatched to the CURRENT (original) email address when an admin updates the account's email.
+ * Alerts the current address of the change and provides security guidance if unauthorized.
+ */
+export function emailChangeNoticeCurrentEmail(
+  props: EmailChangeNoticeCurrentEmailProps
+): { subject: string; html: string } {
+  const subject = `Security Notice: Email Address Updated for ${props.companyName}`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Account Email Address Updated
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      This is an official security notice that the registered business email address for your B2B LINK account (<strong>${props.companyName}</strong>) has been updated by platform administration.
+    </p>
+
+    <!-- Email Change Summary Card -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 12px;">
+        EMAIL UPDATE DETAILS
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748B; width: 140px;">Previous Email:</td>
+          <td style="padding: 6px 0; color: #334155; font-family: monospace; font-weight: 700;">${props.currentEmail}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">New Email:</td>
+          <td style="padding: 6px 0; color: #0A6CFF; font-family: monospace; font-weight: 700;">${props.newEmail}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Company:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 700;">${props.companyName}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #FEF3C7; border: 1px solid #FDE68A; border-radius: 12px; padding: 14px 18px; margin-bottom: 22px;">
+      <p style="font-size: 13px; line-height: 1.5; color: #92400E; margin: 0;">
+        ⚠️ <strong>Security Advisory:</strong> If you or an authorized representative of <strong>${props.companyName}</strong> did not request or authorize this email modification, please contact B2B LINK Support immediately to secure your account.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      If this change was authorized by your organisation, no further action is required from this inbox.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Account Administration &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Email Updated',
+      'SECURITY NOTICE',
+      content,
+      props.actionUrl,
+      'Contact Support Desk'
+    ),
+  };
+}
+
+/**
+ * Dispatched to the NEW email address when an admin updates the account's email.
+ * Urges the user to log in using the new email to activate and verify their access.
+ */
+export function emailChangeActivationNewEmail(
+  props: EmailChangeActivationNewEmailProps
+): { subject: string; html: string } {
+  const subject = `Action Required: Log In to Activate Your B2B LINK Account (${props.companyName})`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Activate Your Account Email
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      The primary business email address for <strong>${props.companyName}</strong> on the <strong>B2B LINK</strong> wholesale platform has been updated to:
+    </p>
+
+    <!-- Activated Email Box -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 8px;">
+        NEW PRIMARY EMAIL
+      </div>
+      <div style="font-size: 17px; font-weight: 800; font-family: monospace; color: #0A6CFF;">
+        ${props.newEmail}
+      </div>
+      <p style="font-size: 12px; color: #64748B; margin: 8px 0 0 0;">
+        Company: <strong>${props.companyName}</strong>
+      </p>
+    </div>
+
+    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 12px; padding: 14px 18px; margin-bottom: 22px;">
+      <p style="font-size: 13px; line-height: 1.5; color: #065F46; margin: 0; font-weight: 700;">
+        ✓ Action Required: Please log in using this email address to confirm and activate your updated credentials.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Click the button below to sign in directly to your B2B LINK wholesale dashboard:
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Platform Onboarding &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Activate Your Account Email',
+      'ACTION REQUIRED',
+      content,
+      props.actionUrl,
+      'Log In to Activate Access'
+    ),
+  };
+}
+
 
 
 

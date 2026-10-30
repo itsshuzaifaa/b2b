@@ -680,6 +680,79 @@
     </div>
   </div>
 
+  <!-- 10. Account Email Changed - Security Notice (Current Email) -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">10. Account Email Changed - Security Notice (Current Address)</div>
+      <span class="msg-type-pill pill-alert">Security Notice</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Admin updates the member's registered email address from the Users Dashboard</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Current (original) registered business email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Security Notice: Email Address Updated for [Company Name]</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>This is an official security notice that the registered business email address for your B2B LINK account (<strong>[Company Name]</strong>) has been updated by platform administration.</p>
+      <div style="background: #F1F5F9; padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 12px;">
+        <strong>Previous Email:</strong> [Current Email]<br/>
+        <strong>New Email:</strong> [New Email]<br/>
+        <strong>Company:</strong> [Company Name]
+      </div>
+      <p>If you or an authorized company representative requested this update, no further action is required from this inbox.</p>
+      <div style="background: #FEF3C7; border-left: 3px solid #D97706; padding: 8px 12px; margin-top: 10px; font-size: 11px; color: #92400E;">
+        ⚠️ <strong>Security Advisory:</strong> If you did not authorize this change, please contact B2B LINK Support immediately at <strong>support@b2blink.eu</strong> to secure your account.
+      </div>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Support Team</strong></p>
+    </div>
+  </div>
+
+  <!-- 11. Account Email Changed - Activation Notice (New Email) -->
+  <div class="msg-card">
+    <div class="msg-header">
+      <div style="font-weight: 700; font-size: 13px;">11. Account Email Changed - Activation Notice (New Address)</div>
+      <span class="msg-type-pill pill-email">Action Required</span>
+    </div>
+
+    <table class="msg-meta-table">
+      <tr>
+        <td class="meta-label">Trigger Event:</td>
+        <td class="meta-val">Admin updates the member's registered email address from the Users Dashboard</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Recipient:</td>
+        <td class="meta-val">Newly assigned registered business email address</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Subject:</td>
+        <td class="meta-val"><code>Action Required: Log In to Activate Your B2B LINK Account ([Company Name])</code></td>
+      </tr>
+    </table>
+
+    <div class="email-preview">
+      <p>Hello [Contact Name],</p>
+      <p>The primary business email address for <strong>[Company Name]</strong> on the <strong>B2B LINK</strong> wholesale platform has been updated to: <code>[New Email]</code>.</p>
+      <div style="background: #ECFDF5; border-left: 3px solid #10B981; padding: 8px 12px; margin: 10px 0; font-size: 12px; color: #065F46;">
+        ✓ <strong>Action Required:</strong> Please log in using this email address to confirm and activate your updated credentials.
+      </div>
+      <div style="margin: 14px 0;">
+        <a href="https://b2blink.eu/login?email=[NewEmail]&amp;redirect=/dashboard" class="cta-btn">Log In to Activate Access</a>
+      </div>
+      <p style="margin-top: 14px;">Kind regards,<br/><strong>B2B LINK Support Team</strong></p>
+    </div>
+  </div>
+
   <!-- FINAL TERMINOLOGY STANDARD -->
   <div class="section-title">FINAL TERMINOLOGY STANDARD</div>
 

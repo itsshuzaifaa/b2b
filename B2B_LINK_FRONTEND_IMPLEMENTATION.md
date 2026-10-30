@@ -238,4 +238,38 @@ To keep the European wholesale trading catalog and buyer sourcing board updated 
   - Located under `/admin/campaigns` (**Inactivity Reminders** tab) with live execution buttons, stats cards, and an interactive **Email Preview** modal.
   - Accounts Directory (`/admin/users`) highlights `30d+ Inactive` accounts with an on-demand *"Send Inactivity Reminder"* quick action.
 
+---
+
+## 7. Admin Member Basic Information Management & Dual-Email Update Engine
+
+Administrators can now edit member profiles directly from the Accounts Directory (`/admin/users`), with automated security notifications when a registered email address is changed:
+
+### A. 3-Dots Action & Edit Member Information Modal
+- **Trigger**: Click the three vertical dots (`MoreVertical`) on any account row in the Accounts Directory (`/admin/users`), or click **"Edit Info"** inside the Client Dossier modal.
+- **Editable Fields**:
+  - **Contact Representative** (`contact_name`)
+  - **Company Name** (`company_name` / `name`)
+  - **Corporate Email** (`email` / `contact_email`)
+  - **Phone / WhatsApp Number** (`phone`)
+  - **Registered Business / Trading Address** (`address`)
+  - **Country / Jurisdiction** (`country`)
+  - **Company Registration Number** (`company_number`)
+  - **VAT / Tax ID** (`vat_number`)
+
+### B. Automated Dual-Email Dispatch on Email Change
+When an administrator modifies an account's email address:
+1. **Notice to the Current (Original) Email Address**:
+   - Subject: `Security Notice: Email Address Updated for [Company Name]`
+   - Alerts the original inbox of the email change, detailing the previous address, new address, and company name.
+   - Provides an immediate security escalation notice to contact `support@b2blink.eu` if the change was unauthorized.
+2. **Activation Notice to the New Email Address**:
+   - Subject: `Action Required: Log In to Activate Your B2B LINK Account ([Company Name])`
+   - Informs the new inbox that it has been set as the primary business address for the company.
+   - Provides a one-click button (*"Log In to Activate Access"*) directing to `/login?email=[NewEmail]&redirect=/dashboard` so the user can sign in and activate their session under the new address.
+
+### C. Database & Auth Synchronization
+- Synchronizes the updated information across the Supabase `companies` table, Supabase Auth user accounts (`admin.auth.admin.updateUserById`), and local state caches.
+- Validates that the new email address is not already registered to an existing company to prevent account collisions.
+
+
 

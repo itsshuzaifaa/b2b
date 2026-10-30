@@ -227,6 +227,28 @@ function createAutomatedMessagesPdf(outputPath) {
     'Hello [Contact Name],\nIt has been over a month since your last activity on B2B LINK.\nWholesale pricing, buyer demand, and stock availability move quickly in the electronics and technology markets. To ensure you continue receiving verified Buyer-Seller Matches and actionable trade inquiries, please log in to review your requirements:\n• Update or refresh your Want-To-Buy (WTB) procurement requests\n• Update stock quantities, grades, and prices on your Want-To-Sell (WTS) listings\n• Close fulfilled requirements so you only receive active opportunities\n[Log In & Update Listings]\nKind regards,\nB2B LINK Trading Support'
   );
 
+  // 10. Email Change Security Notice (Current Email)
+  renderMessageItem(
+    '10',
+    'Email Change Security Notice (Current Address)',
+    'EMAIL',
+    'Admin updates member registered email address from Users dashboard',
+    'Current (original) registered business email address',
+    'Security Notice: Email Address Updated for [Company Name]',
+    'Hello [Contact Name],\nThis is an official security notice that the registered business email address for your B2B LINK account ([Company Name]) has been updated by platform administration.\nPrevious Email: [Current Email] | New Email: [New Email]\nIf you did not authorize this change, please contact B2B LINK Support immediately to secure your account.\nKind regards,\nB2B LINK Support Team'
+  );
+
+  // 11. Email Change Activation Notice (New Email)
+  renderMessageItem(
+    '11',
+    'Email Change Activation Notice (New Address)',
+    'EMAIL',
+    'Admin updates member registered email address from Users dashboard',
+    'Newly assigned registered business email address',
+    'Action Required: Log In to Activate Your B2B LINK Account ([Company Name])',
+    'Hello [Contact Name],\nThe primary business email address for [Company Name] on the B2B LINK wholesale platform has been updated to: [New Email].\nPlease log in using this email address to confirm and activate your updated credentials.\n[Log In to Activate Access]\nKind regards,\nB2B LINK Support Team'
+  );
+
   // FINAL TERMINOLOGY STANDARD TABLE
   if (doc.y > 580) {
     doc.addPage();

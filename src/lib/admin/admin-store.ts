@@ -18,6 +18,8 @@ export interface AdminClientAccount {
   contact_name: string;
   email: string;
   phone?: string | null;
+  address?: string | null;
+  website?: string | null;
   role: 'seller' | 'buyer' | 'admin';
   membership_tier: MembershipTier;
   approval_status: ApprovalStatus;
@@ -214,6 +216,22 @@ export function suspendAccount(companyId: string): boolean {
   return true;
 }
 
+export function updateAccountBasicInfo(
+  companyId: string,
+  updatedData: Partial<AdminClientAccount>
+): boolean {
+  const current = getAdminAccounts();
+  const idx = current.findIndex((a) => a.id === companyId);
+  if (idx === -1) return false;
+
+  current[idx] = {
+    ...current[idx],
+    ...updatedData,
+  };
+  saveAdminAccounts(current);
+  return true;
+}
+
 export function unsuspendAccount(companyId: string): boolean {
   const current = getAdminAccounts();
   const updated = current.map((acc) =>
@@ -222,6 +240,22 @@ export function unsuspendAccount(companyId: string): boolean {
       : acc
   );
   saveAdminAccounts(updated);
+  return true;
+}
+
+export function updateAccountBasicInfo(
+  companyId: string,
+  updatedData: Partial<AdminClientAccount>
+): boolean {
+  const current = getAdminAccounts();
+  const idx = current.findIndex((a) => a.id === companyId);
+  if (idx === -1) return false;
+
+  current[idx] = {
+    ...current[idx],
+    ...updatedData,
+  };
+  saveAdminAccounts(current);
   return true;
 }
 

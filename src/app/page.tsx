@@ -205,7 +205,7 @@ export default function HomePage() {
 
           {/* One line of copy */}
           <p className="text-[15px] sm:text-[16px] text-[#D3DEEE] max-w-xl mx-auto mb-9 leading-relaxed">
-            Join the network in minutes. Our desk reviews every seller within 24 hours.
+            Join the network in minutes. Our team reviews every seller within 24 hours.
           </p>
 
           {/* Two Buttons: Solid Blue and White Outline on Dark */}

@@ -38,6 +38,10 @@ import {
   type ListingInactivatedEmailProps,
   inactivityReminderEmail,
   type InactivityReminderEmailProps,
+  emailChangeNoticeCurrentEmail,
+  type EmailChangeNoticeCurrentEmailProps,
+  emailChangeActivationNewEmail,
+  type EmailChangeActivationNewEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
@@ -328,6 +332,43 @@ export async function sendAccountSuspensionEmail(
 }
 
 export const sendAccountUnderReviewEmail = sendAccountSuspensionEmail;
+
+/**
+ * Dispatches an Email Change Notification to the current (original) email address.
+ */
+export async function sendEmailChangeNoticeCurrentEmail(
+  toEmail: string,
+  props: Omit<EmailChangeNoticeCurrentEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/contact`;
+  const { subject, html } = emailChangeNoticeCurrentEmail({ ...props, actionUrl });
+  return sendEmail({
+    to: toEmail,
+    subject,
+    html,
+    replyTo: 'support@b2blink.eu',
+  });
+}
+
+/**
+ * Dispatches an Email Activation Notification to the new email address
+ * prompting the member to log in and confirm their new credentials.
+ */
+export async function sendEmailChangeActivationNewEmail(
+  toEmail: string,
+  props: Omit<EmailChangeActivationNewEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = `${baseUrl}/login?email=${encodeURIComponent(props.newEmail)}&redirect=${encodeURIComponent('/dashboard')}`;
+  const { subject, html } = emailChangeActivationNewEmail({ ...props, actionUrl });
+  return sendEmail({
+    to: toEmail,
+    subject,
+    html,
+    replyTo: 'support@b2blink.eu',
+  });
+}
 
 type QueueItemWithRelations = WtbNotificationQueue & {
   wtb_request: WtbRequest | null;
