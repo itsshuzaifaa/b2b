@@ -37,8 +37,8 @@ export async function getDynamicAppUrl(req?: Request | NextRequest | null): Prom
     return `https://${process.env.NEXT_PUBLIC_VERCEL_URL.replace(/\/+$/, '')}`;
   }
 
-  // 4. Try NEXT_PUBLIC_APP_URL (ignore localhost if in production or on Vercel)
-  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  // 4. Try APP_URL or NEXT_PUBLIC_APP_URL (ignore localhost if in production or on Vercel)
+  const envUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL)?.trim();
   const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
   if (envUrl && (!isProd || !envUrl.includes('localhost'))) {
     return envUrl.replace(/\/+$/, '');

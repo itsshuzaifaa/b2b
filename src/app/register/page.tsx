@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { ALL_COUNTRY_CODES } from '@/lib/constants/country-codes';
 import { LegalModal } from '@/components/modals/LegalModal';
+import { getAdminAccounts, saveAdminAccounts, type AdminClientAccount } from '@/lib/admin/admin-store';
 import {
   AlertCircle,
   ArrowLeft,
@@ -354,10 +355,10 @@ function RegisterContent() {
         return;
       }
 
-      // Clear any prior demo role or cached session before redirecting to verification screen
+      // Establish authenticated session with pending verification status
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_demo_role');
-        localStorage.removeItem('b2b_cached_company');
+        sessionStorage.setItem('b2b_reg_pwd', password);
         localStorage.setItem('b2b_pending_verification_email', email.trim().toLowerCase());
         localStorage.setItem('b2b_pending_tier', selectedTier);
         localStorage.setItem('b2b_registered_tier', selectedTier);
@@ -366,12 +367,106 @@ function RegisterContent() {
         if (data.companyId) {
           localStorage.setItem('b2b_pending_company_id', data.companyId);
         }
+
+        const effectiveCompany = {
+          id: data.companyId || `comp_${Date.now()}`,
+          user_id: data.userId || data.companyId || `usr_${Date.now()}`,
+          name: companyName.trim() || `${firstName} ${lastName}`.trim(),
+          company_name: companyName.trim() || `${firstName} ${lastName}`.trim(),
+          contact_name: `${firstName} ${lastName}`.trim() || companyName.trim(),
+          email: email.trim().toLowerCase(),
+          role: 'seller' as const,
+          tier: selectedTier,
+          membership_tier: selectedTier,
+          approval_status: 'pending' as const,
+          categories: selectedNiches.map((niche) =>
+            niche === 'other' && customOtherNiche.trim() ? customOtherNiche.trim() : niche
+          ),
+          created_at: new Date().toISOString(),
+        };
+        localStorage.setItem('b2b_cached_company', JSON.stringify(effectiveCompany));
+
+        // Connect Supabase auth session in browser
+        try {
+          const { createClient } = await import('@/lib/supabase/client');
+          const supabase = createClient();
+          await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+          });
+        } catch {}
+
+        // Store in local registered users so username login works seamlessly
+        try {
+          const regRaw = localStorage.getItem('b2b_registered_users_v1');
+          const regList = regRaw ? JSON.parse(regRaw) : [];
+          const newUser = {
+            id: data.companyId || `usr_${Date.now()}`,
+            email: email.trim().toLowerCase(),
+            username: cleanUsername,
+            plainPassword: password,
+            contactName: `${firstName} ${lastName}`.trim() || companyName.trim(),
+            companyName: companyName.trim() || `${firstName} ${lastName}`.trim(),
+            companyId: data.companyId,
+            phone: phone.trim() || null,
+            role: 'seller',
+            tier: selectedTier,
+            approval_status: 'pending',
+            createdAt: new Date().toISOString(),
+          };
+          const filtered = regList.filter((u: any) => u.email !== newUser.email && u.username !== newUser.username);
+          filtered.push(newUser);
+          localStorage.setItem('b2b_registered_users_v1', JSON.stringify(filtered));
+        } catch {}
+
+        // Add to admin accounts store so new member appears immediately in admin users list
+        try {
+          const newAccount: AdminClientAccount = {
+            id: data.companyId || `comp_${Date.now()}`,
+            name: companyName.trim() || `${firstName} ${lastName}`.trim(),
+            contact_name: `${firstName} ${lastName}`.trim() || companyName.trim(),
+            email: email.trim().toLowerCase(),
+            phone: phone.trim() || null,
+            address: address.trim() || null,
+            website: null,
+            role: 'seller',
+            membership_tier: selectedTier as any,
+            approval_status: 'pending',
+            account_status: 'pending',
+            company_number: regNumber.trim() || null,
+            vat_number: vatNumber.trim() || null,
+            country: 'Global',
+            created_at: new Date().toISOString(),
+            last_active: 'Just now',
+            listings_count: 0,
+            total_spend_or_sales: `€${selectedTier === 'gold' ? '179' : selectedTier === 'silver' ? '79' : '0'}/mo Membership`,
+            verified_documents: false,
+          };
+          const currentAccounts = getAdminAccounts();
+          const filtered = currentAccounts.filter(
+            (a) => a.email?.toLowerCase() !== email.trim().toLowerCase() && a.id !== newAccount.id
+          );
+          saveAdminAccounts([newAccount, ...filtered]);
+
+          // Sync to server-side registry
+          fetch('/api/admin/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'register_sync',
+              account: newAccount,
+            }),
+          }).catch(() => {});
+        } catch (adminErr) {
+          console.warn('[REGISTER ADMIN STORE WARNING]', adminErr);
+        }
       }
       const redirectQuery = redirectParam ? `&redirect=${encodeURIComponent(redirectParam)}` : '';
       router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}&role=seller&tier=${selectedTier}${redirectQuery}`);
     } catch (err) {
       console.error('Registration exception:', err);
-      setErrorMsg(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      const isFetchErr = err instanceof Error && (err.message.includes('fetch') || err.message.includes('Network'));
+      setErrorMsg(isFetchErr ? 'Unable to connect to the authentication service. Please check your connection or try again.' : (err instanceof Error ? err.message : 'Registration failed. Please try again.'));
     } finally {
       setLoading(false);
     }

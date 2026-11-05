@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       const { data: expiredActiveProducts } = await activeQuery;
 
       if (expiredActiveProducts && expiredActiveProducts.length > 0) {
-        const expiredIds = expiredActiveProducts.map((p) => p.id);
+        const expiredIds = expiredActiveProducts.map((p: any) => p.id);
 
         // Update them to inactive/unpublished
         const { error: updateErr } = await admin
@@ -115,9 +115,9 @@ export async function POST(req: NextRequest) {
               try {
                 await sendListingInactivatedEmail(sellerEmail, {
                   recipientName: prod.company?.contact_name || prod.company?.company_name || 'Wholesale Partner',
-                  companyName: prod.company?.company_name,
+                  companyName: prod.company?.company_name || undefined,
                   listingTitle: prod.title,
-                  itemCode: prod.barcode_or_sku,
+                  itemCode: prod.barcode_or_sku || undefined,
                   category: prod.category_slug,
                   unitPrice: Number(prod.unit_price) || 0,
                   unpublishedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       const { data: permanentlyExpiredProducts } = await unpublishedQuery;
 
       if (permanentlyExpiredProducts && permanentlyExpiredProducts.length > 0) {
-        const purgeIds = permanentlyExpiredProducts.map((p) => p.id);
+        const purgeIds = permanentlyExpiredProducts.map((p: any) => p.id);
         const { error: deleteErr } = await admin.from('products').delete().in('id', purgeIds);
         if (!deleteErr) {
           dbDeletedCount = purgeIds.length;
@@ -196,7 +196,7 @@ export async function GET() {
 
     let unpublishedCount = 0;
     if (expiredActive && expiredActive.length > 0) {
-      const ids = expiredActive.map((p) => p.id);
+      const ids = expiredActive.map((p: any) => p.id);
       await admin.from('products').update({ status: 'inactive', updated_at: new Date().toISOString() }).in('id', ids);
       unpublishedCount = ids.length;
 
@@ -212,9 +212,9 @@ export async function GET() {
           try {
             await sendListingInactivatedEmail(sellerEmail, {
               recipientName: prod.company?.contact_name || prod.company?.company_name || 'Wholesale Partner',
-              companyName: prod.company?.company_name,
+              companyName: prod.company?.company_name || undefined,
               listingTitle: prod.title,
-              itemCode: prod.barcode_or_sku,
+              itemCode: prod.barcode_or_sku || undefined,
               category: prod.category_slug,
               unitPrice: Number(prod.unit_price) || 0,
               unpublishedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -237,7 +237,7 @@ export async function GET() {
 
     let deletedCount = 0;
     if (expiredUnpublished && expiredUnpublished.length > 0) {
-      const ids = expiredUnpublished.map((p) => p.id);
+      const ids = expiredUnpublished.map((p: any) => p.id);
       await admin.from('products').delete().in('id', ids);
       deletedCount = ids.length;
     }

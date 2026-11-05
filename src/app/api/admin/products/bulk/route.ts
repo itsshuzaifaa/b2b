@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
         if (!catId && item.category) {
           const itemCatLower = String(item.category).toLowerCase();
           const match = dbCategories?.find(
-            (c) =>
+            (c: any) =>
               c.slug.toLowerCase() === itemCatLower ||
               c.name.toLowerCase() === itemCatLower ||
               itemCatLower.includes(c.slug.toLowerCase())
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
         if (!catId && item.category) {
           const itemCatLower = String(item.category).toLowerCase();
           const match = dbCategories?.find(
-            (c) =>
+            (c: any) =>
               c.slug.toLowerCase() === itemCatLower ||
               c.name.toLowerCase() === itemCatLower ||
               itemCatLower.includes(c.slug.toLowerCase())

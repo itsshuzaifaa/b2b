@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processInactivityReminders } from '@/lib/email/dispatcher';
 import { createClient } from '@/lib/supabase/server';
 
-export const dynamic = 'force-dynamic';
-
 /**
  * Autonomous Cron Route: /api/cron/inactivity-reminders
  * 

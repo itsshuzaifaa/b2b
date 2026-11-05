@@ -320,7 +320,7 @@ function InquiriesContent() {
   return (
     <div className="flex flex-col h-full font-sans">
       {/* Top Header & Fast Exit Navigation (fixes unable to tab out) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EAEFF6] mb-4">
+      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EAEFF6] mb-4">
         <div>
           <div className="flex items-center gap-2 text-[12px] text-[#5B6B82] mb-0.5">
             <Link href="/dashboard" className="hover:text-[#0A6CFF] transition font-medium">Dashboard</Link>
@@ -349,7 +349,7 @@ function InquiriesContent() {
       </div>
 
       {/* Top Filter Tabs */}
-      <div className="flex items-center gap-2.5 overflow-x-auto pb-1 mb-4 select-none">
+      <div className="shrink-0 flex items-center gap-2.5 overflow-x-auto py-1 mb-4 select-none [scrollbar-width:none]">
         {[
           { id: 'all', label: 'All conversations', count: allCount },
           { id: 'buyers', label: isBuyer ? 'Supplier chats' : 'Buyer inquiries', count: buyersCount },
@@ -362,14 +362,14 @@ function InquiriesContent() {
               key={tab.id}
               type="button"
               onClick={() => handleTabChange(tab.id as typeof filterTab)}
-              className={`flex items-center gap-2 text-[13px] font-semibold px-4 py-2 rounded-full transition whitespace-nowrap cursor-pointer ${
+              className={`shrink-0 flex items-center gap-2 text-[13px] font-semibold px-4 h-[38px] rounded-full transition whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-[#0B1528] text-white shadow-xs'
                   : 'bg-white text-[#475569] border border-[#E2E8F0] hover:bg-[#F8FAFC]'
               }`}
             >
               <span>{tab.label}</span>
-              <span className={`text-[12px] ${isActive ? 'text-white/80' : 'text-[#94A3B8]'}`}>
+              <span className={`text-[12px] font-bold ${isActive ? 'text-white/80' : 'text-[#94A3B8]'}`}>
                 {tab.count}
               </span>
             </button>
@@ -378,7 +378,7 @@ function InquiriesContent() {
       </div>
 
       {/* Main Split Layout Container */}
-      <div className="bg-white border border-[#E2E8F0] rounded-[20px] sm:rounded-[24px] shadow-[0_2px_14px_rgba(0,0,0,0.03)] overflow-hidden flex flex-col lg:grid lg:grid-cols-12 flex-1 min-h-[500px] lg:min-h-[580px] h-[calc(100dvh-13.5rem)] sm:h-[calc(100dvh-11rem)] max-h-[calc(100dvh-7.5rem)]">
+      <div className="bg-white border border-[#E2E8F0] rounded-[20px] sm:rounded-[24px] shadow-[0_2px_14px_rgba(0,0,0,0.03)] overflow-hidden flex flex-col lg:grid lg:grid-cols-12 flex-1 min-h-[480px]">
         {/* LEFT COLUMN: Conversation Threads List (5 Cols) */}
         <div className={`lg:col-span-5 border-r border-[#E2E8F0] bg-white flex flex-col justify-between overflow-hidden h-full ${mobileActiveView === 'chat' ? 'hidden lg:flex' : 'flex'}`}>
           {/* Search Bar Header */}

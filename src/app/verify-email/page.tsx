@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth/auth-context';
 import { processRegistrationCardCheckout } from '@/lib/billing/billing-store';
+import { getAdminAccounts, saveAdminAccounts, type AdminClientAccount } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
 import {
   AlertCircle,
@@ -68,6 +69,28 @@ function VerifyEmailContent() {
       if (savedContName) setContactName(savedContName);
     }
   }, [email, searchTier]);
+
+  // If approved by admin in site-admin/admin desk, automatically navigate to dashboard
+  useEffect(() => {
+    const handleStatusSync = () => {
+      if (!email || typeof window === 'undefined') return;
+      try {
+        const cleanEmail = email.toLowerCase().trim();
+        const accounts = getAdminAccounts();
+        const match = accounts.find((a) => a.email?.toLowerCase().trim() === cleanEmail);
+        if (match?.approval_status === 'approved') {
+          router.push(redirectParam || '/dashboard');
+        }
+      } catch {}
+    };
+    handleStatusSync();
+    window.addEventListener('b2b_admin_update', handleStatusSync);
+    window.addEventListener('b2b_account_status_change', handleStatusSync);
+    return () => {
+      window.removeEventListener('b2b_admin_update', handleStatusSync);
+      window.removeEventListener('b2b_account_status_change', handleStatusSync);
+    };
+  }, [email, redirectParam, router]);
 
   // OTP Verification state
   const [otp, setOtp] = useState('');
@@ -206,9 +229,90 @@ function VerifyEmailContent() {
         return;
       }
 
-      if (verifyResult.data?.user) {
-        setAuthenticatedUser(verifyResult.data.user);
+      // Try authenticating with Supabase client if password was entered during registration
+      if (typeof window !== 'undefined') {
+        const savedPwd = sessionStorage.getItem('b2b_reg_pwd');
+        if (savedPwd) {
+          try {
+            const { data: signInData } = await supabase.auth.signInWithPassword({
+              email,
+              password: savedPwd,
+            });
+            sessionStorage.removeItem('b2b_reg_pwd');
+            if (signInData?.user) {
+              setAuthenticatedUser(signInData.user);
+            }
+          } catch {}
+        }
       }
+
+      // Prepare unified account identifiers
+      const effectiveCompanyId = companyId || serverData.company?.id || serverData.userId || `comp_${Date.now().toString(36)}`;
+      const effectiveCompName = companyName || serverData.company?.company_name || 'Wholesale Member';
+      const effectiveContName = contactName || serverData.company?.contact_name || 'Trading Partner';
+
+      // Record in Admin Accounts with STRICT pending verification status (requiring KYC document review)
+      const pendingAccount: AdminClientAccount = {
+        id: effectiveCompanyId,
+        name: effectiveCompName,
+        contact_name: effectiveContName,
+        email: email.trim().toLowerCase(),
+        role: 'seller',
+        membership_tier: selectedTier,
+        approval_status: 'pending',
+        account_status: 'pending',
+        created_at: new Date().toISOString(),
+        listings_count: 0,
+        total_spend_or_sales: `€${selectedTier === 'gold' ? '179' : selectedTier === 'silver' ? '79' : '0'}/mo Membership`,
+        verified_documents: false,
+      };
+
+      try {
+        const existingAccounts = getAdminAccounts();
+        const filtered = existingAccounts.filter((a) => a.email?.toLowerCase() !== email.toLowerCase() && a.id !== effectiveCompanyId);
+        saveAdminAccounts([pendingAccount, ...filtered]);
+
+        fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'register_sync',
+            account: pendingAccount,
+          }),
+        }).catch(() => {});
+      } catch {}
+
+      // Cache active company strictly in pending status
+      const activeCompany: any = {
+        id: effectiveCompanyId,
+        user_id: serverData.userId || effectiveCompanyId,
+        name: effectiveCompName,
+        company_name: effectiveCompName,
+        contact_name: effectiveContName,
+        email: email.trim().toLowerCase(),
+        role: 'seller',
+        tier: selectedTier,
+        membership_tier: selectedTier,
+        approval_status: 'pending',
+        categories: [],
+        created_at: new Date().toISOString(),
+      };
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('b2b_cached_company', JSON.stringify(activeCompany));
+        const regPwd = sessionStorage.getItem('b2b_reg_pwd');
+        if (regPwd) {
+          try {
+            const supabase = createClient();
+            await supabase.auth.signInWithPassword({
+              email: email.trim().toLowerCase(),
+              password: regPwd,
+            });
+          } catch {}
+        }
+      }
+
+      setAuthenticatedUser(serverData.user || activeCompany);
 
       // If user selected a paid package (Silver or Gold), transition directly to payment in the same box!
       if (selectedTier === 'silver' || selectedTier === 'gold') {
@@ -392,6 +496,27 @@ function VerifyEmailContent() {
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_pending_verification_email');
         localStorage.removeItem('b2b_demo_role');
+
+        try {
+          const accounts = getAdminAccounts();
+          const updated = accounts.map((a) =>
+            a.email.toLowerCase() === email.toLowerCase() || (companyId && a.id === companyId)
+              ? { ...a, membership_tier: selectedTier, approval_status: 'pending' as const }
+              : a
+          );
+          saveAdminAccounts(updated);
+        } catch {}
+
+        try {
+          const cachedRaw = localStorage.getItem('b2b_cached_company');
+          if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            cached.tier = selectedTier;
+            cached.membership_tier = selectedTier;
+            cached.approval_status = 'pending';
+            localStorage.setItem('b2b_cached_company', JSON.stringify(cached));
+          }
+        } catch {}
       }
 
       await triggerKycEmail(email);
@@ -521,8 +646,7 @@ function VerifyEmailContent() {
                     codeExpiresIn <= 0
                       ? 'border-red-300 bg-red-50/30'
                       : 'border-[#E3E9F2] focus:border-[#0A6CFF] focus:bg-white'
-                  }`}
-                />
+                  }`} />
                 {codeExpiresIn <= 0 && (
                   <p className="mt-2 text-[12px] text-red-600 font-semibold text-center animate-in fade-in">
                     This verification code has expired after 15 minutes. Please click &ldquo;Resend verification code&rdquo; below.

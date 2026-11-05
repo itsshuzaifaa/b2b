@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
+import { createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import {
   validateVerificationCode,
   consumeVerificationCode,
@@ -35,43 +36,110 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Locate user and confirm email in Supabase
-    const admin = createAdminClient();
     let confirmedUserId: string | null = null;
+    let targetUser: any = null;
+    let companyRecord: any = null;
 
-    try {
-      // Find user by email
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      const targetUser = usersData?.users?.find(
-        (u) => u.email?.toLowerCase() === rawEmail
-      );
+    if (isSupabaseConfigured()) {
+      try {
+        const admin = createAdminClient();
+        // Find user by email
+        const { data: usersData } = await admin.auth.admin.listUsers();
+        targetUser = usersData?.users?.find(
+          (u: any) => u.email?.toLowerCase() === rawEmail
+        );
 
-      if (targetUser) {
-        confirmedUserId = targetUser.id;
-        await admin.auth.admin.updateUserById(targetUser.id, {
-          email_confirm: true,
-        });
+        if (targetUser) {
+          confirmedUserId = targetUser.id;
+          const userMeta = targetUser.user_metadata || {};
+          const metaTier = userMeta.membership_tier || userMeta.tier || 'bronze';
 
-        // Also update companies record if pending verification
-        await admin
-          .from('companies')
-          .update({
-            approval_status: 'pending',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', targetUser.id)
-          .eq('approval_status', 'pending_verification');
+          // Strictly preserve or enforce pending approval_status unless already vetted by admin
+          const effectiveStatus = userMeta.approval_status === 'approved' ? 'approved' : 'pending';
+
+          await admin.auth.admin.updateUserById(targetUser.id, {
+            email_confirm: true,
+            user_metadata: {
+              ...userMeta,
+              email_verified: true,
+              email_confirmed_at: new Date().toISOString(),
+              approval_status: effectiveStatus,
+            },
+          });
+
+          // Also update companies record
+          const { data: comp } = await admin
+            .from('companies')
+            .update({
+              approval_status: effectiveStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .or(`user_id.eq.${targetUser.id},contact_email.ilike.${rawEmail}`)
+            .select('*')
+            .maybeSingle();
+
+          companyRecord = comp;
+        }
+      } catch (adminErr) {
+        console.warn('[VERIFY CODE ADMIN CONFIRM NOTICE]', adminErr);
       }
-    } catch (adminErr) {
-      console.warn('[VERIFY CODE ADMIN CONFIRM NOTICE]', adminErr);
     }
 
     // 3. Consume the code so it cannot be reused
     consumeVerificationCode(rawEmail);
 
+    // Confirm email in user registry
+    try {
+      const { confirmUserEmail } = await import('@/lib/auth/user-registry');
+      confirmUserEmail(rawEmail);
+    } catch {}
+
+    // Set persistent session cookie so user is authenticated across lambdas
+    try {
+      const cookieStore = await cookies();
+      const finalRole = companyRecord?.role || targetUser?.user_metadata?.role || 'seller';
+      const finalTier = companyRecord?.tier || targetUser?.user_metadata?.membership_tier || 'bronze';
+      const finalStatus = companyRecord?.approval_status || targetUser?.user_metadata?.approval_status || 'pending';
+      const finalCompName = companyRecord?.company_name || targetUser?.user_metadata?.company_name || rawEmail.split('@')[0];
+      const finalContactName = companyRecord?.contact_name || targetUser?.user_metadata?.contact_name || 'Member';
+
+      cookieStore.set('b2b_auth_session', encodeURIComponent(JSON.stringify({
+        id: confirmedUserId || targetUser?.id || `usr_${Date.now()}`,
+        email: rawEmail,
+        username: targetUser?.user_metadata?.username,
+        role: finalRole,
+        tier: finalTier,
+        approval_status: finalStatus,
+        companyName: finalCompName,
+        contactName: finalContactName,
+        companyId: companyRecord?.id || confirmedUserId || `comp_${Date.now()}`,
+      })), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+      });
+    } catch (cookieErr) {
+      console.warn('[VERIFY CODE SESSION COOKIE NOTICE]', cookieErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Verification code validated successfully.',
       userId: confirmedUserId,
+      user: targetUser || {
+        id: confirmedUserId || `usr_${Date.now()}`,
+        email: rawEmail,
+        user_metadata: { role: 'seller', approval_status: 'pending', membership_tier: 'bronze' },
+      },
+      company: companyRecord || {
+        id: confirmedUserId || `comp_${Date.now()}`,
+        contact_email: rawEmail,
+        role: 'seller',
+        approval_status: 'pending',
+        tier: 'bronze',
+      },
     });
   } catch (err) {
     console.error('[VERIFY CODE EXCEPTION]', err);

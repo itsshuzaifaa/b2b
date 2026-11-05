@@ -422,7 +422,7 @@ export default function ContactPage() {
             Ready to trade directly?
           </h2>
           <p className="text-[15px] sm:text-[16px] text-[#D3DEEE] max-w-xl mx-auto mb-9 leading-relaxed">
-            Join the network in minutes. Our desk reviews every seller within 24 hours.
+            Join the network in minutes. Our team reviews every seller within 24 hours.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link

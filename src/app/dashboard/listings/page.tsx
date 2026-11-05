@@ -150,21 +150,26 @@ export default function ListingsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [showLocationHelp, setShowLocationHelp] = useState(false);
 
+  const userStorageKey = company?.id
+    ? `b2b_seller_listings_${company.id}`
+    : (company?.email ? `b2b_seller_listings_${company.email}` : 'b2b_seller_listings_guest');
+
   // Load listings from localStorage and run lifecycle checks
   useEffect(() => {
     const reload = () => {
       try {
+        localStorage.removeItem('b2b_seller_listings_v3');
         localStorage.removeItem('b2b_seller_listings_real_v2');
         localStorage.removeItem('b2b_seller_listings_v1');
 
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(userStorageKey);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             const { updatedListings, hasChanges } = processListingsLifecycle(parsed);
             if (hasChanges) {
               try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedListings));
+                localStorage.setItem(userStorageKey, JSON.stringify(updatedListings));
               } catch {}
             }
             setListings(updatedListings);
@@ -186,7 +191,99 @@ export default function ListingsPage() {
       window.removeEventListener('b2b_admin_update', reload);
       window.removeEventListener('storage', reload);
     };
-  }, []);
+  }, [userStorageKey]);
+
+  // Load smart trading matches
+  useEffect(() => {
+    const loadMatches = () => {
+      const companyId = company?.id;
+      const email = company?.email;
+      const params = new URLSearchParams();
+      if (companyId) params.set('companyId', companyId);
+      if (email) params.set('email', email);
+
+      fetch(`/api/matches?${params.toString()}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.matches)) {
+            setMatches(data.matches);
+          }
+        })
+        .catch(() => {
+          setMatches(getUserMatches(companyId, email));
+        });
+    };
+
+    loadMatches();
+    window.addEventListener('b2b_trade_matches_updated', loadMatches);
+    return () => window.removeEventListener('b2b_trade_matches_updated', loadMatches);
+  }, [company?.id, company?.email]);
+
+  // Automatic Lifecycle Processor: checks timers, unpublishes after 14 days, sends email, purges after 30 days
+  useEffect(() => {
+    const checkAndProcessLifecycle = async () => {
+      try {
+        const raw = localStorage.getItem(userStorageKey);
+        if (!raw) return;
+        const currentListings: ListingItem[] = JSON.parse(raw);
+        if (!Array.isArray(currentListings) || currentListings.length === 0) return;
+
+        const { updatedListings, newlyUnpublished, permanentlyDeletedCount, hasChanges } =
+          processListingsLifecycle(currentListings);
+
+        if (hasChanges) {
+          saveListings(updatedListings);
+          window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+
+          if (permanentlyDeletedCount > 0) {
+            setFeedbackMessage(
+              `${permanentlyDeletedCount} listing${permanentlyDeletedCount > 1 ? 's have' : ' has'} been permanently deleted after 30 days in unpublished status.`
+            );
+          }
+
+          // Send notification email to the seller for newly inactivated listings
+          const unnotified = newlyUnpublished.filter((l) => !l.unpublishNotificationSent);
+          const recipientEmail = company?.contact_email || company?.email;
+          if (recipientEmail && unnotified.length > 0) {
+            try {
+              await fetch('/api/listings/notify-inactivated', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  items: unnotified.map((l) => ({
+                    email: recipientEmail,
+                    recipientName: company?.contact_name || company?.name || 'Wholesale Partner',
+                    companyName: company?.name,
+                    listingTitle: l.title,
+                    itemCode: l.itemCode,
+                    category: l.category,
+                    unitPrice: l.unitPrice,
+                  })),
+                }),
+              });
+
+              // Mark unpublishNotificationSent: true
+              const marked = updatedListings.map((l) => {
+                if (unnotified.some((u) => u.id === l.id)) {
+                  return { ...l, unpublishNotificationSent: true };
+                }
+                return l;
+              });
+              saveListings(marked);
+            } catch (err) {
+              console.warn('[INACTIVATION EMAIL ERROR]', err);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[LIFECYCLE RUNNER ERROR]', err);
+      }
+    };
+
+    checkAndProcessLifecycle();
+    const interval = setInterval(checkAndProcessLifecycle, 45000); // Re-check every 45 seconds
+    return () => clearInterval(interval);
+  }, [company?.email, company?.contact_email, company?.contact_name, company?.name]);
 
   // Load smart trading matches
   useEffect(() => {
@@ -283,7 +380,7 @@ export default function ListingsPage() {
   const saveListings = (items: ListingItem[]) => {
     setListings(items);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      localStorage.setItem(userStorageKey, JSON.stringify(items));
     } catch {
       // ignore
     }
@@ -576,7 +673,7 @@ export default function ListingsPage() {
   };
 
   const activeCount = listings.filter(
-    (l) => (l.status === 'Active' || l.status === 'Hot') && l.status !== 'Unpublished'
+    (l) => l.status === 'Active' || l.status === 'Hot'
   ).length;
   const unpublishedCount = listings.filter((l) => l.status === 'Unpublished').length;
 
@@ -591,8 +688,8 @@ export default function ListingsPage() {
     if (!matchesSearch) return false;
 
     if (activeTab === 'Unpublished') return item.status === 'Unpublished';
-    if (activeTab === 'Hot') return item.status === 'Hot' && item.status !== 'Unpublished';
-    if (activeTab === 'Active') return (item.status === 'Active' || item.status === 'Hot') && item.status !== 'Unpublished';
+    if (activeTab === 'Hot') return item.status === 'Hot';
+    if (activeTab === 'Active') return item.status === 'Active' || item.status === 'Hot';
     if (activeTab === 'Drafts') return item.status === 'Draft';
     // 'All' shows all non-unpublished listings
     return item.status !== 'Unpublished';
@@ -718,9 +815,9 @@ export default function ListingsPage() {
               tab === 'All'
                 ? listings.filter((l) => l.status !== 'Unpublished').length
                 : tab === 'Active'
-                ? listings.filter((l) => (l.status === 'Active' || l.status === 'Hot') && l.status !== 'Unpublished').length
+                ? listings.filter((l) => l.status === 'Active' || l.status === 'Hot').length
                 : tab === 'Hot'
-                ? listings.filter((l) => l.status === 'Hot' && l.status !== 'Unpublished').length
+                ? listings.filter((l) => l.status === 'Hot').length
                 : tab === 'Drafts'
                 ? listings.filter((l) => l.status === 'Draft').length
                 : listings.filter((l) => l.status === 'Unpublished').length;
@@ -1176,8 +1273,6 @@ export default function ListingsPage() {
               </tbody>
             </table>
           )}
-        </div>
-      </div>
         </div>
       </div>
 

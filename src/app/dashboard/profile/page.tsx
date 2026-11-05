@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import {
   CheckCircle2,
   Upload,
-  ShieldCheck,
+  ShieldCheck, Clock, ShieldAlert,
   User,
   Mail,
   Phone,
@@ -912,10 +912,17 @@ export default function DashboardProfilePage() {
 
                 {/* Badges */}
                 <div className="flex items-center justify-center gap-2 mt-3.5 mb-5">
-                  <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Verified Active</span>
-                  </span>
+                  {company?.approval_status === 'approved' ? (
+                    <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Verified Active</span>
+                    </span>
+                  ) : (
+                    <span className="bg-amber-50 text-amber-700 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Verification Pending</span>
+                    </span>
+                  )}
                   <span className="bg-[#EFF6FF] text-[#0A6CFF] text-[11px] font-bold px-3 py-1 rounded-full border border-blue-200">
                     BUYER
                   </span>
@@ -970,10 +977,17 @@ export default function DashboardProfilePage() {
 
                 {/* Verification & Tier Badges */}
                 <div className="flex items-center justify-center gap-2 mt-3.5 mb-5">
-                  <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Verified Active</span>
-                  </span>
+                  {company?.approval_status === 'approved' ? (
+                    <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Verified Active</span>
+                    </span>
+                  ) : (
+                    <span className="bg-amber-50 text-amber-700 text-[11px] font-bold px-3 py-1 rounded-full border border-amber-300 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Verification Pending</span>
+                    </span>
+                  )}
                   <span className="bg-[#FFFBEB] text-[#D97706] text-[11px] font-bold px-3 py-1 rounded-full border border-amber-200">
                     {membershipTier}
                   </span>

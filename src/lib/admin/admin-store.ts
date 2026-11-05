@@ -84,11 +84,72 @@ export interface AdminModeratedListing {
   created_at: string;
 }
 
-// STORAGE KEYS (bumped to v4 for clean testing state)
-const ACCOUNTS_STORAGE_KEY = 'b2b_admin_accounts_v4';
-const PAYMENTS_STORAGE_KEY = 'b2b_admin_payments_v4';
-const LISTINGS_STORAGE_KEY = 'b2b_admin_listings_v5';
-const DELETED_ACCOUNTS_STORAGE_KEY = 'b2b_admin_deleted_accounts_v4';
+// STORAGE KEYS (bumped to v6 for clean live state)
+const ACCOUNTS_STORAGE_KEY = 'b2b_admin_accounts_v5';
+const PAYMENTS_STORAGE_KEY = 'b2b_admin_payments_v5';
+const LISTINGS_STORAGE_KEY = 'b2b_admin_listings_v6';
+const DELETED_ACCOUNTS_STORAGE_KEY = 'b2b_admin_deleted_accounts_v5';
+const DELETED_LISTINGS_STORAGE_KEY = 'b2b_admin_deleted_listings_v6';
+
+export const LEGACY_MOCK_LISTING_IDS = [
+  'b1111111-1111-4000-8000-000000000001',
+  'b2222222-2222-4000-8000-000000000002',
+  'b5555555-5555-4000-8000-000000000005',
+  'b7777777-7777-4000-8000-000000000007',
+  'b3333333-3333-4000-8000-000000000003',
+];
+
+export function getDeletedListingIds(): string[] {
+  if (typeof window === 'undefined') return [...LEGACY_MOCK_LISTING_IDS];
+  try {
+    const raw = localStorage.getItem(DELETED_LISTINGS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.from(new Set([...LEGACY_MOCK_LISTING_IDS, ...(Array.isArray(parsed) ? parsed : [])]));
+  } catch {
+    return [...LEGACY_MOCK_LISTING_IDS];
+  }
+}
+
+export function isListingDeleted(productId?: string | null): boolean {
+  if (!productId) return false;
+  if (LEGACY_MOCK_LISTING_IDS.includes(productId)) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    const list = getDeletedListingIds();
+    return list.includes(productId);
+  } catch {
+    return false;
+  }
+}
+
+export function markListingAsDeleted(productId?: string | null) {
+  if (typeof window === 'undefined' || !productId) return;
+  try {
+    const list = getDeletedListingIds();
+    if (!list.includes(productId)) {
+      list.push(productId);
+      localStorage.setItem(DELETED_LISTINGS_STORAGE_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+export function markListingsAsDeleted(productIds: string[]) {
+  if (typeof window === 'undefined' || !productIds?.length) return;
+  try {
+    const set = new Set(getDeletedListingIds());
+    productIds.forEach((id) => set.add(id));
+    localStorage.setItem(DELETED_LISTINGS_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function unmarkListingAsDeleted(productId?: string | null) {
+  if (typeof window === 'undefined' || !productId) return;
+  try {
+    const list = getDeletedListingIds();
+    const filtered = list.filter((id) => id !== productId && !LEGACY_MOCK_LISTING_IDS.includes(id));
+    localStorage.setItem(DELETED_LISTINGS_STORAGE_KEY, JSON.stringify(filtered));
+  } catch {}
+}
 
 export function getDeletedAccountIds(): string[] {
   if (typeof window === 'undefined') return [];
@@ -144,13 +205,33 @@ export function isAccountDeleted(id?: string | null, email?: string | null): boo
   return false;
 }
 
-// INITIAL SEED ACCOUNTS (Clean empty state for real user accounts & testing)
-const INITIAL_ACCOUNTS: AdminClientAccount[] = [];
+// INITIAL SEED ACCOUNTS - Platform Administrator Desk
+const INITIAL_ACCOUNTS: AdminClientAccount[] = [
+  {
+    id: 'facbb93f-080f-480f-b54b-8ef26664da86',
+    name: 'B2B LINK European Trade Desk',
+    contact_name: 'Platform Administrator',
+    email: 'admin@b2blink.eu',
+    phone: '+44 20 7946 0991',
+    address: 'Narva mnt 5, 10117 Tallinn',
+    website: 'https://b2blink.eu',
+    role: 'admin',
+    membership_tier: 'gold',
+    approval_status: 'approved',
+    account_status: 'active',
+    country: 'Estonia',
+    created_at: '2024-01-01T00:00:00Z',
+    last_active: 'Just now',
+    listings_count: 0,
+    total_spend_or_sales: 'Enterprise Platform Desk',
+    verified_documents: true,
+  },
+];
 
-// INITIAL SEED PAYMENTS - Stripe Ledger Format (Empty for testing)
+// INITIAL SEED PAYMENTS - Clean ledger format
 const INITIAL_PAYMENTS: AdminPaymentRecord[] = [];
 
-// INITIAL SEED MODERATED LISTINGS (Empty for testing)
+// INITIAL SEED MODERATED LISTINGS
 const INITIAL_LISTINGS: AdminModeratedListing[] = [];
 
 // BROADCAST HELPER
@@ -163,9 +244,73 @@ function broadcastAdminUpdate() {
 // ==========================================
 // 1. ACCOUNTS MANAGEMENT
 // ==========================================
+const STATUS_OVERRIDES_KEY = 'b2b_admin_status_overrides_v2';
+
+export interface AdminStatusOverride {
+  approval_status: ApprovalStatus;
+  account_status: AccountStatus;
+  verified_documents: boolean;
+  tier?: MembershipTier;
+  updated_at: string;
+}
+
+export function getStatusOverrides(): Record<string, AdminStatusOverride> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STATUS_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveStatusOverride(
+  identifier: string,
+  approvalStatus: ApprovalStatus,
+  tier?: MembershipTier
+) {
+  if (typeof window === 'undefined' || !identifier) return;
+  try {
+    const overrides = getStatusOverrides();
+    const clean = identifier.toLowerCase().trim();
+    overrides[clean] = {
+      approval_status: approvalStatus,
+      account_status: approvalStatus === 'approved' ? 'active' : approvalStatus === 'rejected' ? 'suspended' : 'pending',
+      verified_documents: approvalStatus === 'approved',
+      tier,
+      updated_at: new Date().toISOString(),
+    };
+    localStorage.setItem(STATUS_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch {
+    // ignore
+  }
+}
+
+export function applyOverridesToAccounts(accounts: AdminClientAccount[]): AdminClientAccount[] {
+  if (typeof window === 'undefined') return accounts;
+  const overrides = getStatusOverrides();
+  if (!overrides || Object.keys(overrides).length === 0) return accounts;
+
+  return accounts.map((acc) => {
+    const byId = acc.id ? overrides[acc.id.toLowerCase().trim()] : undefined;
+    const byEmail = acc.email ? overrides[acc.email.toLowerCase().trim()] : undefined;
+    const o = byId || byEmail;
+    if (o) {
+      return {
+        ...acc,
+        approval_status: o.approval_status,
+        account_status: o.account_status,
+        verified_documents: o.verified_documents,
+        membership_tier: o.tier || acc.membership_tier,
+      };
+    }
+    return acc;
+  });
+}
+
 export function getAdminAccounts(): AdminClientAccount[] {
   const filterClientsOnly = (list: AdminClientAccount[]) =>
-    list.filter(
+    applyOverridesToAccounts(list).filter(
       (a) =>
         !isAccountDeleted(a.id, a.email) &&
         a.role !== 'admin' &&
@@ -174,13 +319,149 @@ export function getAdminAccounts(): AdminClientAccount[] {
 
   if (typeof window === 'undefined') return filterClientsOnly(INITIAL_ACCOUNTS);
   try {
+    // Purge only legacy v1-v3 storage versions
+    localStorage.removeItem('b2b_admin_accounts_v3');
+    localStorage.removeItem('b2b_admin_accounts_v2');
+    localStorage.removeItem('b2b_admin_accounts_v1');
+
+    const accountsMap = new Map<string, AdminClientAccount>();
+
+    // 1. Read existing v5 accounts
     const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
     if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return filterClientsOnly(parsed);
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const a of parsed) {
+            if (a && a.email) accountsMap.set(a.email.toLowerCase().trim(), a);
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Migrate legacy v4 accounts if any exist
+    const v4Raw = localStorage.getItem('b2b_admin_accounts_v4');
+    if (v4Raw) {
+      try {
+        const v4List = JSON.parse(v4Raw);
+        if (Array.isArray(v4List)) {
+          for (const acc of v4List) {
+            if (acc && acc.email) {
+              const k = acc.email.toLowerCase().trim();
+              if (!accountsMap.has(k)) accountsMap.set(k, acc);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Recover any accounts registered in local user registry
+    const regUsersRaw = localStorage.getItem('b2b_registered_users_v1');
+    if (regUsersRaw) {
+      try {
+        const regUsers = JSON.parse(regUsersRaw);
+        if (Array.isArray(regUsers)) {
+          for (const u of regUsers) {
+            const uEmail = (u.email || '').toLowerCase().trim();
+            if (uEmail && uEmail !== 'admin@b2blink.eu' && !accountsMap.has(uEmail)) {
+              accountsMap.set(uEmail, {
+                id: u.companyId || u.id || `comp_${Date.now()}`,
+                name: u.companyName || u.contactName || 'Enterprise Partner',
+                contact_name: u.contactName || 'Representative',
+                email: u.email,
+                phone: u.phone || null,
+                address: null,
+                website: null,
+                role: (u.role || 'seller') as any,
+                membership_tier: u.tier || 'bronze',
+                approval_status: u.approval_status || 'pending',
+                account_status: u.approval_status === 'approved' ? 'active' : 'pending',
+                company_number: null,
+                vat_number: null,
+                country: 'Global',
+                created_at: u.createdAt || new Date().toISOString(),
+                last_active: 'Just now',
+                listings_count: 0,
+                total_spend_or_sales: `€${u.tier === 'gold' ? '179' : u.tier === 'silver' ? '79' : '0'}/mo Membership`,
+                verified_documents: u.approval_status === 'approved',
+              });
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 4. Recover active or cached company from browser session
+    const cachedCompRaw = localStorage.getItem('b2b_cached_company');
+    if (cachedCompRaw) {
+      try {
+        const c = JSON.parse(cachedCompRaw);
+        const cEmail = (c.email || '').toLowerCase().trim();
+        if (cEmail && cEmail !== 'admin@b2blink.eu' && c.role !== 'admin' && !accountsMap.has(cEmail)) {
+          accountsMap.set(cEmail, {
+            id: c.id || `comp_${Date.now()}`,
+            name: c.company_name || c.name || c.contact_name || 'Enterprise Account',
+            contact_name: c.contact_name || 'Representative',
+            email: c.email,
+            phone: c.phone || null,
+            address: c.address || null,
+            website: c.website || null,
+            role: (c.role || 'seller') as any,
+            membership_tier: c.tier || c.membership_tier || 'bronze',
+            approval_status: c.approval_status || 'pending',
+            account_status: c.approval_status === 'approved' ? 'active' : 'pending',
+            company_number: c.company_number || null,
+            vat_number: c.vat_number || null,
+            country: 'Global',
+            created_at: c.created_at || new Date().toISOString(),
+            last_active: 'Just now',
+            listings_count: 0,
+            total_spend_or_sales: `€${(c.tier || c.membership_tier) === 'gold' ? '179' : (c.tier || c.membership_tier) === 'silver' ? '79' : '0'}/mo Membership`,
+            verified_documents: c.approval_status === 'approved',
+          });
+        }
+      } catch {}
+    }
+
+    // 5. Recover pending verification email if registration is underway
+    const pendingEmail = localStorage.getItem('b2b_pending_verification_email');
+    if (pendingEmail) {
+      const pEmail = pendingEmail.toLowerCase().trim();
+      if (pEmail && pEmail !== 'admin@b2blink.eu' && !accountsMap.has(pEmail)) {
+        const pTier = (localStorage.getItem('b2b_pending_tier') || 'bronze') as MembershipTier;
+        const pCompName = localStorage.getItem('b2b_pending_company_name') || 'Enterprise Partner';
+        const pContName = localStorage.getItem('b2b_pending_contact_name') || 'Representative';
+        const pCompId = localStorage.getItem('b2b_pending_company_id') || `comp_${Date.now()}`;
+        accountsMap.set(pEmail, {
+          id: pCompId,
+          name: pCompName,
+          contact_name: pContName,
+          email: pendingEmail,
+          phone: null,
+          address: null,
+          website: null,
+          role: 'seller',
+          membership_tier: pTier,
+          approval_status: 'pending',
+          account_status: 'pending',
+          company_number: null,
+          vat_number: null,
+          country: 'Global',
+          created_at: new Date().toISOString(),
+          last_active: 'Just now',
+          listings_count: 0,
+          total_spend_or_sales: `€${pTier === 'gold' ? '179' : pTier === 'silver' ? '79' : '0'}/mo Membership`,
+          verified_documents: false,
+        });
       }
     }
+
+    const mergedList = filterClientsOnly(Array.from(accountsMap.values()));
+    if (mergedList.length > 0) {
+      localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(mergedList));
+      return mergedList;
+    }
+
     const filteredInitial = filterClientsOnly(INITIAL_ACCOUNTS);
     localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filteredInitial));
     return filteredInitial;
@@ -206,7 +487,11 @@ export function saveAdminAccounts(accounts: AdminClientAccount[]) {
 }
 
 export function suspendAccount(companyId: string): boolean {
+  saveStatusOverride(companyId, 'rejected');
   const current = getAdminAccounts();
+  const target = current.find((acc) => acc.id === companyId);
+  if (target?.email) saveStatusOverride(target.email, 'rejected', target.membership_tier);
+
   const updated = current.map((acc) =>
     acc.id === companyId
       ? { ...acc, account_status: 'suspended' as AccountStatus, approval_status: 'rejected' as ApprovalStatus }
@@ -233,7 +518,11 @@ export function updateAccountBasicInfo(
 }
 
 export function unsuspendAccount(companyId: string): boolean {
+  saveStatusOverride(companyId, 'approved');
   const current = getAdminAccounts();
+  const target = current.find((acc) => acc.id === companyId);
+  if (target?.email) saveStatusOverride(target.email, 'approved', target.membership_tier);
+
   const updated = current.map((acc) =>
     acc.id === companyId
       ? { ...acc, account_status: 'active' as AccountStatus, approval_status: 'approved' as ApprovalStatus }
@@ -418,9 +707,17 @@ export function updateAccountTier(
 }
 
 export function updateAccountApproval(companyId: string, status: ApprovalStatus): boolean {
+  saveStatusOverride(companyId, status);
   const current = getAdminAccounts();
+  const target = current.find(
+    (acc) => acc.id === companyId || (acc.email && companyId && acc.email.toLowerCase() === companyId.toLowerCase())
+  );
+  if (target?.email) {
+    saveStatusOverride(target.email, status, target.membership_tier);
+  }
+
   const updated = current.map((acc) =>
-    acc.id === companyId
+    acc.id === companyId || (acc.email && companyId && acc.email.toLowerCase() === companyId.toLowerCase())
       ? {
           ...acc,
           approval_status: status,
@@ -434,11 +731,15 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
   if (typeof window !== 'undefined') {
     try {
       // Sync cached user company if this is the currently authenticated member
-      const target = updated.find((acc) => acc.id === companyId);
       const cachedRaw = localStorage.getItem('b2b_cached_company');
-      if (cachedRaw && target) {
+      if (cachedRaw) {
         const cached = JSON.parse(cachedRaw);
-        if (cached && (cached.id === companyId || (cached.email && target.email && cached.email.toLowerCase() === target.email.toLowerCase()))) {
+        const matchById = cached.id && (cached.id === companyId || (target && cached.id === target.id));
+        const matchByEmail = cached.email && (
+          cached.email.toLowerCase() === companyId.toLowerCase() ||
+          (target?.email && cached.email.toLowerCase() === target.email.toLowerCase())
+        );
+        if (cached && (matchById || matchByEmail)) {
           cached.approval_status = status;
           localStorage.setItem('b2b_cached_company', JSON.stringify(cached));
         }
@@ -446,6 +747,7 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
 
       // Notify any active components
       window.dispatchEvent(new CustomEvent('b2b_account_status_change', { detail: { companyId, status } }));
+      broadcastAdminUpdate();
 
       // Persist to backend and update Supabase auth metadata
       if (target) {
@@ -454,10 +756,11 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: status === 'approved' ? 'approve' : 'suspend',
-            companyId,
+            companyId: target.id || companyId,
             email: target.email,
             contactName: target.contact_name,
             companyName: target.name,
+            tier: target.membership_tier,
           }),
         }).catch(() => {});
       }
@@ -478,7 +781,7 @@ export function getAdminPayments(): AdminPaymentRecord[] {
     const raw = localStorage.getItem(PAYMENTS_STORAGE_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
     localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(INITIAL_PAYMENTS));
   } catch {
@@ -509,14 +812,7 @@ export function markPaymentCompleted(paymentId: string): boolean {
   );
   saveAdminPayments(updatedPayments);
 
-  // If this payment was for a company, automatically approve that company if not already approved!
-  if (payment?.company_id) {
-    const accounts = getAdminAccounts();
-    const existing = accounts.find((a) => a.id === payment.company_id || (payment.contact_email && a.email?.toLowerCase() === payment.contact_email.toLowerCase().trim()));
-    if (existing && existing.approval_status !== 'approved') {
-      updateAccountApproval(payment.company_id, 'approved');
-    }
-  }
+  // Note: Payments record transaction completion but do not bypass KYC business document verification.
 
   return true;
 }
@@ -537,20 +833,7 @@ export function recordManualPayment(newPay: Omit<AdminPaymentRecord, 'id' | 'cre
 
   saveAdminPayments([created, ...payments]);
 
-  if (created.status === 'Completed' && created.company_id) {
-    const accounts = getAdminAccounts();
-    const existing = accounts.find(
-      (a) =>
-        a.id === created.company_id ||
-        (created.contact_email && a.email?.toLowerCase() === created.contact_email.toLowerCase().trim())
-    );
-    // Only trigger initial KYC approval if account is NOT already approved and NOT a membership renewal/upgrade
-    const planText = (created.plan_or_service || '').toLowerCase();
-    const isMembershipTx = planText.includes('membership') || planText.includes('upgrade') || planText.includes('subscription');
-    if (existing && existing.approval_status !== 'approved' && !isMembershipTx) {
-      updateAccountApproval(created.company_id, 'approved');
-    }
-  }
+  // Note: Payments record transaction completion but do not bypass KYC business document verification.
 
   return created;
 }
@@ -566,13 +849,14 @@ export function deletePayment(paymentId: string): boolean {
 // 3. LISTINGS MODERATION
 // ==========================================
 export function getAdminListings(): AdminModeratedListing[] {
-  if (typeof window === 'undefined') return INITIAL_LISTINGS;
+  if (typeof window === 'undefined') return [];
   try {
     // Clear out legacy mock and old test keys so they never contaminate the store
     localStorage.removeItem('b2b_admin_listings_v1');
     localStorage.removeItem('b2b_admin_listings_v2');
     localStorage.removeItem('b2b_admin_listings_v3');
     localStorage.removeItem('b2b_admin_listings_v4');
+    localStorage.removeItem('b2b_admin_listings_v5');
     localStorage.removeItem('b2b_seller_listings_v1');
     localStorage.removeItem('b2b_seller_listings_real_v2');
     localStorage.removeItem('b2b_user_wtb_requests_v1');
@@ -649,26 +933,27 @@ export function getAdminListings(): AdminModeratedListing[] {
       if (Array.isArray(parsed)) {
         const combined = [...parsed, ...formattedUserItems];
         const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
-        return unique.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+        return unique.filter((l) => !isAccountDeleted(l.company_id, l.seller_email) && !isListingDeleted(l.id));
       }
     }
 
     const mergedInitial = Array.from(
       new Map([...formattedUserItems, ...INITIAL_LISTINGS].map((item) => [item.id, item])).values()
     );
-    const cleanInitial = mergedInitial.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+    const cleanInitial = mergedInitial.filter((l) => !isAccountDeleted(l.company_id, l.seller_email) && !isListingDeleted(l.id));
     localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(cleanInitial));
     return cleanInitial;
   } catch {
     // ignore
   }
-  return INITIAL_LISTINGS;
+  return [];
 }
 
 export function saveAdminListings(listings: AdminModeratedListing[]) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(listings));
+    const clean = listings.filter((l) => !isListingDeleted(l.id));
+    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(clean));
     broadcastAdminUpdate();
   } catch {
     // ignore
@@ -740,8 +1025,9 @@ export function reinstateListing(productId: string): boolean {
 }
 
 export function deleteListing(productId: string): boolean {
+  markListingAsDeleted(productId);
   const listings = getAdminListings();
-  const updated = listings.filter((l) => l.id !== productId);
+  const updated = listings.filter((l) => l.id !== productId && !isListingDeleted(l.id));
   saveAdminListings(updated);
 
   if (typeof window !== 'undefined') {
@@ -762,6 +1048,7 @@ export function deleteListing(productId: string): boolean {
       }
       window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
       window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+      broadcastAdminUpdate();
 
       fetch(`/api/products?id=${encodeURIComponent(productId)}`, {
         method: 'DELETE',
@@ -773,9 +1060,10 @@ export function deleteListing(productId: string): boolean {
 
 export function deleteListings(productIds: string[]): boolean {
   if (!productIds.length) return true;
+  markListingsAsDeleted(productIds);
   const idSet = new Set(productIds);
   const listings = getAdminListings();
-  const updated = listings.filter((l) => !idSet.has(l.id));
+  const updated = listings.filter((l) => !idSet.has(l.id) && !isListingDeleted(l.id));
   saveAdminListings(updated);
 
   if (typeof window !== 'undefined') {
@@ -796,6 +1084,7 @@ export function deleteListings(productIds: string[]): boolean {
       }
       window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
       window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
+      broadcastAdminUpdate();
 
       fetch('/api/products', {
         method: 'DELETE',
@@ -940,7 +1229,43 @@ export interface CustomerQuery {
 
 const QUERIES_STORAGE_KEY = 'b2b_customer_queries_v2';
 
-const INITIAL_QUERIES: CustomerQuery[] = [];
+const INITIAL_QUERIES: CustomerQuery[] = [
+  {
+    id: 'query-101',
+    name: 'Markus Weber',
+    company: 'Bavaria Global Trade GmbH',
+    email: 'm.weber@bavariatrade.de',
+    phone: '+49 89 2345 6789',
+    topic: 'verification',
+    message: 'Hello Support Desk,\n\nWe recently created our account and would like to confirm whether our Munich Commercial Registry excerpt and DE VAT ID are sufficient for instant verified status, or if you need a utility bill for our warehouse.\n\nThank you,\nMarkus Weber',
+    created_at: '04 Nov 2026, 01:25 PM',
+    status: 'new',
+  },
+  {
+    id: 'query-102',
+    name: "Sarah O'Connor",
+    company: 'Emerald Logistics Ireland',
+    email: 's.oconnor@emeraldwholesalegoods.ie',
+    phone: '+353 1 496 0123',
+    topic: 'technical',
+    message: 'Hi team,\n\nCould you please provide the CSV bulk ingestion column template for consumer electronics inventory? We have approximately 1,200 SKUs we want to import into the wholesale catalog.\n\nBest regards,\nSarah',
+    created_at: '03 Nov 2026, 04:18 PM',
+    status: 'new',
+  },
+  {
+    id: 'query-103',
+    name: 'Marco Bellini',
+    company: 'Milano Distribuzione Srl',
+    email: 'm.bellini@milanowholesale.it',
+    phone: '+39 02 8765 4321',
+    topic: 'billing',
+    message: 'Greetings,\n\nWe wish to subscribe to the Gold Tier package via corporate Wise wire transfer in EUR. Please send us the official proforma invoice with your Tallinn IBAN.\n\nCordiali saluti,\nMarco Bellini',
+    created_at: '02 Nov 2026, 11:40 AM',
+    status: 'replied',
+    reply_text: 'Dear Marco,\n\nThank you for reaching out. We have generated proforma invoice B2B-PRO-2026-8849 with our dedicated Wise EUR IBAN for Milano Distribuzione Srl. Your Gold membership will be activated immediately upon wire reference receipt.\n\nBest regards,\nB2B LINK Support',
+    replied_at: '02 Nov 2026, 01:10 PM',
+  },
+];
 
 
 export function getCustomerQueries(): CustomerQuery[] {
@@ -948,7 +1273,8 @@ export function getCustomerQueries(): CustomerQuery[] {
   try {
     const raw = localStorage.getItem(QUERIES_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
     localStorage.setItem(QUERIES_STORAGE_KEY, JSON.stringify(INITIAL_QUERIES));
     return INITIAL_QUERIES;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 import { saveVerificationCode } from '@/lib/auth/verification-store';
@@ -19,47 +19,51 @@ export async function POST(request: NextRequest) {
 
     const appUrl = await getDynamicAppUrl(request);
     const redirectUrl = `${appUrl}/auth/callback`;
+    let actionLink = `${appUrl}/verify-email?email=${encodeURIComponent(rawEmail)}`;
+    let otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const admin = createAdminClient();
+    // 1. Try to generate verification link and OTP via Supabase Admin
+    if (isSupabaseConfigured()) {
+      try {
+        const admin = createAdminClient();
+      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: rawEmail,
+        options: {
+          redirectTo: redirectUrl,
+        },
+      });
 
-    // 1. Generate verification link and OTP
-    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: 'magiclink',
-      email: rawEmail,
-      options: {
-        redirectTo: redirectUrl,
-      },
-    });
-
-    if (linkError || !linkData?.properties) {
-      console.error('[SEND VERIFICATION GENERATE ERROR]', linkError);
-      return NextResponse.json(
-        { error: linkError?.message || 'Unable to generate verification link.' },
-        { status: 400 }
-      );
+      if (!linkError && linkData?.properties) {
+        if (linkData.properties.email_otp) {
+          otpCode = linkData.properties.email_otp;
+        }
+        if (linkData.properties.action_link) {
+          actionLink = sanitizeActionUrl(linkData.properties.action_link, appUrl);
+        }
+      }
+    } catch (adminErr) {
+      console.warn('[SEND VERIFICATION SUPABASE NOTICE]', adminErr);
     }
+  }
 
-    const rawActionLink = linkData.properties.action_link;
-    const actionLink = rawActionLink
-      ? sanitizeActionUrl(rawActionLink, appUrl)
-      : `${appUrl}/verify-email?email=${encodeURIComponent(rawEmail)}`;
-    const otpCode = linkData.properties.email_otp || 'VERIFY';
+    // 2. Register active OTP: valid for 15 minutes, immediately invalidating any prior code
+    saveVerificationCode(rawEmail, otpCode);
 
-    // Register active OTP: valid for 15 minutes, immediately invalidating any prior code
-    if (otpCode) {
-      saveVerificationCode(rawEmail, otpCode);
-    }
+    // 3. Dispatch branded email via Resend
+    try {
+      const emailResult = await sendVerificationEmail(rawEmail, {
+        recipientEmail: rawEmail,
+        contactName: contactName || undefined,
+        otpCode,
+        actionUrl: actionLink,
+      });
 
-    // 2. Dispatch branded email via Resend
-    const emailResult = await sendVerificationEmail(rawEmail, {
-      recipientEmail: rawEmail,
-      contactName: contactName || undefined,
-      otpCode,
-      actionUrl: actionLink,
-    });
-
-    if (!emailResult.success) {
-      console.warn('[SEND VERIFICATION EMAIL NOTICE]', emailResult.error);
+      if (!emailResult.success) {
+        console.warn('[SEND VERIFICATION EMAIL NOTICE]', emailResult.error);
+      }
+    } catch (emailErr) {
+      console.warn('[SEND VERIFICATION EMAIL EXCEPTION NOTICE]', emailErr);
     }
 
     return NextResponse.json({
@@ -67,13 +71,13 @@ export async function POST(request: NextRequest) {
       message: `Verification code sent to ${rawEmail}.`,
       expiresIn: 900, // 15 minutes
       resendCooldown: 60, // 1 minute
-      // For seamless local testing only: return otp in non-production
+      // For seamless local testing: return otp
       ...(process.env.NODE_ENV !== 'production' ? { devOtp: otpCode } : {}),
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[SEND VERIFICATION EXCEPTION]', err);
     return NextResponse.json(
-      { error: 'An unexpected error occurred while sending verification email.' },
+      { error: err?.message || 'An unexpected error occurred while sending verification email.' },
       { status: 500 }
     );
   }

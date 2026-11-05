@@ -131,14 +131,14 @@ export interface InactivityReminderEmailProps {
 
 export interface ListingInactivatedEmailProps {
   recipientName: string;
-  companyName?: string;
+  companyName?: string | null;
   listingTitle: string;
-  itemCode?: string;
-  category?: string;
+  itemCode?: string | null;
+  category?: string | null;
   unitPrice?: number;
-  unpublishedDate?: string;
+  unpublishedDate?: string | null;
   recoveryDaysLeft?: number;
-  permanentDeleteDate?: string;
+  permanentDeleteDate?: string | null;
   actionUrl: string;
 }
 

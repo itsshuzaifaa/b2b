@@ -46,9 +46,24 @@ import {
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 
-const resendApiKey = process.env.RESEND_API_KEY;
-const resend = resendApiKey ? new Resend(resendApiKey) : null;
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'B2B LINK <notifications@b2blink.eu>';
+function getResendClient(): { resend: Resend | null; fromEmail: string } {
+  const rawResendApiKey = (
+    process.env.RESEND_API_KEY ||
+    process.env.NEXT_PUBLIC_RESEND_API_KEY
+  )?.trim();
+  const isResendConfigured = Boolean(
+    rawResendApiKey &&
+    rawResendApiKey.startsWith('re_') &&
+    !rawResendApiKey.includes('your_resend') &&
+    !rawResendApiKey.includes('placeholder') &&
+    rawResendApiKey.length > 15
+  );
+  const fromEmail = (process.env.RESEND_FROM_EMAIL || 'B2B LINK <notifications@brandnova.info>').trim();
+  return {
+    resend: isResendConfigured ? new Resend(rawResendApiKey) : null,
+    fromEmail,
+  };
+}
 
 export interface SendEmailResult {
   success: boolean;
@@ -72,6 +87,7 @@ export async function sendEmail({
   replyTo?: string;
 }): Promise<SendEmailResult> {
   const effectiveReplyTo = replyTo || 'support@b2blink.eu';
+  const { resend, fromEmail } = getResendClient();
 
   if (!resend) {
     console.warn(`[EMAIL DISPATCHER (DEV MOCK)] To: ${to} | ReplyTo: ${effectiveReplyTo} | Subject: ${subject}`);
@@ -91,8 +107,8 @@ export async function sendEmail({
       .replace(/\s+/g, ' ')
       .trim();
 
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    let sendResult = await resend.emails.send({
+      from: fromEmail,
       to,
       subject,
       html,
@@ -100,12 +116,43 @@ export async function sendEmail({
       replyTo: effectiveReplyTo,
     });
 
-    if (error) {
-      console.error('[EMAIL DISPATCHER ERROR]', error);
-      return { success: false, error: error.message };
+    if (
+      sendResult.error &&
+      (sendResult.error.message?.toLowerCase().includes('domain') ||
+       sendResult.error.message?.toLowerCase().includes('not verified') ||
+       sendResult.error.message?.toLowerCase().includes('verify'))
+    ) {
+      if (!fromEmail.includes('brandnova.info')) {
+        console.warn(`[EMAIL DISPATCHER] Custom sender "${fromEmail}" rejected (${sendResult.error.message}). Retrying via verified domain brandnova.info...`);
+        sendResult = await resend.emails.send({
+          from: 'B2B LINK <notifications@brandnova.info>',
+          to,
+          subject,
+          html,
+          text: plainText,
+          replyTo: effectiveReplyTo,
+        });
+      }
+
+      if (sendResult.error && !fromEmail.includes('resend.dev')) {
+        console.warn(`[EMAIL DISPATCHER] Retrying via onboarding@resend.dev...`);
+        sendResult = await resend.emails.send({
+          from: 'B2B LINK <onboarding@resend.dev>',
+          to,
+          subject,
+          html,
+          text: plainText,
+          replyTo: effectiveReplyTo,
+        });
+      }
     }
 
-    return { success: true, messageId: data?.id };
+    if (sendResult.error) {
+      console.error('[EMAIL DISPATCHER ERROR]', sendResult.error);
+      return { success: false, error: sendResult.error.message };
+    }
+
+    return { success: true, messageId: sendResult.data?.id };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown email dispatch error';
     console.error('[EMAIL DISPATCHER EXCEPTION]', errorMessage);
@@ -698,7 +745,7 @@ export async function processInactivityReminders(
       const { data: prods } = await admin
         .from('products')
         .select('id, company_id, status')
-        .in('status', ['active', 'Hot']);
+        .eq('status', 'active');
       if (Array.isArray(prods)) {
         prods.forEach((p: any) => {
           if (p.company_id) {

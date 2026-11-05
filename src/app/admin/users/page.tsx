@@ -12,6 +12,7 @@ import {
   updateAccountTier,
   updateAccountApproval,
   updateAccountBasicInfo,
+  getStatusOverrides,
   isAccountDeleted,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
@@ -80,21 +81,121 @@ export default function AdminUsersPage() {
 
   const loadData = async () => {
     try {
-      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.accounts)) {
-          const cleanAccounts = data.accounts.filter(
-            (a: AdminClientAccount) =>
-              !isAccountDeleted(a.id, a.email) &&
-              a.role !== 'admin' &&
-              a.email?.toLowerCase() !== 'admin@b2blink.eu'
-          );
-          setAccounts(cleanAccounts);
-          saveAdminAccounts(cleanAccounts);
-          return;
+      let serverAccounts: AdminClientAccount[] = [];
+      try {
+        const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.accounts)) {
+            serverAccounts = data.accounts.filter(
+              (a: AdminClientAccount) =>
+                !isAccountDeleted(a.id, a.email) &&
+                a.role !== 'admin' &&
+                a.email?.toLowerCase() !== 'admin@b2blink.eu'
+            );
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Accounts API fetch notice:', fetchErr);
+      }
+
+      const localAccounts = getAdminAccounts().filter(
+        (a: AdminClientAccount) =>
+          !isAccountDeleted(a.id, a.email) &&
+          a.role !== 'admin' &&
+          a.email?.toLowerCase() !== 'admin@b2blink.eu'
+      );
+      const overrides = getStatusOverrides();
+      const localMap = new Map<string, AdminClientAccount>();
+      for (const la of localAccounts) {
+        if (la.id) localMap.set(la.id, la);
+        if (la.email) localMap.set(la.email.toLowerCase().trim(), la);
+      }
+
+      const mergedAccounts: AdminClientAccount[] = [];
+      for (const sa of serverAccounts) {
+        const saEmail = (sa.email || '').toLowerCase().trim();
+        const la = localMap.get(sa.id) || (saEmail ? localMap.get(saEmail) : undefined);
+        const override = (sa.id && overrides[sa.id.toLowerCase().trim()]) || (saEmail && overrides[saEmail]);
+
+        let effectiveApproval = sa.approval_status;
+        let effectiveAccountStatus = sa.account_status;
+        let effectiveVerifiedDocs = sa.verified_documents;
+
+        if (override) {
+          effectiveApproval = override.approval_status;
+          effectiveAccountStatus = override.account_status;
+          effectiveVerifiedDocs = override.verified_documents;
+        } else if (la) {
+          if (la.approval_status === 'approved' || sa.approval_status === 'approved') {
+            effectiveApproval = 'approved';
+            effectiveAccountStatus = la.account_status === 'suspended' ? 'suspended' : 'active';
+            effectiveVerifiedDocs = true;
+          } else if (la.account_status === 'suspended' || la.approval_status === 'rejected') {
+            effectiveApproval = la.approval_status;
+            effectiveAccountStatus = 'suspended';
+          }
+        }
+
+        mergedAccounts.push({
+          ...sa,
+          ...(la ? { ...la } : {}),
+          approval_status: effectiveApproval,
+          account_status: effectiveAccountStatus,
+          verified_documents: effectiveVerifiedDocs,
+        });
+      }
+
+      const seen = new Set(mergedAccounts.map((a: any) => (a.email || '').toLowerCase().trim()));
+      for (const la of localAccounts) {
+        const lKey = (la.email || '').toLowerCase().trim();
+        if (lKey && !seen.has(lKey)) {
+          seen.add(lKey);
+          mergedAccounts.push(la);
         }
       }
+
+      // Check browser cached company to ensure no newly created account is missed
+      if (typeof window !== 'undefined') {
+        try {
+          const cachedRaw = localStorage.getItem('b2b_cached_company');
+          if (cachedRaw) {
+            const c = JSON.parse(cachedRaw);
+            const cEmail = (c.email || '').toLowerCase().trim();
+            if (cEmail && cEmail !== 'admin@b2blink.eu' && c.role !== 'admin' && !seen.has(cEmail) && !isAccountDeleted(c.id, c.email)) {
+              seen.add(cEmail);
+              const override = overrides[cEmail] || (c.id && overrides[c.id]);
+              mergedAccounts.unshift({
+                id: c.id || `comp_${Date.now()}`,
+                name: c.company_name || c.name || c.contact_name || 'Enterprise Account',
+                contact_name: c.contact_name || 'Representative',
+                email: c.email,
+                phone: c.phone || null,
+                address: c.address || null,
+                website: c.website || null,
+                role: (c.role || 'seller') as any,
+                membership_tier: override?.tier || c.tier || c.membership_tier || 'bronze',
+                approval_status: override?.approval_status || c.approval_status || 'pending',
+                account_status: override?.account_status || (c.approval_status === 'approved' ? 'active' : 'pending'),
+                company_number: c.company_number || null,
+                vat_number: c.vat_number || null,
+                country: 'Global',
+                created_at: c.created_at || new Date().toISOString(),
+                last_active: 'Just now',
+                listings_count: 0,
+                total_spend_or_sales: `€${(c.tier || c.membership_tier) === 'gold' ? '179' : (c.tier || c.membership_tier) === 'silver' ? '79' : '0'}/mo Membership`,
+                verified_documents: override?.verified_documents || c.approval_status === 'approved',
+              });
+            }
+          }
+        } catch {}
+      }
+
+      setAccounts(mergedAccounts);
+      if (mergedAccounts.length > 0) {
+        saveAdminAccounts(mergedAccounts);
+      }
+      return;
     } catch {
       // fallback
     }
@@ -140,13 +241,34 @@ export default function AdminUsersPage() {
   };
 
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
-    // Optimistic AJAX state update
+    // 1. Optimistic AJAX state update
     setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active', verified_documents: true } : a))
     );
+    // 2. Persist to local store with status override
     updateAccountApproval(acc.id, 'approved');
     showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
-    loadData();
+
+    // 3. Await backend persistence
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+          tier: acc.membership_tier,
+        }),
+      });
+    } catch (err) {
+      console.warn('Backend approval sync notice:', err);
+    }
+
+    // 4. Reload data with guaranteed preserved approval
+    await loadData();
   };
 
   const handleToggleSuspend = async (acc: AdminClientAccount) => {
@@ -414,22 +536,31 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleSendInactivityReminder = async (acc: AdminClientAccount) => {
-    showNotice(`Sending 30-day inactivity reminder to ${acc.email}...`);
+  const [isPurging, setIsPurging] = useState(false);
+  const handlePurgeTestData = async () => {
+    if (!confirm('Are you sure you want to purge all test accounts and reset database tables? Only the platform admin (admin@b2blink.eu) will be preserved.')) {
+      return;
+    }
+    setIsPurging(true);
     try {
-      const res = await fetch('/api/cron/inactivity-reminders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: acc.email, force: true }),
-      });
+      const res = await fetch('/api/admin/purge-test-data', { method: 'POST' });
       const data = await res.json();
-      if (data.success && data.emailsSent > 0) {
-        showNotice(`Inactivity reminder successfully sent to ${acc.email}!`);
+      if (data.success) {
+        showNotice('Successfully purged all test accounts and cleared tables.');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('b2b_admin_accounts_v5');
+          localStorage.removeItem('b2b_admin_accounts_v4');
+          localStorage.removeItem('b2b_admin_status_overrides_v2');
+          localStorage.removeItem('b2b_registered_users_v1');
+        }
+        await loadData();
       } else {
-        showNotice(`Reminder dispatched to ${acc.email}`);
+        showNotice('Purge notice: ' + (data.error || 'Check server connection'));
       }
     } catch {
-      showNotice(`Failed to send inactivity reminder to ${acc.email}`);
+      showNotice('Network error purging test data.');
+    } finally {
+      setIsPurging(false);
     }
   };
 
@@ -485,6 +616,16 @@ export default function AdminUsersPage() {
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
             {clientAccounts.length} active clients
           </div>
+          <button
+            type="button"
+            onClick={handlePurgeTestData}
+            disabled={isPurging}
+            className="bg-red-50 text-red-600 hover:bg-red-100 text-[12px] font-bold px-3.5 py-1.5 rounded-full border border-red-200 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            title="Wipe all test accounts and clear Supabase tables, preserving admin"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{isPurging ? 'Purging...' : 'Reset & Purge Test Accounts'}</span>
+          </button>
         </div>
       </div>
 
@@ -746,7 +887,7 @@ export default function AdminUsersPage() {
 
                             {openMenuId === acc.id && (
                               <div
-                                className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                className="absolute right-0 top-full mt-1 min-w-[280px] sm:min-w-[310px] w-auto bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
@@ -756,9 +897,9 @@ export default function AdminUsersPage() {
                                     setBulkCsvMode('WTS');
                                     setBulkCsvAccount(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
+                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF] shrink-0" />
                                   <span>Upload WTS (Sell Offers) CSV</span>
                                 </button>
 
@@ -769,10 +910,19 @@ export default function AdminUsersPage() {
                                     setBulkCsvMode('WTB');
                                     setBulkCsvAccount(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600 shrink-0" />
                                   <span>Upload WTB (Buy Requirements) CSV</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditInfo(acc)}
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
+                                >
+                                  <UserCog className="w-4 h-4 text-[#0A6CFF] shrink-0" />
+                                  <span>Edit Member Information</span>
                                 </button>
 
                                 <button
@@ -781,9 +931,9 @@ export default function AdminUsersPage() {
                                     setOpenMenuId(null);
                                     setSelectedDossier(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <Eye className="w-4 h-4 text-[#5B6B82]" />
+                                  <Eye className="w-4 h-4 text-[#5B6B82] shrink-0" />
                                   <span>View Dossier</span>
                                 </button>
 
@@ -794,9 +944,9 @@ export default function AdminUsersPage() {
                                     setEditingTierAccount(acc);
                                     setSelectedTier(acc.membership_tier);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <Edit className="w-4 h-4 text-[#5B6B82]" />
+                                  <Edit className="w-4 h-4 text-[#5B6B82] shrink-0" />
                                   <span>Change Membership Tier</span>
                                 </button>
 

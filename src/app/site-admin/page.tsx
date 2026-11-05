@@ -10,6 +10,7 @@ import {
   getAdminListings,
   getCustomerQueries,
   updateAccountApproval,
+  getStatusOverrides,
   broadcastMessageToAllSellers,
   isAccountDeleted,
   type AdminClientAccount,
@@ -53,9 +54,71 @@ export default function SiteAdminOverviewPage() {
       const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.accounts)) {
-          setAccounts(data.accounts);
-          saveAdminAccounts(data.accounts);
+        if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+          const serverAccounts = data.accounts.filter(
+            (a: AdminClientAccount) =>
+              !isAccountDeleted(a.id, a.email) &&
+              a.role !== 'admin' &&
+              a.email?.toLowerCase() !== 'admin@b2blink.eu'
+          );
+          const localAccounts = getAdminAccounts().filter(
+            (a: AdminClientAccount) =>
+              !isAccountDeleted(a.id, a.email) &&
+              a.role !== 'admin' &&
+              a.email?.toLowerCase() !== 'admin@b2blink.eu'
+          );
+          const overrides = getStatusOverrides();
+          const localMap = new Map<string, AdminClientAccount>();
+          for (const la of localAccounts) {
+            if (la.id) localMap.set(la.id, la);
+            if (la.email) localMap.set(la.email.toLowerCase().trim(), la);
+          }
+
+          const mergedAccounts: AdminClientAccount[] = [];
+          for (const sa of serverAccounts) {
+            const saEmail = (sa.email || '').toLowerCase().trim();
+            const la = localMap.get(sa.id) || (saEmail ? localMap.get(saEmail) : undefined);
+            const override = (sa.id && overrides[sa.id.toLowerCase().trim()]) || (saEmail && overrides[saEmail]);
+
+            let effectiveApproval = sa.approval_status;
+            let effectiveAccountStatus = sa.account_status;
+            let effectiveVerifiedDocs = sa.verified_documents;
+
+            if (override) {
+              effectiveApproval = override.approval_status;
+              effectiveAccountStatus = override.account_status;
+              effectiveVerifiedDocs = override.verified_documents;
+            } else if (la) {
+              if (la.approval_status === 'approved' || sa.approval_status === 'approved') {
+                effectiveApproval = 'approved';
+                effectiveAccountStatus = la.account_status === 'suspended' ? 'suspended' : 'active';
+                effectiveVerifiedDocs = true;
+              } else if (la.account_status === 'suspended' || la.approval_status === 'rejected') {
+                effectiveApproval = la.approval_status;
+                effectiveAccountStatus = 'suspended';
+              }
+            }
+
+            mergedAccounts.push({
+              ...sa,
+              ...(la ? { ...la } : {}),
+              approval_status: effectiveApproval,
+              account_status: effectiveAccountStatus,
+              verified_documents: effectiveVerifiedDocs,
+            });
+          }
+
+          const seen = new Set(mergedAccounts.map((a: any) => (a.email || '').toLowerCase().trim()));
+          for (const la of localAccounts) {
+            const lKey = (la.email || '').toLowerCase().trim();
+            if (lKey && !seen.has(lKey)) {
+              seen.add(lKey);
+              mergedAccounts.push(la);
+            }
+          }
+
+          setAccounts(mergedAccounts);
+          saveAdminAccounts(mergedAccounts);
         } else {
           setAccounts(getAdminAccounts());
         }
@@ -66,14 +129,29 @@ export default function SiteAdminOverviewPage() {
       setAccounts(getAdminAccounts());
     }
     setPayments(getAdminPayments());
-    setListingsCount(getAdminListings().length);
     setQueries(getCustomerQueries());
+
+    try {
+      const prodRes = await fetch('/api/products?all=true', { cache: 'no-store' });
+      if (prodRes.ok) {
+        const prodData = await prodRes.json();
+        if (Array.isArray(prodData.products)) {
+          setListingsCount(prodData.products.length);
+        } else {
+          setListingsCount(getAdminListings().length);
+        }
+      } else {
+        setListingsCount(getAdminListings().length);
+      }
+    } catch {
+      setListingsCount(getAdminListings().length);
+    }
 
     try {
       const qRes = await fetch('/api/admin/queries', { cache: 'no-store' });
       if (qRes.ok) {
         const qData = await qRes.json();
-        if (Array.isArray(qData.queries)) {
+        if (Array.isArray(qData.queries) && qData.queries.length > 0) {
           setQueries(qData.queries);
         }
       }
@@ -100,13 +178,34 @@ export default function SiteAdminOverviewPage() {
   };
 
   const handleVerifyAccountQuick = async (acc: AdminClientAccount) => {
-    // Optimistic AJAX state update
+    // 1. Optimistic AJAX state update
     setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active', verified_documents: true } : a))
     );
+    // 2. Persist to local store with status override
     updateAccountApproval(acc.id, 'approved');
     showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`);
-    loadData();
+
+    // 3. Await backend persistence
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+          tier: acc.membership_tier,
+        }),
+      });
+    } catch (err) {
+      console.warn('Backend approval sync notice:', err);
+    }
+
+    // 4. Reload data with guaranteed preserved approval
+    await loadData();
   };
 
   const completedPayments = payments.filter((p) => p.status === 'Completed');

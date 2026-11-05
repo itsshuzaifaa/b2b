@@ -67,7 +67,8 @@ function ResetPasswordContent() {
   // Check if user came from a Supabase direct recovery magic link
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data }: any) => {
+      const session = data?.session;
       if (session?.user?.email) {
         setEmail(session.user.email);
         setCodeSent(true);

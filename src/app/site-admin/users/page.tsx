@@ -11,6 +11,8 @@ import {
   deleteAccount,
   updateAccountTier,
   updateAccountApproval,
+  updateAccountBasicInfo,
+  getStatusOverrides,
   isAccountDeleted,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
@@ -40,6 +42,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Package,
+  UserCog,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
@@ -55,6 +58,19 @@ export default function SiteAdminUsersPage() {
   const [clearLotsConfirmAccount, setClearLotsConfirmAccount] = useState<AdminClientAccount | null>(null);
   const [editingTierAccount, setEditingTierAccount] = useState<AdminClientAccount | null>(null);
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
+  const [editingInfoAccount, setEditingInfoAccount] = useState<AdminClientAccount | null>(null);
+  const [editForm, setEditForm] = useState({
+    contact_name: '',
+    company_name: '',
+    email: '',
+    phone: '',
+    address: '',
+    country: '',
+    company_number: '',
+    vat_number: '',
+  });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [bulkCsvAccount, setBulkCsvAccount] = useState<AdminClientAccount | null>(null);
   const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -62,21 +78,121 @@ export default function SiteAdminUsersPage() {
 
   const loadData = async () => {
     try {
-      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.accounts)) {
-          const cleanAccounts = data.accounts.filter(
-            (a: AdminClientAccount) =>
-              !isAccountDeleted(a.id, a.email) &&
-              a.role !== 'admin' &&
-              a.email?.toLowerCase() !== 'admin@b2blink.eu'
-          );
-          setAccounts(cleanAccounts);
-          saveAdminAccounts(cleanAccounts);
-          return;
+      let serverAccounts: AdminClientAccount[] = [];
+      try {
+        const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.accounts)) {
+            serverAccounts = data.accounts.filter(
+              (a: AdminClientAccount) =>
+                !isAccountDeleted(a.id, a.email) &&
+                a.role !== 'admin' &&
+                a.email?.toLowerCase() !== 'admin@b2blink.eu'
+            );
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Accounts API fetch notice:', fetchErr);
+      }
+
+      const localAccounts = getAdminAccounts().filter(
+        (a: AdminClientAccount) =>
+          !isAccountDeleted(a.id, a.email) &&
+          a.role !== 'admin' &&
+          a.email?.toLowerCase() !== 'admin@b2blink.eu'
+      );
+      const overrides = getStatusOverrides();
+      const localMap = new Map<string, AdminClientAccount>();
+      for (const la of localAccounts) {
+        if (la.id) localMap.set(la.id, la);
+        if (la.email) localMap.set(la.email.toLowerCase().trim(), la);
+      }
+
+      const mergedAccounts: AdminClientAccount[] = [];
+      for (const sa of serverAccounts) {
+        const saEmail = (sa.email || '').toLowerCase().trim();
+        const la = localMap.get(sa.id) || (saEmail ? localMap.get(saEmail) : undefined);
+        const override = (sa.id && overrides[sa.id.toLowerCase().trim()]) || (saEmail && overrides[saEmail]);
+
+        let effectiveApproval = sa.approval_status;
+        let effectiveAccountStatus = sa.account_status;
+        let effectiveVerifiedDocs = sa.verified_documents;
+
+        if (override) {
+          effectiveApproval = override.approval_status;
+          effectiveAccountStatus = override.account_status;
+          effectiveVerifiedDocs = override.verified_documents;
+        } else if (la) {
+          if (la.approval_status === 'approved' || sa.approval_status === 'approved') {
+            effectiveApproval = 'approved';
+            effectiveAccountStatus = la.account_status === 'suspended' ? 'suspended' : 'active';
+            effectiveVerifiedDocs = true;
+          } else if (la.account_status === 'suspended' || la.approval_status === 'rejected') {
+            effectiveApproval = la.approval_status;
+            effectiveAccountStatus = 'suspended';
+          }
+        }
+
+        mergedAccounts.push({
+          ...sa,
+          ...(la ? { ...la } : {}),
+          approval_status: effectiveApproval,
+          account_status: effectiveAccountStatus,
+          verified_documents: effectiveVerifiedDocs,
+        });
+      }
+
+      const seen = new Set(mergedAccounts.map((a: any) => (a.email || '').toLowerCase().trim()));
+      for (const la of localAccounts) {
+        const lKey = (la.email || '').toLowerCase().trim();
+        if (lKey && !seen.has(lKey)) {
+          seen.add(lKey);
+          mergedAccounts.push(la);
         }
       }
+
+      // Check browser cached company to ensure no newly created account is missed
+      if (typeof window !== 'undefined') {
+        try {
+          const cachedRaw = localStorage.getItem('b2b_cached_company');
+          if (cachedRaw) {
+            const c = JSON.parse(cachedRaw);
+            const cEmail = (c.email || '').toLowerCase().trim();
+            if (cEmail && cEmail !== 'admin@b2blink.eu' && c.role !== 'admin' && !seen.has(cEmail) && !isAccountDeleted(c.id, c.email)) {
+              seen.add(cEmail);
+              const override = overrides[cEmail] || (c.id && overrides[c.id]);
+              mergedAccounts.unshift({
+                id: c.id || `comp_${Date.now()}`,
+                name: c.company_name || c.name || c.contact_name || 'Enterprise Account',
+                contact_name: c.contact_name || 'Representative',
+                email: c.email,
+                phone: c.phone || null,
+                address: c.address || null,
+                website: c.website || null,
+                role: (c.role || 'seller') as any,
+                membership_tier: override?.tier || c.tier || c.membership_tier || 'bronze',
+                approval_status: override?.approval_status || c.approval_status || 'pending',
+                account_status: override?.account_status || (c.approval_status === 'approved' ? 'active' : 'pending'),
+                company_number: c.company_number || null,
+                vat_number: c.vat_number || null,
+                country: 'Global',
+                created_at: c.created_at || new Date().toISOString(),
+                last_active: 'Just now',
+                listings_count: 0,
+                total_spend_or_sales: `€${(c.tier || c.membership_tier) === 'gold' ? '179' : (c.tier || c.membership_tier) === 'silver' ? '79' : '0'}/mo Membership`,
+                verified_documents: override?.verified_documents || c.approval_status === 'approved',
+              });
+            }
+          }
+        } catch {}
+      }
+
+      setAccounts(mergedAccounts);
+      if (mergedAccounts.length > 0) {
+        saveAdminAccounts(mergedAccounts);
+      }
+      return;
     } catch {
       // fallback
     }
@@ -97,19 +213,158 @@ export default function SiteAdminUsersPage() {
     setTimeout(() => setFeedback(null), 3000);
   };
 
+  const handleOpenEditInfo = (acc: AdminClientAccount) => {
+    setOpenMenuId(null);
+    setEditingInfoAccount(acc);
+    setEditForm({
+      contact_name: acc.contact_name || '',
+      company_name: acc.name || '',
+      email: acc.email || '',
+      phone: acc.phone || '',
+      address: acc.address || '',
+      country: acc.country || '',
+      company_number: acc.company_number || '',
+      vat_number: acc.vat_number || '',
+    });
+    setEditError(null);
+  };
+
+  const handleSaveBasicInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInfoAccount) return;
+
+    const trimmedContact = editForm.contact_name.trim();
+    const trimmedCompany = editForm.company_name.trim();
+    const trimmedEmail = editForm.email.trim().toLowerCase();
+
+    if (!trimmedContact) {
+      setEditError('Contact representative name is required.');
+      return;
+    }
+    if (!trimmedCompany) {
+      setEditError('Company name is required.');
+      return;
+    }
+    if (!trimmedEmail || !trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      setEditError('A valid corporate email address is required.');
+      return;
+    }
+
+    const currentEmail = (editingInfoAccount.email || '').trim().toLowerCase();
+    const isEmailChanging = trimmedEmail !== currentEmail;
+
+    setEditLoading(true);
+    setEditError(null);
+
+    try {
+      const res = await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_info',
+          companyId: editingInfoAccount.id,
+          contactName: trimmedContact,
+          companyName: trimmedCompany,
+          email: trimmedEmail,
+          currentEmail,
+          phone: editForm.phone.trim() || null,
+          address: editForm.address.trim() || null,
+          country: editForm.country.trim() || null,
+          companyNumber: editForm.company_number.trim() || null,
+          vatNumber: editForm.vat_number.trim() || null,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setEditError(data.error || 'Failed to update member information.');
+        setEditLoading(false);
+        return;
+      }
+
+      // Optimistic state update in accounts list
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === editingInfoAccount.id
+            ? {
+                ...a,
+                name: trimmedCompany,
+                contact_name: trimmedContact,
+                email: trimmedEmail,
+                phone: editForm.phone.trim() || null,
+                address: editForm.address.trim() || null,
+                country: editForm.country.trim() || a.country,
+                company_number: editForm.company_number.trim() || null,
+                vat_number: editForm.vat_number.trim() || null,
+              }
+            : a
+        )
+      );
+
+      // Also update local storage cache helper
+      updateAccountBasicInfo(editingInfoAccount.id, {
+        name: trimmedCompany,
+        contact_name: trimmedContact,
+        email: trimmedEmail,
+        phone: editForm.phone.trim() || null,
+        address: editForm.address.trim() || null,
+        country: editForm.country.trim() || editingInfoAccount.country,
+        company_number: editForm.company_number.trim() || null,
+        vat_number: editForm.vat_number.trim() || null,
+      });
+
+      if (isEmailChanging) {
+        showNotice(
+          `Updated "${trimmedCompany}". Email change notices sent to ${currentEmail} and ${trimmedEmail}.`
+        );
+      } else {
+        showNotice(`Member information for "${trimmedCompany}" successfully updated.`);
+      }
+
+      setEditingInfoAccount(null);
+      loadData();
+    } catch (err: any) {
+      setEditError(err.message || 'Network error updating member information.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const handleBulkCsvSuccess = (count: number) => {
     showNotice(`Successfully uploaded and published ${count} listings for ${bulkCsvAccount?.name}`);
     loadData();
   };
 
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
-    // Optimistic AJAX state update
+    // 1. Optimistic AJAX state update
     setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active', verified_documents: true } : a))
     );
+    // 2. Persist to local store with status override
     updateAccountApproval(acc.id, 'approved');
     showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
-    loadData();
+
+    // 3. Await backend persistence
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+          tier: acc.membership_tier,
+        }),
+      });
+    } catch (err) {
+      console.warn('Backend approval sync notice:', err);
+    }
+
+    // 4. Reload data with guaranteed preserved approval
+    await loadData();
   };
 
   const handleToggleSuspend = async (acc: AdminClientAccount) => {
@@ -259,6 +514,34 @@ export default function SiteAdminUsersPage() {
     loadData();
   };
 
+  const [isPurging, setIsPurging] = useState(false);
+  const handlePurgeTestData = async () => {
+    if (!confirm('Are you sure you want to purge all test accounts and reset database tables? Only the platform admin (admin@b2blink.eu) will be preserved.')) {
+      return;
+    }
+    setIsPurging(true);
+    try {
+      const res = await fetch('/api/admin/purge-test-data', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showNotice('Successfully purged all test accounts and cleared tables.');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('b2b_admin_accounts_v5');
+          localStorage.removeItem('b2b_admin_accounts_v4');
+          localStorage.removeItem('b2b_admin_status_overrides_v2');
+          localStorage.removeItem('b2b_registered_users_v1');
+        }
+        await loadData();
+      } else {
+        showNotice('Purge notice: ' + (data.error || 'Check server connection'));
+      }
+    } catch {
+      showNotice('Network error purging test data.');
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   const filteredAccounts = useMemo(() => {
     return accounts.filter((acc) => {
       // Admin accounts cannot be listed or shown in the client accounts directory
@@ -311,6 +594,16 @@ export default function SiteAdminUsersPage() {
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
             {clientAccounts.length} active clients
           </div>
+          <button
+            type="button"
+            onClick={handlePurgeTestData}
+            disabled={isPurging}
+            className="bg-red-50 text-red-600 hover:bg-red-100 text-[12px] font-bold px-3.5 py-1.5 rounded-full border border-red-200 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            title="Wipe all test accounts and clear Supabase tables, preserving admin"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{isPurging ? 'Purging...' : 'Reset & Purge Test Accounts'}</span>
+          </button>
         </div>
       </div>
 
@@ -564,7 +857,7 @@ export default function SiteAdminUsersPage() {
 
                             {openMenuId === acc.id && (
                               <div
-                                className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                className="absolute right-0 top-full mt-1 min-w-[280px] sm:min-w-[310px] w-auto bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
@@ -574,9 +867,9 @@ export default function SiteAdminUsersPage() {
                                     setBulkCsvMode('WTS');
                                     setBulkCsvAccount(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
+                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF] shrink-0" />
                                   <span>Upload WTS (Sell Offers) CSV</span>
                                 </button>
 
@@ -587,10 +880,19 @@ export default function SiteAdminUsersPage() {
                                     setBulkCsvMode('WTB');
                                     setBulkCsvAccount(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600 shrink-0" />
                                   <span>Upload WTB (Buy Requirements) CSV</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditInfo(acc)}
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
+                                >
+                                  <UserCog className="w-4 h-4 text-[#0A6CFF] shrink-0" />
+                                  <span>Edit Member Information</span>
                                 </button>
 
                                 <button
@@ -599,9 +901,9 @@ export default function SiteAdminUsersPage() {
                                     setOpenMenuId(null);
                                     setSelectedDossier(acc);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <Eye className="w-4 h-4 text-[#5B6B82]" />
+                                  <Eye className="w-4 h-4 text-[#5B6B82] shrink-0" />
                                   <span>View Dossier</span>
                                 </button>
 
@@ -612,9 +914,9 @@ export default function SiteAdminUsersPage() {
                                     setEditingTierAccount(acc);
                                     setSelectedTier(acc.membership_tier);
                                   }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                                  className="w-full px-3.5 py-2.5 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2.5 transition cursor-pointer whitespace-nowrap"
                                 >
-                                  <Edit className="w-4 h-4 text-[#5B6B82]" />
+                                  <Edit className="w-4 h-4 text-[#5B6B82] shrink-0" />
                                   <span>Change Membership Tier</span>
                                 </button>
 
@@ -956,6 +1258,212 @@ export default function SiteAdminUsersPage() {
         initialMode={bulkCsvMode}
         onSuccess={handleBulkCsvSuccess}
       />
+      {/* EDIT MEMBER INFORMATION MODAL */}
+      {editingInfoAccount && (
+        <div
+          className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => !editLoading && setEditingInfoAccount(null)}
+        >
+          <div
+            className="bg-white rounded-[32px] p-6 sm:p-7 max-w-xl w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-[#EBF3FF] text-[#0A6CFF] flex items-center justify-center shrink-0">
+                  <UserCog className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-[17px] font-extrabold text-[#0B1F3A]">
+                    Edit Member Information
+                  </h3>
+                  <p className="text-[12px] text-[#5B6B82]">
+                    Update contact details, company profile, and address for <strong>{editingInfoAccount.name}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={editLoading}
+                onClick={() => setEditingInfoAccount(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {editError && (
+              <div className="mt-4 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveBasicInfo} className="mt-5 space-y-4">
+              {/* Row 1: Contact Representative & Company Name */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Contact Representative *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.contact_name}
+                    onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })}
+                    placeholder="e.g. John Doe"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Company Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.company_name}
+                    onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })}
+                    placeholder="e.g. Nordic Electro Ltd"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Email Address & Phone Number */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Corporate Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    placeholder="e.g. contact@company.eu"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Phone / WhatsApp Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    placeholder="e.g. +372 555 1234"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Email Change Dynamic Notice */}
+              {editForm.email.trim().toLowerCase() !== (editingInfoAccount.email || '').trim().toLowerCase() && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 leading-relaxed animate-in fade-in duration-200">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-amber-600 font-bold text-sm shrink-0 mt-0.5">⚠️</span>
+                    <div>
+                      <strong className="font-bold text-[#0B1F3A]">Automatic Dual-Email Dispatch:</strong>
+                      <p className="mt-0.5 text-[11.5px] text-amber-800">
+                        Updating the email will automatically dispatch two transactional communications:
+                      </p>
+                      <ul className="list-disc pl-4 mt-1 space-y-0.5 text-[11px] text-amber-900 font-medium">
+                        <li>
+                          A security notice to the current email (<strong>{editingInfoAccount.email}</strong>) alerting them of the change.
+                        </li>
+                        <li>
+                          An activation email to the new address (<strong>{editForm.email.trim().toLowerCase()}</strong>) prompting them to log in to activate access.
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Row 3: Registered Business / Trading Address */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Registered Business / Trading Address
+                </label>
+                <input
+                  type="text"
+                  value={editForm.address}
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                  placeholder="e.g. Narva mnt 5, 10117 Tallinn, Estonia"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                />
+              </div>
+
+              {/* Row 4: Country, Company Registration No & VAT Number */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Country / Market
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.country}
+                    onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                    placeholder="e.g. Estonia"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Company Reg No
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.company_number}
+                    onChange={(e) => setEditForm({ ...editForm, company_number: e.target.value })}
+                    placeholder="e.g. 14892341"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    VAT / Tax ID
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.vat_number}
+                    onChange={(e) => setEditForm({ ...editForm, vat_number: e.target.value })}
+                    placeholder="e.g. EE102219482"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-[#F1F5F9]">
+                <button
+                  type="button"
+                  disabled={editLoading}
+                  onClick={() => setEditingInfoAccount(null)}
+                  className="px-4 py-2 text-[13px] font-semibold text-[#5B6B82] hover:text-[#0B1F3A] transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                >
+                  {editLoading ? 'Saving...' : 'Save Member Information'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -89,81 +89,121 @@ function LoginFormContent() {
   // Demo Switcher State
   const [showDemoLogins, setShowDemoLogins] = useState(false);
 
-  const handleSignIn = async (e: React.FormEvent) => {
+    const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg(null);
 
+    const cleanIdentifier = identifier.trim();
+    if (!cleanIdentifier) {
+      setErrorMsg('Please enter your username or email address.');
+      setLoading(false);
+      return;
+    }
+    if (!password) {
+      setErrorMsg('Please enter your password.');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const cleanIdentifier = identifier.trim();
-      let resolvedEmail = cleanIdentifier;
+      // 1. Resolve identifier against browser local accounts if username is provided without @
+      let clientResolvedEmail: string | undefined;
+      let matchedLocalUser: any = null;
 
-      // If user typed a username (no '@'), resolve it to their account email
-      if (!cleanIdentifier.includes('@')) {
-        const lookupRes = await fetch('/api/auth/lookup-username', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: cleanIdentifier }),
-        });
+      if (typeof window !== 'undefined' && !cleanIdentifier.includes('@')) {
+        const cleanLower = cleanIdentifier.toLowerCase();
+        try {
+          const regRaw = localStorage.getItem('b2b_registered_users_v1');
+          if (regRaw) {
+            const regList = JSON.parse(regRaw);
+            if (Array.isArray(regList)) {
+              const match = regList.find((u: any) =>
+                u.username?.toLowerCase() === cleanLower ||
+                u.email?.toLowerCase().split('@')[0] === cleanLower ||
+                u.email?.toLowerCase() === cleanLower
+              );
+              if (match) {
+                clientResolvedEmail = match.email;
+                matchedLocalUser = match;
+              }
+            }
+          }
 
-        const lookupData = await lookupRes.json();
-        if (!lookupRes.ok || !lookupData.email) {
-          setErrorMsg(lookupData.error || `No account found with username "${cleanIdentifier}".`);
-          setLoading(false);
-          return;
-        }
-
-        resolvedEmail = lookupData.email;
+          if (!clientResolvedEmail) {
+            const adminRaw = localStorage.getItem('b2b_admin_accounts_v4');
+            if (adminRaw) {
+              const adminList = JSON.parse(adminRaw);
+              if (Array.isArray(adminList)) {
+                const match = adminList.find((a: any) =>
+                  a.email?.toLowerCase().split('@')[0] === cleanLower ||
+                  a.name?.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanLower.replace(/[^a-z0-9]/g, '') ||
+                  a.contact_name?.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanLower.replace(/[^a-z0-9]/g, '')
+                );
+                if (match?.email) {
+                  clientResolvedEmail = match.email;
+                  matchedLocalUser = match;
+                }
+              }
+            }
+          }
+        } catch {}
       }
 
-      const supabase = createClient();
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email: resolvedEmail,
-        password,
+      // Authenticate via server-side login endpoint (handles usernames, emails, and all accounts)
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: cleanIdentifier,
+          password,
+          clientResolvedEmail,
+        }),
       });
 
-      if (error) {
-        const errorMsgLower = (error.message || '').toLowerCase();
-        const errorCode = (error as any).code || '';
+      const data = await res.json();
 
-        // If credentials are valid but account email has not been confirmed yet:
-        if (
-          errorCode === 'email_not_confirmed' ||
-          errorMsgLower.includes('email not confirmed') ||
-          errorMsgLower.includes('not confirmed')
-        ) {
-          setVerifyEmail(resolvedEmail);
-          setMode('verify_code');
-          setErrorMsg(null);
-          setVerifyError(null);
-          setOtp('');
-          setResendNotice(null);
-          setCountdown(60);
-          setLoading(false);
-          return;
-        }
-
-        if (error.message.includes('Invalid login credentials')) {
-          setErrorMsg('Incorrect username/email or password.');
-        } else {
-          setErrorMsg(error.message);
-        }
-      } else {
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('b2b_demo_role');
-          localStorage.removeItem('b2b_pending_verification_email');
-          sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
-          sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
-        }
-        if (authData?.user) {
-          setAuthenticatedUser(authData.user);
-        }
-        router.push(redirectUrl || '/dashboard');
-        router.refresh();
+      if (!res.ok || !data.success) {
+        setErrorMsg(data.error || 'Incorrect username/email or password.');
+        setLoading(false);
         return;
       }
+
+      // 2. Success! Clean up transient markers
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('b2b_demo_role');
+        localStorage.removeItem('b2b_pending_verification_email');
+        sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
+        sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
+      }
+
+      // 3. Connect Supabase client in browser if available
+      try {
+        const supabase = createClient();
+        await supabase.auth.signInWithPassword({
+          email: data.email,
+          password,
+        });
+      } catch {}
+
+      // 4. Cache authenticated company
+      if (data.company) {
+        localStorage.setItem('b2b_cached_company', JSON.stringify(data.company));
+      }
+
+      // 5. Update auth context and navigate to dashboard
+      if (data.user) {
+        setAuthenticatedUser(data.user);
+      } else if (data.company) {
+        setAuthenticatedUser(data.company);
+      }
+
+      router.push(redirectUrl || '/dashboard');
+      router.refresh();
+      return;
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Sign in failed. Please try again.');
+      const isFetchErr = err instanceof Error && (err.message.includes('fetch') || err.message.includes('Network'));
+      setErrorMsg(isFetchErr ? 'Unable to connect to the login service. Please check your network and try again.' : (err instanceof Error ? err.message : 'Sign in failed. Please try again.'));
     } finally {
       setLoading(false);
     }

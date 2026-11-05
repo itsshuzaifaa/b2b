@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { MOCK_COMPANIES } from '@/lib/mock-data';
-import { getAdminAccounts } from '@/lib/admin/admin-store';
+import { getAdminAccounts, getStatusOverrides } from '@/lib/admin/admin-store';
 import type { Company, UserRole, MembershipTier, ApprovalStatus } from '@/types/database';
 
 export type DemoRoleType = 'guest' | 'buyer' | 'seller' | 'seller_pending' | 'seller_approved' | 'admin';
@@ -90,6 +90,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resolveVerifiedStatus = (userId?: string, email?: string, currentStatus?: string): ApprovalStatus => {
     if (typeof window === 'undefined') return (currentStatus || 'pending') as ApprovalStatus;
     try {
+      const overrides = getStatusOverrides();
+      const cleanEmail = email ? email.toLowerCase().trim() : '';
+      const cleanId = userId ? userId.toLowerCase().trim() : '';
+      const directOverride = (cleanId && overrides[cleanId]) || (cleanEmail && overrides[cleanEmail]);
+      if (directOverride?.approval_status) {
+        return directOverride.approval_status;
+      }
+
       const accounts = getAdminAccounts();
       const match = accounts.find((a) =>
         (userId && a.id === userId) ||
@@ -242,13 +250,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 3. User is not logged in: guest state (no mock company forced)
+      // 3. Fallback: check cached authenticated company
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('b2b_cached_company');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed && (parsed.email || parsed.id)) {
+              const verifiedStatus = resolveVerifiedStatus(parsed.id, parsed.email, parsed.approval_status || 'pending');
+              const effectiveTier = resolveEffectiveTier(parsed.id, parsed.email, parsed.tier || parsed.membership_tier);
+              const validCompany: Company = {
+                ...parsed,
+                tier: effectiveTier,
+                membership_tier: effectiveTier,
+                approval_status: verifiedStatus,
+              };
+              setCompany(validCompany);
+              setDemoRole((validCompany.role as DemoRoleType) || 'seller');
+              setIsLoading(false);
+              return;
+            }
+          } catch {}
+        }
+      }
+
+      // 4. Truly not logged in: guest state (no mock company forced)
       setCompany(null);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_cached_company');
       }
       setDemoRole('guest');
     } catch {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('b2b_cached_company');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed && (parsed.email || parsed.id)) {
+              const verifiedStatus = resolveVerifiedStatus(parsed.id, parsed.email, parsed.approval_status || 'pending');
+              const effectiveTier = resolveEffectiveTier(parsed.id, parsed.email, parsed.tier || parsed.membership_tier);
+              const validCompany: Company = {
+                ...parsed,
+                tier: effectiveTier,
+                membership_tier: effectiveTier,
+                approval_status: verifiedStatus,
+              };
+              setCompany(validCompany);
+              setDemoRole((validCompany.role as DemoRoleType) || 'seller');
+              setIsLoading(false);
+              return;
+            }
+          } catch {}
+        }
+      }
       setCompany(null);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_cached_company');
@@ -265,27 +319,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('b2b_demo_role');
     }
     const meta = user.user_metadata || {};
-    const metaRole = (meta.role || 'seller') as UserRole;
-    const initialStatus = meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
-    const effectiveStatus = resolveVerifiedStatus(user.id, user.email, initialStatus);
-    const effectiveTier = resolveEffectiveTier(user.id, user.email, meta.membership_tier || meta.tier);
+    const metaRole = (user.role || meta.role || 'seller') as UserRole;
+    const initialStatus = user.approval_status || meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
+    const effectiveStatus = resolveVerifiedStatus(user.id || user.user_id, user.email || user.contact_email, initialStatus);
+    const effectiveTier = resolveEffectiveTier(user.id || user.user_id, user.email || user.contact_email, user.tier || user.membership_tier || meta.membership_tier || meta.tier);
 
     const normalized: Company = {
-      id: user.id,
-      user_id: user.id,
-      name: meta.company_name || meta.contact_name || user.email?.split('@')[0] || 'Member Account',
-      company_name: meta.company_name || meta.contact_name || user.email?.split('@')[0] || 'Member Account',
-      company_number: meta.regNumber || null,
-      vat_number: meta.vatNumber || null,
-      address: meta.address || null,
-      contact_name: meta.contact_name || `${meta.first_name || ''} ${meta.last_name || ''}`.trim() || '',
-      email: user.email || '',
-      phone: meta.phone || null,
+      id: user.id || user.user_id || `comp_${Date.now()}`,
+      user_id: user.user_id || user.id,
+      name: user.name || user.company_name || meta.company_name || meta.contact_name || user.email?.split('@')[0] || 'Member Account',
+      company_name: user.company_name || user.name || meta.company_name || meta.contact_name || user.email?.split('@')[0] || 'Member Account',
+      company_number: user.company_number || meta.regNumber || null,
+      vat_number: user.vat_number || meta.vatNumber || null,
+      address: user.address || meta.address || null,
+      contact_name: user.contact_name || meta.contact_name || `${meta.first_name || ''} ${meta.last_name || ''}`.trim() || '',
+      email: user.email || user.contact_email || '',
+      phone: user.phone || meta.phone || null,
       role: metaRole,
       tier: effectiveTier,
       membership_tier: effectiveTier,
       approval_status: effectiveStatus,
-      categories: meta.selectedNiches || [],
+      categories: user.categories || meta.selectedNiches || [],
       created_at: user.created_at || new Date().toISOString(),
     };
     setCompany(normalized);
@@ -324,7 +378,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED')) {
         setAuthenticatedUser(session.user);
         void loadSession();
@@ -358,12 +412,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    try {
       const supabase = createClient();
       await supabase.auth.signOut();
     } catch {
       // Ignored
     }
     if (typeof window !== 'undefined') {
+      document.cookie = 'b2b_auth_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
       localStorage.removeItem('b2b_demo_role');
       localStorage.removeItem('b2b_seller_sidebar_collapsed');
       localStorage.removeItem('b2b_cached_company');

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateSellerVetting } from '@/lib/actions/admin';
+import { updateAccountApproval } from '@/lib/admin/admin-store';
 import { MOCK_COMPANIES } from '@/lib/mock-data';
 import type { Company } from '@/types/database';
 import {
@@ -15,9 +16,20 @@ import {
 
 export default function AdminVettingPage() {
   const router = useRouter();
-  const [sellers, setSellers] = useState<Company[]>(MOCK_COMPANIES.filter((c) => c.role === 'seller'));
+  const [sellers, setSellers] = useState<any[]>(MOCK_COMPANIES.filter((c) => c.role === 'seller'));
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/admin/accounts', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.accounts)) {
+          setSellers(data.accounts.filter((a: any) => a.role === 'seller' || !a.role));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleDecision = async (companyId: string, status: 'approved' | 'rejected') => {
     setProcessingId(companyId);
@@ -25,6 +37,7 @@ export default function AdminVettingPage() {
     try {
       const res = await updateSellerVetting(companyId, status, status === 'rejected' ? 'VAT documents incomplete.' : undefined);
       if (res.success) {
+        updateAccountApproval(companyId, status);
         setSellers((prev) =>
           prev.map((s) => (s.id === companyId ? { ...s, approval_status: status } : s))
         );

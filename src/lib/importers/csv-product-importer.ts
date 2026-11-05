@@ -315,7 +315,7 @@ export async function importProductsFromCsv({
     let resolvedCategoryId = categoryMap.get(categorySlug.toLowerCase().trim());
     if (!resolvedCategoryId && dbCategories) {
       const match = dbCategories.find(
-        (c) =>
+        (c: any) =>
           c.slug.toLowerCase().includes(categorySlug.toLowerCase().trim()) ||
           categorySlug.toLowerCase().trim().includes(c.slug.toLowerCase()) ||
           c.name.toLowerCase().includes(categorySlug.toLowerCase().trim()) ||

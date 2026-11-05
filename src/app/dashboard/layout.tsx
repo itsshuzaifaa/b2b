@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
-import { getAdminAccounts } from '@/lib/admin/admin-store';
+import { getAdminAccounts, getStatusOverrides } from '@/lib/admin/admin-store';
 import {
   LayoutGrid,
   Store,
@@ -31,8 +31,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { company, signOut, role, isLoading } = useAuth();
+  const router = useRouter();
+  const { company, signOut, role, isLoading, refreshProfile } = useAuth();
   const isBuyer = role === 'buyer' || company?.role === 'buyer';
+
+  // Redirect unauthenticated guests to login
+  useEffect(() => {
+    if (!isLoading && !company) {
+      router.push('/login?redirect=/dashboard');
+    }
+  }, [isLoading, company, router]);
 
   // Sidebar collapse state (desktop) & Mobile drawer state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
@@ -158,12 +166,26 @@ export default function DashboardLayout({
     }
   }, [company, adminUpdateTrigger]);
 
-  const isVerifiedInAdminStore = adminStoreAccount?.approval_status === 'approved';
+  const directOverride = React.useMemo(() => {
+    if (typeof window === 'undefined' || !company) return null;
+    try {
+      const overrides = getStatusOverrides();
+      const byId = company.id ? overrides[company.id.toLowerCase().trim()] : undefined;
+      const byEmail = company.email ? overrides[company.email.toLowerCase().trim()] : undefined;
+      return byId || byEmail || null;
+    } catch {
+      return null;
+    }
+  }, [company, adminUpdateTrigger]);
+
+  const isVerifiedInAdminStore =
+    adminStoreAccount?.approval_status === 'approved' ||
+    directOverride?.approval_status === 'approved';
 
   const effectiveApprovalStatus = (
     role === 'admin'
       ? 'approved'
-      : (adminStoreAccount?.approval_status || company?.approval_status || (isLoading ? 'loading' : 'pending'))
+      : (directOverride?.approval_status || adminStoreAccount?.approval_status || company?.approval_status || (isLoading ? 'loading' : 'pending'))
   );
 
   const isPendingVerification = (
@@ -172,27 +194,29 @@ export default function DashboardLayout({
     role !== 'admin' &&
     !isVerifiedInAdminStore &&
     effectiveApprovalStatus !== 'approved' &&
-    (effectiveApprovalStatus === 'pending' || effectiveApprovalStatus === 'pending_verification')
+    effectiveApprovalStatus !== 'suspended' &&
+    effectiveApprovalStatus !== 'rejected'
   );
+
+  // Prevent closing the modal via Escape key
+  useEffect(() => {
+    if (isPendingVerification) {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown, true);
+      return () => window.removeEventListener('keydown', handleKeyDown, true);
+    }
+  }, [isPendingVerification]);
 
   const isSuspended = (
     !isLoading &&
     !!company &&
     (effectiveApprovalStatus === 'suspended' || effectiveApprovalStatus === 'rejected')
   );
-
-  // Auto-dispatch KYC Document Request email if account is pending verification and not yet dispatched
-  useEffect(() => {
-    if (company?.email && isPendingVerification) {
-      fetch('/api/auth/dispatch-kyc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: company.email }),
-      }).catch((err) => {
-        console.warn('[DASHBOARD KYC DISPATCH NOTICE]', err);
-      });
-    }
-  }, [company?.email, isPendingVerification]);
 
   // Lead unlock stats for unified counter
   const [remainingUnlocks, setRemainingUnlocks] = useState<number>(2);
@@ -237,9 +261,51 @@ export default function DashboardLayout({
       : 2;
 
   const targetCompanyName = company?.name || company?.company_name || '';
-  const verificationMailto = `mailto:newcustomers@b2blink.eu?subject=${encodeURIComponent(
-    `Action Required: Submit verification documents to activate your account${targetCompanyName ? ` - ${targetCompanyName}` : ''} - B2B LINK`
-  )}`;
+  const targetContactName = company?.contact_name || '';
+  const targetEmail = company?.email || '';
+
+  const mailtoSubject = encodeURIComponent(
+    `Required Verification Documents - ${targetCompanyName || targetContactName || targetEmail} - B2B LINK`
+  );
+
+  const mailtoBody = encodeURIComponent(
+    `Hello B2B LINK Verification Team,\n\n` +
+    `Please find attached our business verification documents to activate full trading access for our corporate account:\n\n` +
+    `1. Company Registration (Certificate of Incorporation or official registry extract)\n` +
+    `2. VAT / Tax Certificate (European VIES VAT or national business tax registration)\n` +
+    `3. Proof of Operating Address (Recent utility bill, lease agreement, or bank statement <90 days)\n` +
+    `4. Bank Account Details & Director Photo ID\n\n` +
+    `Account Information:\n` +
+    `- Company Name: ${targetCompanyName || 'Registered Company'}\n` +
+    `- Contact Person: ${targetContactName || 'Wholesale Member'}\n` +
+    `- Registered Email: ${targetEmail}\n\n` +
+    `Please review our documents and verify our account for full trading access.\n\n` +
+    `Kind regards,\n` +
+    `${targetContactName || targetCompanyName || 'Wholesale Member'}`
+  );
+
+  const verificationMailto = `mailto:compliance@b2blink.eu?cc=newcustomers@b2blink.eu&subject=${mailtoSubject}&body=${mailtoBody}`;
+
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const handleRefreshStatus = async () => {
+    setIsRefreshingStatus(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.company) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('b2b_cached_company', JSON.stringify(data.company));
+          }
+          await refreshProfile();
+        }
+      }
+    } catch {}
+    window.location.reload();
+  };
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
@@ -672,119 +738,138 @@ export default function DashboardLayout({
         ) : (
           children
         )}
+      </main>
 
-        {/* ========================================================= */}
-        {/* NON-CANCELLABLE BLOCKING VERIFICATION MODAL POPUP         */}
-        {/* ========================================================= */}
-        {isPendingVerification && (
-          <div className="fixed inset-0 z-[100] bg-[#050E1D]/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-            {/* Modal Card - Uncancellable: No X button, no backdrop click-away */}
-            <div
-              className="w-full max-w-2xl bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_25px_70px_rgba(11,31,58,0.25)] p-6 sm:p-9 text-[#0B1F3A] my-auto relative space-y-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Top Status Header */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
-                  <Lock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Account Status · Pending Verification</span>
+      {/* ========================================================= */}
+      {/* NON-CANCELLABLE BLOCKING VERIFICATION MODAL POPUP         */}
+      {/* ========================================================= */}
+      {isPendingVerification && (
+        <div
+          className="fixed inset-0 z-[9999] bg-[#050E1D]/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          {/* Modal Card - Uncancellable: No X button, no backdrop click-away */}
+          <div
+            className="w-full max-w-2xl bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_25px_70px_rgba(11,31,58,0.25)] p-6 sm:p-9 text-[#0B1F3A] my-auto relative space-y-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Status Header */}
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
+                <Lock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Account Status · Pending Verification</span>
+              </div>
+              <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight leading-tight">
+                Verify Your Account to Unlock Dashboard
+              </h2>
+              <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
+                Your account is registered, but full wholesale trading access is temporarily locked until your business verification documents are verified by our compliance team.
+              </p>
+            </div>
+
+            {/* Email Notice Card */}
+            <div className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-[#1E3A8A]">
+              <div className="w-10 h-10 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div className="text-[13px] leading-relaxed">
+                <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5">
+                  Send Your Required Documents
                 </div>
-                <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight leading-tight">
-                  Business Verification In Progress
-                </h2>
-                <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
-                  Your email address has been verified, and your account is now awaiting business verification by the B2B LINK Verification Team.
+                <p className="text-[#3B5278]">
+                  Please reply to the onboarding email sent to <strong className="text-[#0B1F3A]">{company?.email}</strong> or click the button below to email your verification documents to <strong className="text-[#0A6CFF]">compliance@b2blink.eu</strong>. Our team will review and activate your account.
                 </p>
               </div>
+            </div>
 
-              {/* Email Notice Card */}
-              <div className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-[#1E3A8A]">
-                <div className="w-10 h-10 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                  <Mail className="w-5 h-5" />
-                </div>
-                <div className="text-[13px] leading-relaxed">
-                  <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5">
-                    Verification Team Review
-                  </div>
-                  <p className="text-[#3B5278]">
-                    Our Verification Team checks company registration details, VAT details where applicable, business contact information, company email/domain and bank account information. If additional information or documents are required, we will contact you directly at <strong className="text-[#0B1F3A]">{company?.email}</strong>.
-                  </p>
-                </div>
+            {/* Required Documents 2x2 Grid */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
+              <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
+                <span>Required Wholesale Verification Documents</span>
               </div>
-
-              {/* Required Documents 2x2 Grid */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
-                  <span>Business Verification Checks</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
-                      <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or official registry extract</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
-                      <div className="text-[11px] text-[#5B6B82]">National business tax or VAT registration</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Business Contact & Domain</div>
-                      <div className="text-[11px] text-[#5B6B82]">Corporate website domain and verified trading contact</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Bank Account Information</div>
-                      <div className="text-[11px] text-[#5B6B82]">Corporate bank details or official statement header</div>
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
+                  <div>
+                    <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
+                    <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or official registry extract</div>
                   </div>
                 </div>
-              </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <a
-                  href={verificationMailto}
-                  className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
-                >
-                  <Mail className="w-4 h-4" />
-                  <span>Contact Verification Team</span>
-                </a>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
+                  <div>
+                    <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
+                    <div className="text-[11px] text-[#5B6B82]">European VIES VAT or national business tax registration</div>
+                  </div>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Refresh Status</span>
-                </button>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
+                  <div>
+                    <div className="text-[12px] font-bold text-[#0B1F3A]">Proof of Operating Address</div>
+                    <div className="text-[11px] text-[#5B6B82]">Recent utility bill, lease agreement, or bank statement (&lt;90 days)</div>
+                  </div>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out</span>
-                </button>
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
+                  <div>
+                    <div className="text-[12px] font-bold text-[#0B1F3A]">Bank Account Details / Director ID</div>
+                    <div className="text-[11px] text-[#5B6B82]">Corporate bank details or Director government photo ID</div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Account Info Pill */}
+            <div className="bg-slate-100/70 border border-slate-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between text-[12px] text-[#5B6B82] gap-2">
+              <div>
+                <span className="font-semibold text-[#0B1F3A]">Account: </span>
+                <span>{company?.email || 'Registered account'}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-[#0B1F3A]">Company: </span>
+                <span>{company?.company_name || company?.name || 'Trading Member'}</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+              <a
+                href={verificationMailto}
+                className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+              >
+                <Mail className="w-4 h-4" />
+                <span>Send Required Documents</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={handleRefreshStatus}
+                disabled={isRefreshingStatus}
+                className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshingStatus ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingStatus ? 'Checking...' : 'Refresh Status'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
+              </button>
+            </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

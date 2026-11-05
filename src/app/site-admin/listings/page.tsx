@@ -9,6 +9,9 @@ import {
   deleteListing,
   deleteListings,
   isAccountDeleted,
+  isListingDeleted,
+  markListingAsDeleted,
+  markListingsAsDeleted,
   type AdminModeratedListing,
 } from '@/lib/admin/admin-store';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
@@ -54,13 +57,15 @@ export default function SiteAdminListingsPage() {
   const [bulkSuspendReason, setBulkSuspendReason] = useState('Suspended pending EAN authenticity check and commercial invoice audit.');
 
   const loadData = async () => {
-    const local = getAdminListings();
+    const local = getAdminListings().filter((l) => !isListingDeleted(l.id));
     try {
       const res = await fetch('/api/products?all=true', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.products)) {
-          const dbItems: AdminModeratedListing[] = data.products.map((p: any) => ({
+          const dbItems: AdminModeratedListing[] = data.products
+            .filter((p: any) => !isListingDeleted(p.id))
+            .map((p: any) => ({
             id: p.id,
             type: 'SELL' as const,
             company_id: p.company_id || p.company?.id || '',
@@ -90,7 +95,7 @@ export default function SiteAdminListingsPage() {
           const map = new Map<string, AdminModeratedListing>();
           local.forEach((l) => map.set(l.id, l));
           dbItems.forEach((d) => map.set(d.id, d));
-          const merged = Array.from(map.values()).filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+          const merged = Array.from(map.values()).filter((l) => !isAccountDeleted(l.company_id, l.seller_email) && !isListingDeleted(l.id));
           setListings(merged);
           setSelectedIds((prev) => prev.filter((id) => map.has(id)));
           return;
@@ -98,7 +103,7 @@ export default function SiteAdminListingsPage() {
       }
     } catch {}
 
-    const cleanLocal = local.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+    const cleanLocal = local.filter((l) => !isAccountDeleted(l.company_id, l.seller_email) && !isListingDeleted(l.id));
     setListings(cleanLocal);
     setSelectedIds((prev) => prev.filter((id) => cleanLocal.some((item) => item.id === id)));
   };
@@ -145,6 +150,7 @@ export default function SiteAdminListingsPage() {
 
   const handleDelete = (id: string) => {
     deleteListing(id);
+    setListings((prev) => prev.filter((p) => p.id !== id));
     setSelectedIds((prev) => prev.filter((item) => item !== id));
     setDeleteConfirmProduct(null);
     showNotice('Listing permanently removed from marketplace catalog.');
@@ -155,7 +161,9 @@ export default function SiteAdminListingsPage() {
   const handleConfirmBulkDelete = () => {
     if (!selectedIds.length) return;
     const count = selectedIds.length;
-    deleteListings(selectedIds);
+    const targets = [...selectedIds];
+    deleteListings(targets);
+    setListings((prev) => prev.filter((p) => !targets.includes(p.id)));
     showNotice(`${count} ${count === 1 ? 'listing' : 'listings'} permanently removed from marketplace catalog.`);
     setSelectedIds([]);
     setBulkDeleteOpen(false);

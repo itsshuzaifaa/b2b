@@ -1,6 +1,6 @@
 'use server';
 
-import { createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { processWtbNotificationQueue } from '@/lib/email/dispatcher';
 import { processMatchesForNewWtb } from '@/lib/matching/match-service';
 import type { WtbRequest } from '@/types/database';
@@ -53,6 +53,14 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       return { success: false, error: 'Target price must be greater than zero.' };
     }
 
+    if (!isSupabaseConfigured()) {
+      return {
+        success: true,
+        wtbRequestId: `wtb_local_${Date.now()}`,
+        queueProcessed: 0,
+      };
+    }
+
     const admin = createAdminClient();
 
     // 2. Resolve category_id safely
@@ -64,14 +72,14 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
 
     if (dbCategories && dbCategories.length > 0) {
       if (resolvedCategoryId) {
-        const found = dbCategories.find((c) => c.id === resolvedCategoryId);
+        const found = dbCategories.find((c: any) => c.id === resolvedCategoryId);
         if (!found) resolvedCategoryId = undefined;
       }
 
       if (!resolvedCategoryId && data.categorySlug) {
         const slugNorm = data.categorySlug.toLowerCase().trim();
         const found = dbCategories.find(
-          (c) =>
+          (c: any) =>
             c.slug.toLowerCase() === slugNorm ||
             slugNorm.includes(c.slug.toLowerCase()) ||
             c.slug.toLowerCase().includes(slugNorm) ||
@@ -97,7 +105,7 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
     const isUuid = rawUserId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawUserId) : false;
     const buyerUserId = isUuid ? rawUserId : null;
 
-    const matchedCategory = dbCategories?.find((c) => c.id === resolvedCategoryId);
+    const matchedCategory = dbCategories?.find((c: any) => c.id === resolvedCategoryId);
     const resolvedCategorySlug = matchedCategory?.slug || data.categorySlug || 'general';
 
     // 4. Insert into wtb_requests table
@@ -174,6 +182,9 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
  */
 export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
   try {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('wtb_requests')
@@ -215,6 +226,9 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
 export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbRequest[]> {
   try {
     if (!buyerEmail) return [];
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('wtb_requests')

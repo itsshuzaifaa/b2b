@@ -1,16 +1,26 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toggleProductHot } from '@/lib/actions/admin';
-import { MOCK_PRODUCTS } from '@/lib/mock-data';
 import type { Product } from '@/types/database';
 import { ArrowLeft, Flame, CheckCircle2 } from 'lucide-react';
 
 export default function AdminProductsPage() {
   const router = useRouter();
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/products?all=true')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.products)) {
+          setProducts(data.products);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleToggleHot = async (productId: string, currentHot: boolean) => {
     try {

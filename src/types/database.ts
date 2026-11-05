@@ -74,6 +74,7 @@ export type Company = {
   niches?: string[];
   website?: string | null;
   address?: string | null;
+  country?: string | null;
   unlocks_used?: number;
   created_at: string;
   updated_at?: string;

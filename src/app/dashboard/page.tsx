@@ -24,7 +24,7 @@ import {
   Sparkles,
   Store,
   ExternalLink,
-  ShieldCheck,
+  ShieldCheck, Clock, ShieldAlert,
   TrendingUp,
   X,
   User,
@@ -92,18 +92,17 @@ export default function OverviewPage() {
     // 3. Listings Count strictly scoped to this company
     let localCount = 0;
     try {
+      localStorage.removeItem('b2b_seller_listings_v3');
       localStorage.removeItem('b2b_seller_listings_real_v2');
-      const raw = localStorage.getItem('b2b_seller_listings_v3');
+      localStorage.removeItem('b2b_seller_listings_v1');
+      const userKey = company.id
+        ? `b2b_seller_listings_${company.id}`
+        : (company.email ? `b2b_seller_listings_${company.email}` : 'b2b_seller_listings_guest');
+      const raw = localStorage.getItem(userKey);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          const companyListings = parsed.filter(
-            (p) =>
-              (p.company_id && p.company_id === company.id) ||
-              (p.seller_id && p.seller_id === company.id) ||
-              (company.email && p.contact_email?.toLowerCase() === company.email.toLowerCase())
-          );
-          localCount = companyListings.length;
+          localCount = parsed.length;
         }
       }
     } catch {}
@@ -206,10 +205,22 @@ export default function OverviewPage() {
             <h1 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight">
               Trading Overview
             </h1>
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Verified Account</span>
-            </span>
+            {company?.approval_status === 'approved' ? (
+              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Verified Account</span>
+              </span>
+            ) : company?.approval_status === 'suspended' || company?.approval_status === 'rejected' ? (
+              <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                <span>Account Suspended</span>
+              </span>
+            ) : (
+              <span className="bg-amber-50 text-amber-700 border border-amber-300 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Verification Pending</span>
+              </span>
+            )}
           </div>
           <p className="text-[14px] text-[#5B6B82] mt-1 font-normal">
             Welcome back, <strong className="text-[#0B1F3A] font-semibold">{memberName}</strong> ({companyName}). You can browse, buy, and sell wholesale stock from this dashboard.
