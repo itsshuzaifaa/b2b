@@ -62,6 +62,17 @@ export default function AdminUsersPage() {
   const [editingTierAccount, setEditingTierAccount] = useState<AdminClientAccount | null>(null);
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
   const [editingInfoAccount, setEditingInfoAccount] = useState<AdminClientAccount | null>(null);
+  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
+  const [addMemberForm, setAddMemberForm] = useState({
+    email: '',
+    company_name: '',
+    contact_name: '',
+    role: 'seller' as 'seller' | 'buyer',
+    tier: 'bronze' as MembershipTier,
+    approval_status: 'approved' as 'approved' | 'pending',
+  });
+  const [addMemberLoading, setAddMemberLoading] = useState(false);
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     contact_name: '',
     company_name: '',
@@ -214,6 +225,102 @@ export default function AdminUsersPage() {
   const showNotice = (msg: string) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3000);
+  };
+
+  const handleAddOrVerifyMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = addMemberForm.email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setAddMemberError('Please enter a valid member email address.');
+      return;
+    }
+
+    setAddMemberLoading(true);
+    setAddMemberError(null);
+
+    const compName = addMemberForm.company_name.trim() || cleanEmail.split('@')[0];
+    const contName = addMemberForm.contact_name.trim() || compName;
+    const isApproved = addMemberForm.approval_status === 'approved';
+
+    const newAcc: AdminClientAccount = {
+      id: `comp_${Date.now()}`,
+      name: compName,
+      contact_name: contName,
+      email: cleanEmail,
+      phone: null,
+      address: null,
+      website: null,
+      role: addMemberForm.role,
+      membership_tier: addMemberForm.tier,
+      approval_status: addMemberForm.approval_status,
+      account_status: isApproved ? 'active' : 'pending',
+      created_at: new Date().toISOString(),
+      last_active: 'Just now',
+      listings_count: 0,
+      total_spend_or_sales: `€${addMemberForm.tier === 'gold' ? '179' : addMemberForm.tier === 'silver' ? '79' : '0'}/mo Membership`,
+      verified_documents: isApproved,
+    };
+
+    try {
+      // 1. Update local accounts
+      const current = getAdminAccounts();
+      const filtered = current.filter((a) => a.email?.toLowerCase().trim() !== cleanEmail);
+      saveAdminAccounts([newAcc, ...filtered]);
+
+      // 2. Set status override
+      saveStatusOverride(newAcc.id, addMemberForm.approval_status, addMemberForm.tier);
+      saveStatusOverride(cleanEmail, addMemberForm.approval_status, addMemberForm.tier);
+
+      // 3. Sync to browser cached company if this email matches
+      if (typeof window !== 'undefined') {
+        const cachedRaw = localStorage.getItem('b2b_cached_company');
+        if (cachedRaw) {
+          try {
+            const cached = JSON.parse(cachedRaw);
+            if (cached && (cached.email?.toLowerCase().trim() === cleanEmail || cached.id === newAcc.id)) {
+              cached.approval_status = addMemberForm.approval_status;
+              localStorage.setItem('b2b_cached_company', JSON.stringify(cached));
+            }
+          } catch {}
+        }
+      }
+
+      // 4. Dispatch updates
+      window.dispatchEvent(new CustomEvent('b2b_account_status_change', { detail: { companyId: newAcc.id, status: addMemberForm.approval_status } }));
+      window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+
+      // 5. Backend sync
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: isApproved ? 'approve' : 'register_sync',
+          companyId: newAcc.id,
+          email: cleanEmail,
+          contactName: contName,
+          companyName: compName,
+          tier: addMemberForm.tier,
+          role: addMemberForm.role,
+          account: newAcc,
+        }),
+      }).catch(() => {});
+
+      showNotice(`Account "${compName}" (${cleanEmail}) ${isApproved ? 'verified and approved' : 'added'} successfully.`);
+      setAddMemberModalOpen(false);
+      setAddMemberForm({
+        email: '',
+        company_name: '',
+        contact_name: '',
+        role: 'seller',
+        tier: 'bronze',
+        approval_status: 'approved',
+      });
+      await loadData();
+    } catch (err: any) {
+      setAddMemberError(err.message || 'Error adding member.');
+    } finally {
+      setAddMemberLoading(false);
+    }
   };
 
   const handleBulkCsvSuccess = (count: number) => {
@@ -612,10 +719,18 @@ export default function AdminUsersPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
             {clientAccounts.length} active clients
           </div>
+          <button
+            type="button"
+            onClick={() => setAddMemberModalOpen(true)}
+            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-4 py-1.5 rounded-full shadow-xs transition cursor-pointer flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Verify / Add Account</span>
+          </button>
           <button
             type="button"
             onClick={handlePurgeTestData}
@@ -709,7 +824,15 @@ export default function AdminUsersPage() {
                   <td colSpan={6} className="py-12 text-center text-[#5B6B82]">
                     <Users className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                     <p className="font-bold text-[15px] text-[#0B1F3A]">No client accounts found</p>
-                    <p className="text-[12px] mt-1">Try clearing filters or search terms.</p>
+                    <p className="text-[12px] mt-1 text-[#8A9BB0]">Accounts registered in this browser or verified via admin will appear here.</p>
+                    <button
+                      type="button"
+                      onClick={() => setAddMemberModalOpen(true)}
+                      className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0A6CFF] text-white text-[12px] font-bold hover:bg-[#0857CF] transition cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Verify / Add Account by Email</span>
+                    </button>
                   </td>
                 </tr>
               ) : (
@@ -1523,6 +1646,144 @@ export default function AdminUsersPage() {
                 Yes, Clear All Lots
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / VERIFY MEMBER MODAL */}
+      {addMemberModalOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
+              <div>
+                <h3 className="text-[18px] font-black text-[#0B1F3A]">Verify or Add Account</h3>
+                <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                  Approve an existing pending account or register a new verified member.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddMemberModalOpen(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddOrVerifyMember} className="mt-4 space-y-4">
+              {addMemberError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{addMemberError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Member / Company Corporate Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={addMemberForm.email}
+                  onChange={(e) => setAddMemberForm({ ...addMemberForm, email: e.target.value })}
+                  placeholder="e.g. member@company.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Company Name
+                  </label>
+                  <input
+                    type="text"
+                    value={addMemberForm.company_name}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, company_name: e.target.value })}
+                    placeholder="e.g. Nordic Trade OÜ"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Contact Person
+                  </label>
+                  <input
+                    type="text"
+                    value={addMemberForm.contact_name}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, contact_name: e.target.value })}
+                    placeholder="e.g. Alexander Tamm"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Role
+                  </label>
+                  <select
+                    value={addMemberForm.role}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, role: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white"
+                  >
+                    <option value="seller">Seller</option>
+                    <option value="buyer">Buyer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Tier
+                  </label>
+                  <select
+                    value={addMemberForm.tier}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, tier: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white"
+                  >
+                    <option value="bronze">Bronze (Free)</option>
+                    <option value="silver">Silver (€79/mo)</option>
+                    <option value="gold">Gold (€179/mo)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Status
+                  </label>
+                  <select
+                    value={addMemberForm.approval_status}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, approval_status: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white"
+                  >
+                    <option value="approved">Approved &amp; Verified</option>
+                    <option value="pending">Pending Review</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-[#F1F5F9]">
+                <button
+                  type="button"
+                  disabled={addMemberLoading}
+                  onClick={() => setAddMemberModalOpen(false)}
+                  className="px-4 py-2 text-[13px] font-semibold text-[#5B6B82] hover:text-[#0B1F3A] transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addMemberLoading}
+                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{addMemberLoading ? 'Saving...' : 'Save & Verify Account'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
