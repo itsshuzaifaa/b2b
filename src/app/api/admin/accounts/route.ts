@@ -14,27 +14,21 @@ export async function GET() {
   try {
     const admin = createAdminClient();
 
-    // 1. Fetch all companies from database using elevated service role client
-    const { data: companiesRaw, error } = await admin
-      .from('companies')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // 1. Parallel fetch from database to eliminate 50s+ roundtrip latency
+    const [companiesRes, productsRes, wtbsRes, usersRes] = await Promise.all([
+      admin.from('companies').select('*').order('created_at', { ascending: false }),
+      admin.from('products').select('company_id'),
+      admin.from('wtb_requests').select('buyer_company_id, buyer_user_id, buyer_email'),
+      admin.auth.admin.listUsers({ page: 1, perPage: 100 }).catch(() => ({ data: { users: [] }, error: null })),
+    ]);
 
-    if (error) {
-      console.error('Error in /api/admin/accounts:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (companiesRes.error) {
+      console.error('Error in /api/admin/accounts:', companiesRes.error);
+      return NextResponse.json({ error: companiesRes.error.message }, { status: 500 });
     }
 
-    const companies = [...(companiesRaw || [])];
-
-    // 2. Fetch auth users to reconcile any newly created accounts
-    let authUsers: any[] = [];
-    try {
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      authUsers = usersData?.users || [];
-    } catch (authErr) {
-      console.warn('[ADMIN GET USERS WARNING]', authErr);
-    }
+    const companies = [...(companiesRes.data || [])];
+    const authUsers = (usersRes as any)?.data?.users || [];
 
     // Auto-sync any auth user missing from companies table
     const existingEmails = new Set(
@@ -54,72 +48,80 @@ export async function GET() {
         const effectiveContactName =
           meta.contact_name || (meta.first_name ? `${meta.first_name} ${meta.last_name || ''}`.trim() : 'Representative');
 
-        try {
-          const { data: createdComp } = await admin
-            .from('companies')
-            .insert({
-              user_id: u.id,
-              company_name: effectiveCompanyName,
-              company_number: meta.company_number || null,
-              vat_number: meta.vat_number || null,
-              contact_name: effectiveContactName,
-              contact_email: u.email,
-              phone: meta.phone || null,
-              role: meta.role || 'seller',
-              approval_status: meta.approval_status || 'approved',
-              tier: meta.membership_tier || 'silver',
-            })
-            .select('*')
-            .maybeSingle();
+        const newCompItem: any = {
+          id: u.id,
+          user_id: u.id,
+          name: effectiveCompanyName,
+          company_name: effectiveCompanyName,
+          company_number: meta.company_number || null,
+          vat_number: meta.vat_number || null,
+          contact_name: effectiveContactName,
+          email: u.email,
+          contact_email: u.email,
+          phone: meta.phone || null,
+          role: meta.role || 'seller',
+          approval_status: meta.approval_status || 'approved',
+          tier: meta.membership_tier || 'silver',
+          membership_tier: meta.membership_tier || 'silver',
+          categories: meta.selectedNiches || [],
+          created_at: u.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        companies.unshift(newCompItem);
+        existingEmails.add(email);
+        existingUserIds.add(u.id);
 
-          if (createdComp) {
-            companies.unshift(createdComp);
-            existingEmails.add(email);
-            existingUserIds.add(u.id);
-          }
-        } catch (insertErr) {
-          console.warn('[ADMIN RECONCILE INSERT WARNING]', insertErr);
+        // Async insert in background without blocking GET response
+        admin
+          .from('companies')
+          .insert({
+            id: newCompItem.id,
+            user_id: newCompItem.user_id,
+            company_name: newCompItem.company_name,
+            company_number: newCompItem.company_number,
+            vat_number: newCompItem.vat_number,
+            contact_name: newCompItem.contact_name,
+            contact_email: newCompItem.contact_email,
+            phone: newCompItem.phone,
+            role: newCompItem.role,
+            approval_status: newCompItem.approval_status,
+            tier: newCompItem.tier,
+          })
+          .then(() => {}, () => {});
+      }
+    }
+
+    // 2. Count listings (WTS from products, WTB from wtb_requests)
+    const wtsCounts: Record<string, number> = {};
+    const wtbCounts: Record<string, number> = {};
+    if (Array.isArray(productsRes.data)) {
+      for (const p of productsRes.data) {
+        if (p.company_id) {
+          wtsCounts[p.company_id] = (wtsCounts[p.company_id] || 0) + 1;
         }
       }
     }
 
-    // 3. Get listing counts (WTS from products, WTB from wtb_requests)
-    const wtsCounts: Record<string, number> = {};
-    const wtbCounts: Record<string, number> = {};
-    try {
-      const { data: products } = await admin.from('products').select('company_id');
-      if (Array.isArray(products)) {
-        for (const p of products) {
-          if (p.company_id) {
-            wtsCounts[p.company_id] = (wtsCounts[p.company_id] || 0) + 1;
-          }
+    if (Array.isArray(wtbsRes.data)) {
+      for (const w of wtbsRes.data) {
+        if (w.buyer_company_id) {
+          wtbCounts[w.buyer_company_id] = (wtbCounts[w.buyer_company_id] || 0) + 1;
+        }
+        if (w.buyer_user_id && w.buyer_user_id !== w.buyer_company_id) {
+          wtbCounts[w.buyer_user_id] = (wtbCounts[w.buyer_user_id] || 0) + 1;
+        }
+        if (w.buyer_email) {
+          const clean = w.buyer_email.toLowerCase().trim();
+          wtbCounts[clean] = (wtbCounts[clean] || 0) + 1;
         }
       }
-    } catch {}
-
-    try {
-      const { data: wtbs } = await admin.from('wtb_requests').select('buyer_company_id, buyer_user_id, buyer_email');
-      if (Array.isArray(wtbs)) {
-        for (const w of wtbs) {
-          if (w.buyer_company_id) {
-            wtbCounts[w.buyer_company_id] = (wtbCounts[w.buyer_company_id] || 0) + 1;
-          }
-          if (w.buyer_user_id && w.buyer_user_id !== w.buyer_company_id) {
-            wtbCounts[w.buyer_user_id] = (wtbCounts[w.buyer_user_id] || 0) + 1;
-          }
-          if (w.buyer_email) {
-            const clean = w.buyer_email.toLowerCase().trim();
-            wtbCounts[clean] = (wtbCounts[clean] || 0) + 1;
-          }
-        }
-      }
-    } catch {}
+    }
 
     // 4. Map into uniform AdminClientAccount items (excluding admin accounts)
     const accounts = companies
       .filter((c) => {
         const metaUser = authUsers.find(
-          (u) =>
+          (u: any) =>
             u.id === c.user_id ||
             (u.email && c.contact_email && u.email.toLowerCase() === c.contact_email.toLowerCase())
         );
@@ -133,7 +135,7 @@ export async function GET() {
       })
       .map((c) => {
         const metaUser = authUsers.find(
-          (u) =>
+          (u: any) =>
             u.id === c.user_id ||
             (u.email && c.contact_email && u.email.toLowerCase() === c.contact_email.toLowerCase())
         );
@@ -229,25 +231,80 @@ export async function POST(req: Request) {
     if (action === 'verify' || action === 'approve' || action === 'unsuspend') {
       try {
         const admin = createAdminClient();
-        const { data: comp } = await admin
-          .from('companies')
-          .update({
-            approval_status: 'approved',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', companyId)
-          .select('user_id')
-          .maybeSingle();
+        const cleanEmail = email ? email.toLowerCase().trim() : null;
 
-        if (comp?.user_id) {
-          await admin.auth.admin.updateUserById(comp.user_id, {
+        let targetUserId: string | null = null;
+
+        // 1. Update companies table by id
+        if (companyId) {
+          const { data: compById } = await admin
+            .from('companies')
+            .update({
+              approval_status: 'approved',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', companyId)
+            .select('user_id')
+            .maybeSingle();
+          if (compById?.user_id) targetUserId = compById.user_id;
+
+          // Also check if companyId was actually user_id
+          const { data: compByUserId } = await admin
+            .from('companies')
+            .update({
+              approval_status: 'approved',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', companyId)
+            .select('user_id')
+            .maybeSingle();
+          if (compByUserId?.user_id) targetUserId = compByUserId.user_id;
+        }
+
+        // 2. Update companies table by email if provided
+        if (cleanEmail) {
+          const { data: compByEmail } = await admin
+            .from('companies')
+            .update({
+              approval_status: 'approved',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('contact_email', cleanEmail)
+            .select('user_id')
+            .maybeSingle();
+          if (compByEmail?.user_id) targetUserId = compByEmail.user_id;
+        }
+
+        // 3. Confirm email and update approval status in Supabase Auth
+        if (targetUserId) {
+          await admin.auth.admin.updateUserById(targetUserId, {
+            email_confirm: true,
             user_metadata: { approval_status: 'approved' },
           });
+        }
+
+        if (cleanEmail) {
+          const { data: usersData } = await admin.auth.admin.listUsers();
+          const targetAuthUser = usersData?.users?.find(
+            (u) => u.email?.toLowerCase() === cleanEmail || u.id === companyId
+          );
+          if (targetAuthUser) {
+            await admin.auth.admin.updateUserById(targetAuthUser.id, {
+              email_confirm: true,
+              user_metadata: { approval_status: 'approved' },
+            });
+            // Link company row with user_id
+            await admin
+              .from('companies')
+              .update({ user_id: targetAuthUser.id, approval_status: 'approved' })
+              .eq('contact_email', cleanEmail);
+          }
         }
       } catch (dbErr) {
         console.warn('[ADMIN VERIFY DB WARNING]', dbErr);
       }
 
+      // Non-blocking asynchronous approval email notification
       if (email) {
         const dedupeKey = `${(email || '').toLowerCase().trim()}:${companyId}`;
         const lastSent = approvalEmailDedupeCache.get(dedupeKey);
@@ -256,14 +313,12 @@ export async function POST(req: Request) {
 
         if (!alreadySentRecently) {
           approvalEmailDedupeCache.set(dedupeKey, now);
-          try {
-            await sendAccountApprovalEmail(email, {
-              companyName: companyName || 'Wholesale Partner',
-              contactName: contactName || 'Valued Member',
-            });
-          } catch (mailErr) {
+          void sendAccountApprovalEmail(email, {
+            companyName: companyName || 'Wholesale Partner',
+            contactName: contactName || 'Valued Member',
+          }).catch((mailErr) => {
             console.warn('[ADMIN APPROVAL EMAIL WARNING]', mailErr);
-          }
+          });
         }
       }
 

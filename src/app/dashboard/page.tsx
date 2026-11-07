@@ -217,7 +217,20 @@ export default function OverviewPage() {
     };
   }, [company, role, currentTier]);
 
-  if (isLoading) {
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        setLoadingTimedOut(true);
+      }, 2500);
+      return () => clearTimeout(timer);
+    } else {
+      setLoadingTimedOut(false);
+    }
+  }, [isLoading]);
+
+  if (isLoading && !loadingTimedOut) {
     return (
       <div className="py-20 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">

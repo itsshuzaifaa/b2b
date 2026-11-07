@@ -159,7 +159,25 @@ export default function AdminUsersPage() {
       sessionStorage.setItem('b2b_show_onboarding', 'true');
     }
     showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
-    loadData();
+
+    // Await database persistence before reloading data so backend status is guaranteed synced
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+        }),
+      });
+    } catch (err) {
+      console.warn('Verify fetch error:', err);
+    }
+
+    await loadData();
   };
 
   const handleToggleSuspend = async (acc: AdminClientAccount) => {

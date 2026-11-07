@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getAdminAccounts } from '@/lib/admin/admin-store';
 import { getUnreadInquiriesCountForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -34,11 +34,13 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { company, signOut, role, isLoading } = useAuth();
+  const router = useRouter();
+  const { company, signOut, role, isLoading, refreshProfile } = useAuth();
   const isBuyer = role === 'buyer' || company?.role === 'buyer';
 
   // Client mounting state to prevent hydration mismatches with cached profiles
   const [isMounted, setIsMounted] = useState<boolean>(false);
+  const [isCheckingVerification, setIsCheckingVerification] = useState<boolean>(false);
 
   // Sidebar collapse state (desktop) & Mobile drawer state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
@@ -49,6 +51,50 @@ export default function DashboardLayout({
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // If user is completely unauthenticated on dashboard, redirect to login cleanly
+  useEffect(() => {
+    if (!isLoading && !company && isMounted) {
+      router.push('/login');
+    }
+  }, [isLoading, company, isMounted, router]);
+
+  const handleRefreshVerificationStatus = async () => {
+    setIsCheckingVerification(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authenticated && data.company) {
+          const status = data.company.approval_status;
+          if (status === 'approved') {
+            if (data.company.id) {
+              localStorage.setItem(`b2b_account_verified_${data.company.id}`, 'true');
+              localStorage.removeItem(`b2b_onboarding_completed_${data.company.id}`);
+            }
+            if (data.company.email) {
+              const clean = data.company.email.toLowerCase().trim();
+              localStorage.setItem(`b2b_account_verified_${clean}`, 'true');
+              localStorage.removeItem(`b2b_onboarding_completed_${clean}`);
+            }
+            sessionStorage.setItem('b2b_just_verified', 'true');
+            sessionStorage.setItem('b2b_show_onboarding', 'true');
+            await refreshProfile();
+            setIsCheckingVerification(false);
+            return;
+          }
+        }
+      }
+      await refreshProfile();
+    } catch {
+      await refreshProfile();
+    } finally {
+      setIsCheckingVerification(false);
+    }
+  };
 
   // Sync real-time unread inquiries count
   useEffect(() => {
@@ -874,11 +920,12 @@ export default function DashboardLayout({
 
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
-                  className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+                  onClick={handleRefreshVerificationStatus}
+                  disabled={isCheckingVerification}
+                  className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Refresh Status</span>
+                  <RefreshCw className={`w-4 h-4 ${isCheckingVerification ? 'animate-spin text-[#0A6CFF]' : ''}`} />
+                  <span>{isCheckingVerification ? 'Checking Status...' : 'Refresh Status'}</span>
                 </button>
 
                 <button

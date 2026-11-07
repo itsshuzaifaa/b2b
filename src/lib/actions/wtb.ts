@@ -186,9 +186,10 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('wtb_requests')
-      .select('*, category:categories(id, name, slug)')
+      .select('*')
       .eq('status', 'open')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(60);
 
     if (error || !data) {
       console.warn('[GET PUBLIC WTB ERROR]', error?.message);
@@ -210,7 +211,7 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
         buyer_phone: row.buyer_phone,
         product_name: row.product_name,
         category_id: row.category_id,
-        category_slug: row.category?.slug || 'electronics',
+        category_slug: 'consumer-electronics',
         target_quantity: Number(row.target_quantity),
         target_price: Number(row.target_price),
         pricing_type: detectedPricingType,
@@ -235,9 +236,10 @@ export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbReques
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('wtb_requests')
-      .select('*, category:categories(id, name, slug)')
+      .select('*')
       .ilike('buyer_email', buyerEmail.trim().toLowerCase())
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(60);
 
     if (error || !data) {
       console.warn('[GET BUYER WTB ERROR]', error?.message);
@@ -259,7 +261,7 @@ export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbReques
         buyer_phone: row.buyer_phone,
         product_name: row.product_name,
         category_id: row.category_id,
-        category_slug: row.category?.slug || 'electronics',
+        category_slug: 'consumer-electronics',
         target_quantity: Number(row.target_quantity),
         target_price: Number(row.target_price),
         pricing_type: detectedPricingType,

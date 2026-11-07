@@ -143,7 +143,24 @@ export default function SiteAdminOverviewPage() {
       sessionStorage.setItem('b2b_show_onboarding', 'true');
     }
     showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`);
-    loadData();
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+        }),
+      });
+    } catch (err) {
+      console.warn('Verify fetch error:', err);
+    }
+
+    await loadData();
   };
 
   const completedPayments = payments.filter((p) => p.status === 'Completed');

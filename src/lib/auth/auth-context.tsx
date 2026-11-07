@@ -191,6 +191,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loadSession = useCallback(async () => {
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 3500);
+
     try {
       // 1. Primary: fetch user session & company from secure server endpoint
       const res = await fetch('/api/auth/me', {
@@ -282,6 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setDemoRole('guest');
     } finally {
+      clearTimeout(safetyTimer);
       setIsLoading(false);
     }
   }, []);
@@ -356,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED')) {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')) {
         setAuthenticatedUser(session.user);
         void loadSession();
       } else if (event === 'SIGNED_OUT') {

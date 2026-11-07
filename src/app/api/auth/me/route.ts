@@ -62,7 +62,41 @@ export async function GET(request: NextRequest) {
 
     const rawTiers = [companyRow?.tier, companyRow?.membership_tier, metadata.membership_tier, metadata.tier].filter(Boolean);
     const effectiveTier = (rawTiers.includes('gold') ? 'gold' : rawTiers.includes('silver') ? 'silver' : 'bronze') as MembershipTier;
-    const effectiveApprovalStatus = (companyRow?.approval_status || metadata.approval_status || approvalStatus) as ApprovalStatus;
+
+    const isApproved = Boolean(
+      role === 'admin' ||
+      companyRow?.approval_status === 'approved' ||
+      metadata.approval_status === 'approved'
+    );
+    const isSuspended = Boolean(
+      companyRow?.approval_status === 'suspended' ||
+      companyRow?.approval_status === 'rejected' ||
+      metadata.approval_status === 'suspended'
+    );
+
+    const effectiveApprovalStatus: ApprovalStatus = (
+      isSuspended ? 'suspended' : isApproved ? 'approved' : (companyRow?.approval_status || metadata.approval_status || approvalStatus || 'pending')
+    ) as ApprovalStatus;
+
+    // Self-heal: If marked approved, sync both database sources immediately
+    if (isApproved && !isSuspended) {
+      if (companyRow && companyRow.approval_status !== 'approved') {
+        admin
+          .from('companies')
+          .update({ approval_status: 'approved', updated_at: new Date().toISOString() })
+          .eq('id', companyRow.id)
+          .then(() => {});
+        companyRow.approval_status = 'approved';
+      }
+      if (metadata.approval_status !== 'approved') {
+        admin.auth.admin
+          .updateUserById(user.id, {
+            email_confirm: true,
+            user_metadata: { ...metadata, approval_status: 'approved' },
+          })
+          .then(() => {});
+      }
+    }
 
     const normalizedCompany: Company = {
       id: companyRow?.id || user.id,
