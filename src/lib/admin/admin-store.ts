@@ -31,6 +31,8 @@ export interface AdminClientAccount {
   last_active?: string;
   last_active_at?: string | null;
   last_inactivity_reminder_at?: string | null;
+  wts_count?: number;
+  wtb_count?: number;
   listings_count: number;
   total_spend_or_sales: string;
   verified_documents: boolean;

@@ -555,7 +555,7 @@ export default function SiteAdminUsersPage() {
                   </td>
                 </tr>
               ) : (
-                filteredAccounts.map((acc) => {
+                filteredAccounts.map((acc, idx) => {
                   const isSuspended = acc.account_status === 'suspended';
 
                   return (
@@ -643,13 +643,24 @@ export default function SiteAdminUsersPage() {
                         )}
                       </td>
 
-                      {/* Listings Count */}
-                      <td className="py-4 px-6 text-[#0B1F3A] font-bold">
-                        {acc.listings_count > 0 ? (
-                          <span>{acc.listings_count} lots</span>
-                        ) : (
-                          <span className="text-[#8A9BB0] font-normal">—</span>
-                        )}
+                      {/* Catalog Lots: WTS and WTB separate */}
+                      <td className="py-4 px-6 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold bg-blue-50 text-[#0A6CFF] border border-blue-200/80 shadow-2xs"
+                            title={`${acc.wts_count ?? (acc.role === 'seller' ? acc.listings_count : 0)} Want-To-Sell (WTS) Listings`}
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>{acc.wts_count ?? (acc.role === 'seller' ? acc.listings_count : 0)} WTS</span>
+                          </span>
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11.5px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs"
+                            title={`${acc.wtb_count ?? (acc.role === 'buyer' ? acc.listings_count : 0)} Want-To-Buy (WTB) Requests`}
+                          >
+                            <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{acc.wtb_count ?? (acc.role === 'buyer' ? acc.listings_count : 0)} WTB</span>
+                          </span>
+                        </div>
                       </td>
 
                       {/* Actions */}
@@ -720,7 +731,20 @@ export default function SiteAdminUsersPage() {
                           <div className="relative">
                             <button
                               type="button"
-                              onClick={() => setOpenMenuId(openMenuId === acc.id ? null : acc.id)}
+                              onClick={(e) => {
+                                const nextState = openMenuId === acc.id ? null : acc.id;
+                                setOpenMenuId(nextState);
+                                if (nextState) {
+                                  const btn = e.currentTarget;
+                                  setTimeout(() => {
+                                    const rect = btn.getBoundingClientRect();
+                                    const spaceBelow = window.innerHeight - rect.bottom;
+                                    if (spaceBelow < 250) {
+                                      window.scrollBy({ top: 250 - spaceBelow + 20, behavior: 'smooth' });
+                                    }
+                                  }, 50);
+                                }
+                              }}
                               title="More options"
                               className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
                             >
@@ -729,7 +753,11 @@ export default function SiteAdminUsersPage() {
 
                             {openMenuId === acc.id && (
                               <div
-                                className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-[#EAEFF6] py-1.5 z-30 animate-in fade-in zoom-in-95 text-left"
+                                className={`absolute right-0 ${
+                                  idx >= Math.max(0, filteredAccounts.length - 3)
+                                    ? 'bottom-full mb-1.5'
+                                    : 'top-full mt-1.5'
+                                } w-52 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-1.5 z-50 animate-in fade-in zoom-in-95 text-left`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
@@ -742,7 +770,7 @@ export default function SiteAdminUsersPage() {
                                   className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
                                 >
                                   <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
-                                  <span>Upload WTS (Sell Offers) CSV</span>
+                                  <span>Upload WTS</span>
                                 </button>
 
                                 <button
@@ -755,19 +783,7 @@ export default function SiteAdminUsersPage() {
                                   className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
                                 >
                                   <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
-                                  <span>Upload WTB (Buy Requirements) CSV</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setSelectedDossier(acc);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <Eye className="w-4 h-4 text-[#5B6B82]" />
-                                  <span>View Dossier</span>
+                                  <span>Upload WTB</span>
                                 </button>
 
                                 <button
@@ -799,24 +815,12 @@ export default function SiteAdminUsersPage() {
                                       setOpenMenuId(null);
                                       setClearLotsConfirmAccount(acc);
                                     }}
-                                    className="w-full px-3.5 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition cursor-pointer"
+                                    className="w-full px-3.5 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 transition cursor-pointer"
                                   >
-                                    <Package className="w-4 h-4 text-amber-600" />
+                                    <Package className="w-4 h-4 text-indigo-500" />
                                     <span>Clear All Lots ({acc.listings_count})</span>
                                   </button>
                                 )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    handleSendInactivityReminder(acc);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <Clock className="w-4 h-4 text-amber-600" />
-                                  <span>Send Inactivity Reminder</span>
-                                </button>
 
                                 <div className="my-1 border-t border-slate-100" />
 
@@ -861,8 +865,14 @@ export default function SiteAdminUsersPage() {
 
       {/* DOSSIER MODAL */}
       {selectedDossier && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200">
+        <div
+          className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setSelectedDossier(null)}
+        >
+          <div
+            className="bg-white rounded-[32px] p-6 sm:p-7 max-w-xl w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-[#EBF3FF] text-[#0A6CFF] font-black text-[16px] flex items-center justify-center">
@@ -941,37 +951,10 @@ export default function SiteAdminUsersPage() {
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between border-t border-[#F1F5F9]">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedDossier;
-                  setSelectedDossier(null);
-                  handleToggleSuspend(target);
-                }}
-                className={`text-[13px] font-bold transition ${
-                  selectedDossier.account_status === 'suspended'
-                    ? 'text-emerald-600 hover:underline'
-                    : 'text-amber-600 hover:underline'
-                }`}
-              >
-                {selectedDossier.account_status === 'suspended' ? 'Reactivate Client' : 'Suspend Access'}
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = selectedDossier;
-                    setSelectedDossier(null);
-                    handleOpenEditInfo(target);
-                  }}
-                  className="bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] text-[13px] font-bold px-3.5 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
-                >
-                  <UserCog className="w-3.5 h-3.5 text-[#0A6CFF]" />
-                  <span>Edit Info</span>
-                </button>
-
+            {/* Dossier Footer with Clear Hierarchy */}
+            <div className="pt-4 border-t border-[#F1F5F9] space-y-3">
+              {/* Secondary Ingestion & Profile Actions */}
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -980,10 +963,10 @@ export default function SiteAdminUsersPage() {
                     setBulkCsvMode('WTS');
                     setBulkCsvAccount(target);
                   }}
-                  className="bg-blue-50 text-[#0A6CFF] hover:bg-blue-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                  className="bg-blue-50/80 hover:bg-blue-100 text-[#0A6CFF] border border-blue-200/70 text-[12px] font-bold py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
                 >
                   <ArrowUpRight className="w-3.5 h-3.5" />
-                  <span>Upload WTS (Sell)</span>
+                  <span>Upload WTS</span>
                 </button>
 
                 <button
@@ -994,10 +977,43 @@ export default function SiteAdminUsersPage() {
                     setBulkCsvMode('WTB');
                     setBulkCsvAccount(target);
                   }}
-                  className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[13px] font-bold px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5"
+                  className="bg-emerald-50/80 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 text-[12px] font-bold py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
                 >
                   <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Upload WTB (Buy)</span>
+                  <span>Upload WTB</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    handleOpenEditInfo(target);
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] border border-slate-200 text-[12px] font-bold py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                >
+                  <UserCog className="w-3.5 h-3.5 text-[#0A6CFF]" />
+                  <span>Edit Info</span>
+                </button>
+              </div>
+
+              {/* Primary Action & Account State */}
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedDossier;
+                    setSelectedDossier(null);
+                    handleToggleSuspend(target);
+                  }}
+                  className={`text-[12px] font-bold px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 border ${
+                    selectedDossier.account_status === 'suspended'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  }`}
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>{selectedDossier.account_status === 'suspended' ? 'Reactivate Client' : 'Suspend Access'}</span>
                 </button>
 
                 <button
@@ -1007,9 +1023,9 @@ export default function SiteAdminUsersPage() {
                     setSelectedDossier(null);
                     router.push(`/site-admin/messages?to=${target.id}`);
                   }}
-                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-extrabold px-6 py-2.5 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
+                  <MessageSquare className="w-4 h-4" />
                   <span>Message Client</span>
                 </button>
               </div>

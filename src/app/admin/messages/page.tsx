@@ -517,7 +517,7 @@ function AdminMessagesContent() {
               </div>
 
               {/* Chat Messages Log */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
                 {activeConv.messages.map((m) => {
                   const isAdmin = m.senderRole === 'admin';
                   const isSeller = m.senderRole === 'seller';
@@ -525,7 +525,7 @@ function AdminMessagesContent() {
                   return (
                     <div
                       key={m.id}
-                      className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
+                      className={`flex flex-col max-w-full ${isAdmin ? 'items-end' : 'items-start'}`}
                     >
                       <div className="flex items-center gap-2 mb-1 px-1">
                         <span className="text-[11px] font-black text-slate-700">
@@ -551,7 +551,7 @@ function AdminMessagesContent() {
                       </div>
 
                       <div
-                        className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed font-medium ${
+                        className={`max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3 text-xs leading-relaxed font-medium break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap ${
                           isAdmin
                             ? 'bg-[#0A6CFF] text-white shadow-xs'
                             : isSeller

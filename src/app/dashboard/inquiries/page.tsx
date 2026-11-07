@@ -916,7 +916,7 @@ function InquiriesContent() {
 
                       {/* Message Bubble */}
                       <div
-                        className={`rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed max-w-[78%] break-words whitespace-pre-line ${
+                        className={`rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed max-w-[78%] break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-line ${
                           isCurrentSender
                             ? 'bg-[#0A6CFF] text-white rounded-tr-xs font-medium shadow-2xs'
                             : 'bg-[#F0F4FA] text-[#0F172A] rounded-tl-xs'

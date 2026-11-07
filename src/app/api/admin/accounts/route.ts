@@ -83,14 +83,33 @@ export async function GET() {
       }
     }
 
-    // 3. Get listing counts
-    const listingCounts: Record<string, number> = {};
+    // 3. Get listing counts (WTS from products, WTB from wtb_requests)
+    const wtsCounts: Record<string, number> = {};
+    const wtbCounts: Record<string, number> = {};
     try {
       const { data: products } = await admin.from('products').select('company_id');
       if (Array.isArray(products)) {
         for (const p of products) {
           if (p.company_id) {
-            listingCounts[p.company_id] = (listingCounts[p.company_id] || 0) + 1;
+            wtsCounts[p.company_id] = (wtsCounts[p.company_id] || 0) + 1;
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      const { data: wtbs } = await admin.from('wtb_requests').select('buyer_company_id, buyer_user_id, buyer_email');
+      if (Array.isArray(wtbs)) {
+        for (const w of wtbs) {
+          if (w.buyer_company_id) {
+            wtbCounts[w.buyer_company_id] = (wtbCounts[w.buyer_company_id] || 0) + 1;
+          }
+          if (w.buyer_user_id && w.buyer_user_id !== w.buyer_company_id) {
+            wtbCounts[w.buyer_user_id] = (wtbCounts[w.buyer_user_id] || 0) + 1;
+          }
+          if (w.buyer_email) {
+            const clean = w.buyer_email.toLowerCase().trim();
+            wtbCounts[clean] = (wtbCounts[clean] || 0) + 1;
           }
         }
       }
@@ -176,7 +195,11 @@ export async function GET() {
           last_active: lastActiveLabel,
           last_active_at: lastActiveTimestamp || null,
           last_inactivity_reminder_at: c.last_inactivity_reminder_at || null,
-          listings_count: listingCounts[c.id] || 0,
+          wts_count: wtsCounts[c.id] || (c.contact_email ? wtsCounts[c.contact_email.toLowerCase()] : 0) || 0,
+          wtb_count: wtbCounts[c.id] || (c.user_id ? wtbCounts[c.user_id] : 0) || (c.contact_email ? wtbCounts[c.contact_email.toLowerCase()] : 0) || 0,
+          listings_count:
+            (wtsCounts[c.id] || (c.contact_email ? wtsCounts[c.contact_email.toLowerCase()] : 0) || 0) +
+            (wtbCounts[c.id] || (c.user_id ? wtbCounts[c.user_id] : 0) || (c.contact_email ? wtbCounts[c.contact_email.toLowerCase()] : 0) || 0),
           total_spend_or_sales:
             c.role === 'seller'
               ? `€${effectiveTier === 'gold' ? '179' : effectiveTier === 'silver' ? '79' : '0'}/mo Membership`
