@@ -221,7 +221,18 @@ function VerifyEmailContent() {
       setPhase('verify_success');
       await triggerKycEmail(email);
 
+      const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
+        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
+        if (companyId) {
+          localStorage.setItem(`b2b_account_verified_${companyId}`, 'true');
+        }
+        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+        if (companyId) {
+          localStorage.removeItem(`b2b_onboarding_completed_${companyId}`);
+        }
+        sessionStorage.setItem('b2b_just_verified', 'true');
+        sessionStorage.setItem('b2b_show_onboarding', 'true');
         localStorage.removeItem('b2b_pending_verification_email');
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_demo_role');
@@ -229,8 +240,12 @@ function VerifyEmailContent() {
 
       await refreshProfile();
 
+      const destination = redirectParam
+        ? (redirectParam.includes('?') ? `${redirectParam}&onboarding=true` : `${redirectParam}?onboarding=true`)
+        : '/dashboard?onboarding=true';
+
       setTimeout(() => {
-        router.push(redirectParam || '/dashboard');
+        router.push(destination);
       }, 1600);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to verify code.');
@@ -287,7 +302,18 @@ function VerifyEmailContent() {
         }),
       });
 
+      const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
+        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
+        if (companyId) {
+          localStorage.setItem(`b2b_account_verified_${companyId}`, 'true');
+        }
+        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+        if (companyId) {
+          localStorage.removeItem(`b2b_onboarding_completed_${companyId}`);
+        }
+        sessionStorage.setItem('b2b_just_verified', 'true');
+        sessionStorage.setItem('b2b_show_onboarding', 'true');
         localStorage.setItem('b2b_registered_tier', 'bronze');
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_pending_verification_email');
@@ -296,9 +322,17 @@ function VerifyEmailContent() {
 
       await triggerKycEmail(email);
       await refreshProfile();
-      router.push(redirectParam || '/dashboard');
+
+      const destination = redirectParam
+        ? (redirectParam.includes('?') ? `${redirectParam}&onboarding=true` : `${redirectParam}?onboarding=true`)
+        : '/dashboard?onboarding=true';
+
+      router.push(destination);
     } catch {
-      router.push(redirectParam || '/dashboard');
+      const destination = redirectParam
+        ? (redirectParam.includes('?') ? `${redirectParam}&onboarding=true` : `${redirectParam}?onboarding=true`)
+        : '/dashboard?onboarding=true';
+      router.push(destination);
     } finally {
       setProcessingPayment(false);
     }
@@ -387,7 +421,18 @@ function VerifyEmailContent() {
         },
       });
 
+      const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
+        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
+        if (effectiveCompanyId) {
+          localStorage.setItem(`b2b_account_verified_${effectiveCompanyId}`, 'true');
+        }
+        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+        if (effectiveCompanyId) {
+          localStorage.removeItem(`b2b_onboarding_completed_${effectiveCompanyId}`);
+        }
+        sessionStorage.setItem('b2b_just_verified', 'true');
+        sessionStorage.setItem('b2b_show_onboarding', 'true');
         localStorage.setItem('b2b_registered_tier', selectedTier);
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_pending_verification_email');
@@ -400,9 +445,13 @@ function VerifyEmailContent() {
       // Transition to banking-style success animation inside the same box!
       setPhase('payment_success');
 
+      const destination = redirectParam
+        ? (redirectParam.includes('?') ? `${redirectParam}&onboarding=true` : `${redirectParam}?onboarding=true`)
+        : '/dashboard?onboarding=true';
+
       // Auto redirect to dashboard after 2.8s
       setTimeout(() => {
-        router.push(redirectParam || '/dashboard');
+        router.push(destination);
       }, 2800);
     } catch (err) {
       setDeclineCount((prev) => prev + 1);
@@ -891,7 +940,13 @@ function VerifyEmailContent() {
             </div>
 
             <Link
-              href={redirectParam || '/dashboard'}
+              href={
+                redirectParam
+                  ? redirectParam.includes('?')
+                    ? `${redirectParam}&onboarding=true`
+                    : `${redirectParam}?onboarding=true`
+                  : '/dashboard?onboarding=true'
+              }
               className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] inline-flex items-center justify-center gap-2 transition shadow-xs"
             >
               <span>Go to Dashboard</span>
@@ -917,7 +972,13 @@ function VerifyEmailContent() {
                 : 'Your corporate account is now activated. Entering your dashboard...'}
             </p>
             <Link
-              href={redirectParam || '/dashboard'}
+              href={
+                redirectParam
+                  ? redirectParam.includes('?')
+                    ? `${redirectParam}&onboarding=true`
+                    : `${redirectParam}?onboarding=true`
+                  : '/dashboard?onboarding=true'
+              }
               className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] inline-flex items-center justify-center gap-2 transition shadow-xs"
             >
               <span>{redirectParam ? 'Continue to WTB Request' : 'Go to Dashboard'}</span>

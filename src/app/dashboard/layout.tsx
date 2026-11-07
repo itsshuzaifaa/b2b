@@ -248,6 +248,20 @@ export default function DashboardLayout({
     (effectiveApprovalStatus === 'suspended' || effectiveApprovalStatus === 'rejected')
   );
 
+  const isAccountVerified = Boolean(
+    !isLoading &&
+    !!company &&
+    !isSuspended &&
+    !isPendingVerification &&
+    (
+      role === 'admin' ||
+      effectiveApprovalStatus === 'approved' ||
+      isAccountPersistentlyVerified ||
+      isVerifiedInAdminStore ||
+      company.approval_status === 'approved'
+    )
+  );
+
   // Auto-dispatch KYC Document Request email if account is pending verification and not yet dispatched
   useEffect(() => {
     if (company?.email && isPendingVerification) {
@@ -881,13 +895,16 @@ export default function DashboardLayout({
         )}
       </main>
 
-      {/* Onboarding Feature Tour Modal (Replaced auto-welcome chat from Jeff with animated interactive walkthrough) */}
-      <WelcomeModal
-        buyerName={sellerFullName}
-        buyerEmail={company?.email || ''}
-        companyId={company?.id}
-        role={company?.role}
-      />
+      {/* Onboarding Feature Tour Modal (Only opens after account is confirmed verified and loading into dashboard) */}
+      {isAccountVerified && (
+        <WelcomeModal
+          buyerName={sellerFullName}
+          buyerEmail={company?.email || ''}
+          companyId={company?.id}
+          role={company?.role}
+          isVerified={isAccountVerified}
+        />
+      )}
     </div>
   );
 }

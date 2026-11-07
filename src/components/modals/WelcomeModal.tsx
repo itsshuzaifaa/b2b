@@ -22,6 +22,7 @@ interface WelcomeModalProps {
   buyerEmail?: string;
   companyId?: string;
   role?: string;
+  isVerified?: boolean;
 }
 
 interface TourStep {
@@ -99,34 +100,97 @@ const TOUR_STEPS: TourStep[] = [
   },
 ];
 
-export function WelcomeModal({ buyerName = 'Partner', buyerEmail = '', companyId = '' }: WelcomeModalProps) {
+export function WelcomeModal({
+  buyerName = 'Partner',
+  buyerEmail = '',
+  companyId = '',
+  isVerified = false,
+}: WelcomeModalProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'stepper' | 'summary'>('stepper');
 
-  const userKey = buyerEmail?.trim().toLowerCase() || companyId || 'global_user';
-  const STORAGE_KEY = `b2b_onboarding_completed_${userKey}`;
+  const cleanEmail = buyerEmail?.trim().toLowerCase();
+  const userKey = cleanEmail || companyId;
+  const STORAGE_KEY = userKey ? `b2b_onboarding_completed_${userKey}` : null;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Check if user has already completed or dismissed the onboarding
-    const alreadyCompleted = localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY);
+    // 1. NEVER open or process if account is not verified
+    if (!isVerified) {
+      setIsOpen(false);
+      return;
+    }
+
+    // 2. Wait until user identification is resolved (avoid global_user race condition)
+    if (!userKey || !STORAGE_KEY) {
+      return;
+    }
+
+    // 3. Check for fresh verification triggers (from /verify-email or admin approval)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasOnboardingParam = urlParams.get('onboarding') === 'true';
+    const justVerified =
+      sessionStorage.getItem('b2b_just_verified') === 'true' ||
+      sessionStorage.getItem('b2b_show_onboarding') === 'true';
+
+    if (justVerified || hasOnboardingParam) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_KEY);
+        if (cleanEmail) localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+        if (companyId) localStorage.removeItem(`b2b_onboarding_completed_${companyId}`);
+        sessionStorage.removeItem('b2b_just_verified');
+        sessionStorage.removeItem('b2b_show_onboarding');
+      } catch {}
+    }
+
+    // 4. Check if user already completed or dismissed the onboarding
+    const alreadyCompleted =
+      localStorage.getItem(STORAGE_KEY) === 'true' ||
+      sessionStorage.getItem(STORAGE_KEY) === 'true' ||
+      (cleanEmail && localStorage.getItem(`b2b_onboarding_completed_${cleanEmail}`) === 'true') ||
+      (companyId && localStorage.getItem(`b2b_onboarding_completed_${companyId}`) === 'true');
+
     if (!alreadyCompleted) {
-      // Delay slightly until dashboard resources render smoothly
+      // Delay slightly (500ms) as the user loads into the verified account so the dashboard settles
       const timer = setTimeout(() => {
         setIsOpen(true);
-      }, 700);
+      }, 500);
       return () => clearTimeout(timer);
     }
-  }, [STORAGE_KEY]);
+  }, [isVerified, userKey, STORAGE_KEY, cleanEmail, companyId]);
+
+  // Support manual tour re-opening from anywhere in the application
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleManualOpen = () => {
+      if (isVerified) {
+        setCurrentStepIndex(0);
+        setIsOpen(true);
+      }
+    };
+    window.addEventListener('b2b_open_onboarding', handleManualOpen);
+    return () => window.removeEventListener('b2b_open_onboarding', handleManualOpen);
+  }, [isVerified]);
 
   const handleDismiss = () => {
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem(STORAGE_KEY, 'true');
-        sessionStorage.setItem(STORAGE_KEY, 'true');
+        if (STORAGE_KEY) {
+          localStorage.setItem(STORAGE_KEY, 'true');
+          sessionStorage.setItem(STORAGE_KEY, 'true');
+        }
+        if (cleanEmail) {
+          localStorage.setItem(`b2b_onboarding_completed_${cleanEmail}`, 'true');
+          sessionStorage.setItem(`b2b_onboarding_completed_${cleanEmail}`, 'true');
+        }
+        if (companyId) {
+          localStorage.setItem(`b2b_onboarding_completed_${companyId}`, 'true');
+          sessionStorage.setItem(`b2b_onboarding_completed_${companyId}`, 'true');
+        }
       } catch {}
     }
     setIsOpen(false);
@@ -146,7 +210,7 @@ export function WelcomeModal({ buyerName = 'Partner', buyerEmail = '', companyId
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !isVerified) return null;
 
   const currentStep = TOUR_STEPS[currentStepIndex];
   const StepIcon = currentStep.icon;
@@ -177,12 +241,18 @@ export function WelcomeModal({ buyerName = 'Partner', buyerEmail = '', companyId
             <X className="w-4 h-4 group-hover:scale-110 transition-transform" />
           </button>
 
-          {/* Top Pill & View Mode Switch */}
+          {/* Top Pills & View Mode Switch */}
           <div className="flex items-center justify-between pr-10 mb-2.5">
-            <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#00C2FF] bg-[#00C2FF]/10 px-3 py-1 rounded-full border border-[#00C2FF]/20 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#00C2FF]" />
-              <span>PLATFORM ONBOARDING</span>
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-300 bg-emerald-500/20 px-3 py-1 rounded-full border border-emerald-500/35 flex items-center gap-1.5 shadow-xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>ACCOUNT VERIFIED</span>
+              </span>
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#00C2FF] bg-[#00C2FF]/10 px-3 py-1 rounded-full border border-[#00C2FF]/20 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#00C2FF]" />
+                <span>ONBOARDING TOUR</span>
+              </span>
+            </div>
 
             <button
               type="button"
@@ -200,10 +270,10 @@ export function WelcomeModal({ buyerName = 'Partner', buyerEmail = '', companyId
             </div>
             <div>
               <h2 className="text-[20px] sm:text-[22px] font-black tracking-tight text-white leading-tight">
-                Welcome to B2B LINK, {firstName}!
+                Account Verified — Welcome to B2B LINK, {firstName}!
               </h2>
               <p className="text-[13px] text-[#A7BFDE] mt-1 font-medium">
-                Your unified wholesale account is ready. Here is a quick tour of what you can do.
+                Your wholesale account is fully verified and active. Here is a quick 1-minute walkthrough of your platform capabilities.
               </p>
             </div>
           </div>

@@ -541,6 +541,21 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
         }
       }
 
+      // If approved, mark verified and trigger fresh onboarding popup on next dashboard load
+      if (status === 'approved' && target) {
+        if (target.id) {
+          localStorage.setItem(`b2b_account_verified_${target.id}`, 'true');
+          localStorage.removeItem(`b2b_onboarding_completed_${target.id}`);
+        }
+        if (target.email) {
+          const cleanEmail = target.email.toLowerCase().trim();
+          localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
+          localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+        }
+        sessionStorage.setItem('b2b_just_verified', 'true');
+        sessionStorage.setItem('b2b_show_onboarding', 'true');
+      }
+
       // Notify any active components
       window.dispatchEvent(new CustomEvent('b2b_account_status_change', { detail: { companyId, status } }));
 

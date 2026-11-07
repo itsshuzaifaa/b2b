@@ -145,6 +145,19 @@ export default function AdminUsersPage() {
       prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
     );
     updateAccountApproval(acc.id, 'approved');
+    if (typeof window !== 'undefined') {
+      if (acc.id) {
+        localStorage.setItem(`b2b_account_verified_${acc.id}`, 'true');
+        localStorage.removeItem(`b2b_onboarding_completed_${acc.id}`);
+      }
+      if (acc.email) {
+        const cleanEmail = acc.email.toLowerCase().trim();
+        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
+        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
+      }
+      sessionStorage.setItem('b2b_just_verified', 'true');
+      sessionStorage.setItem('b2b_show_onboarding', 'true');
+    }
     showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
     loadData();
   };
