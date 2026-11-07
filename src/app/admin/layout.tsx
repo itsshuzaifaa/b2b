@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
+import { getUnreadInquiriesCountForAdmin } from '@/lib/messaging/messaging-store';
 import {
   LayoutGrid,
   Users,
@@ -34,6 +35,22 @@ export default function AdminLayout({
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
+  const [unreadAdminCount, setUnreadAdminCount] = useState<number>(0);
+
+  useEffect(() => {
+    const updateCount = () => {
+      setUnreadAdminCount(getUnreadInquiriesCountForAdmin());
+    };
+    updateCount();
+    window.addEventListener('b2b_inquiry_update', updateCount);
+    window.addEventListener('storage', updateCount);
+    const interval = setInterval(updateCount, 4000);
+    return () => {
+      window.removeEventListener('b2b_inquiry_update', updateCount);
+      window.removeEventListener('storage', updateCount);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -180,10 +197,16 @@ export default function AdminLayout({
                     >
                       <Icon className="w-4 h-4 shrink-0" />
                       <span className="truncate">{item.label}</span>
-                      {item.badge && (
-                        <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
-                          {item.badge}
+                      {item.href === '/admin/messages' && unreadAdminCount > 0 ? (
+                        <span className="ml-auto bg-[#EF4444] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                          {unreadAdminCount}
                         </span>
+                      ) : (
+                        item.badge && (
+                          <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                            {item.badge}
+                          </span>
+                        )
                       )}
                     </Link>
                   );
@@ -324,19 +347,31 @@ export default function AdminLayout({
                 >
                   <div className="relative shrink-0 flex items-center justify-center">
                     <Icon className="w-5 h-5" />
-                    {isCollapsed && item.badge && (
-                      <span className="absolute -top-1.5 -right-2 bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold px-1.5 py-0.2 rounded-full flex items-center justify-center">
-                        {item.badge}
+                    {isCollapsed && item.href === '/admin/messages' && unreadAdminCount > 0 ? (
+                      <span className="absolute -top-1.5 -right-2 bg-[#EF4444] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-[#050E1D] shadow-xs animate-pulse">
+                        {unreadAdminCount}
                       </span>
+                    ) : (
+                      isCollapsed && item.badge && (
+                        <span className="absolute -top-1.5 -right-2 bg-[#00E5FF] text-[#050E1D] text-[10px] font-extrabold px-1.5 py-0.2 rounded-full flex items-center justify-center">
+                          {item.badge}
+                        </span>
+                      )
                     )}
                   </div>
                   {!isCollapsed && (
                     <>
                       <span className="truncate">{item.label}</span>
-                      {item.badge && (
-                        <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
-                          {item.badge}
+                      {item.href === '/admin/messages' && unreadAdminCount > 0 ? (
+                        <span className="ml-auto bg-[#EF4444] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                          {unreadAdminCount}
                         </span>
+                      ) : (
+                        item.badge && (
+                          <span className="ml-auto bg-[#00E5FF] text-[#050E1D] text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                            {item.badge}
+                          </span>
+                        )
                       )}
                     </>
                   )}

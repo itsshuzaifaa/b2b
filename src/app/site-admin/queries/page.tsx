@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import {
   getCustomerQueries,
   replyCustomerQuery,
@@ -35,11 +36,7 @@ export default function SiteAdminCustomerQueriesPage() {
   const [isSendingReply, setIsSendingReply] = useState(false);
 
   const loadData = async () => {
-    // 1. Initial immediate load from local store
-    const local = getCustomerQueries();
-    setQueries(local);
-
-    // 2. Fetch authoritative queries from server API
+    // Fetch authoritative queries from server API
     try {
       const res = await fetch('/api/admin/queries', { cache: 'no-store' });
       if (res.ok) {
@@ -60,6 +57,11 @@ export default function SiteAdminCustomerQueriesPage() {
   };
 
   useEffect(() => {
+    // Initial immediate load from local cache
+    const local = getCustomerQueries();
+    if (local.length > 0) {
+      setQueries(local);
+    }
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
@@ -134,8 +136,20 @@ export default function SiteAdminCustomerQueriesPage() {
     }
   };
 
-  const filteredQueries = useMemo(() => {
+  const uniqueQueries = useMemo(() => {
+    const seen = new Set<string>();
     return queries.filter((q) => {
+      if (!q || !q.id || seen.has(q.id)) return false;
+      const sig = `${q.email.toLowerCase().trim()}::${q.message.toLowerCase().trim()}`;
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      seen.add(q.id);
+      return true;
+    });
+  }, [queries]);
+
+  const filteredQueries = useMemo(() => {
+    return uniqueQueries.filter((q) => {
       if (statusFilter !== 'all' && q.status !== statusFilter) return false;
       const term = searchQuery.toLowerCase().trim();
       if (!term) return true;
@@ -147,10 +161,10 @@ export default function SiteAdminCustomerQueriesPage() {
         q.topic.toLowerCase().includes(term)
       );
     });
-  }, [queries, statusFilter, searchQuery]);
+  }, [uniqueQueries, statusFilter, searchQuery]);
 
-  const newCount = queries.filter((q) => q.status === 'new').length;
-  const repliedCount = queries.filter((q) => q.status === 'replied').length;
+  const newCount = uniqueQueries.filter((q) => q.status === 'new').length;
+  const repliedCount = uniqueQueries.filter((q) => q.status === 'replied').length;
 
   return (
     <div className="space-y-6 max-w-full">
@@ -178,7 +192,9 @@ export default function SiteAdminCustomerQueriesPage() {
         <div className="flex items-center gap-2">
           <div className="bg-[#F8FAFC] border border-[#EAEFF6] px-4 py-2 rounded-2xl flex items-center gap-3">
             <span className="text-[13px] text-[#5B6B82]">Total Inquiries:</span>
-            <span className="text-[16px] font-black text-[#0B1F3A]">{queries.length}</span>
+            <span className="text-[16px] font-black text-[#0B1F3A]">
+              <AnimatedNumber value={uniqueQueries.length} />
+            </span>
           </div>
         </div>
       </div>
@@ -203,7 +219,7 @@ export default function SiteAdminCustomerQueriesPage() {
                 : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
             }`}
           >
-            All Queries ({queries.length})
+            All Queries (<AnimatedNumber value={uniqueQueries.length} />)
           </button>
           <button
             type="button"
@@ -215,7 +231,7 @@ export default function SiteAdminCustomerQueriesPage() {
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>New ({newCount})</span>
+            <span>New (<AnimatedNumber value={newCount} />)</span>
           </button>
           <button
             type="button"
@@ -227,7 +243,7 @@ export default function SiteAdminCustomerQueriesPage() {
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Replied ({repliedCount})</span>
+            <span>Replied (<AnimatedNumber value={repliedCount} />)</span>
           </button>
         </div>
 

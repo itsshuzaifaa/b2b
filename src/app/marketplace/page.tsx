@@ -14,6 +14,7 @@ import {
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 
 function MarketplaceContent() {
   const router = useRouter();
@@ -307,7 +308,7 @@ function MarketplaceContent() {
                     : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
                 }`}
               >
-                All Listings ({totalCount})
+                All Listings (<AnimatedNumber value={totalCount} />)
               </button>
               <button
                 type="button"
@@ -318,7 +319,7 @@ function MarketplaceContent() {
                     : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
                 }`}
               >
-                Buy Offers ({buyCount})
+                Buy Offers (<AnimatedNumber value={buyCount} />)
               </button>
               <button
                 type="button"
@@ -329,7 +330,7 @@ function MarketplaceContent() {
                     : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
                 }`}
               >
-                Sell Offers ({sellCount})
+                Sell Offers (<AnimatedNumber value={sellCount} />)
               </button>
             </div>
 

@@ -92,9 +92,28 @@ function InquiriesContent() {
     };
 
     refresh();
-    void syncWithSupabase(role || undefined, companyId, companyEmail, company?.membership_tier || company?.tier || 'bronze').then(() => {
+    void syncWithSupabase(
+      role || undefined,
+      companyId,
+      companyEmail,
+      company?.membership_tier || company?.tier || 'bronze',
+      company?.created_at
+    ).then(() => {
       if (isMounted) refresh();
     });
+
+    // Realtime polling while active in chat (every 2.5s) to guarantee instantaneous message receipt without page refresh
+    const pollInterval = setInterval(() => {
+      void syncWithSupabase(
+        role || undefined,
+        companyId,
+        companyEmail,
+        company?.membership_tier || company?.tier || 'bronze',
+        company?.created_at
+      ).then(() => {
+        if (isMounted) refresh();
+      });
+    }, 2500);
 
     const handleUpdate = () => refresh();
     const handleUnlockEvent = () => setUnlockTrigger((prev) => prev + 1);
@@ -104,6 +123,7 @@ function InquiriesContent() {
 
     return () => {
       isMounted = false;
+      clearInterval(pollInterval);
       window.removeEventListener('b2b_inquiry_update', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
       window.removeEventListener('b2b_lead_unlock_update', handleUnlockEvent);

@@ -77,7 +77,13 @@ export function LiveMessageToast() {
     if (!company) return;
 
     // Background sync without intrusive initial popups on login
-    void syncWithSupabase(role || undefined, company.id, company.email, company?.membership_tier || company?.tier || 'bronze');
+    void syncWithSupabase(
+      role || undefined,
+      company.id,
+      company.email,
+      company?.membership_tier || company?.tier || 'bronze',
+      company?.created_at
+    );
   }, [company, role]);
 
   useEffect(() => {
@@ -91,13 +97,25 @@ export function LiveMessageToast() {
       if (company?.contact_name && message.senderName === company.contact_name) return;
 
       // 2. Strict recipient targeting:
+      const userEmail = (company?.email || '').toLowerCase().trim();
+      const isDeskThread = conversation.type === 'seller_admin' || conversation.status === 'admin_desk';
+      const isMyDeskThread = isDeskThread && Boolean(
+        conversation.sellerCompanyId === company?.id ||
+        conversation.buyerCompanyId === company?.id ||
+        (userEmail && (
+          conversation.buyerEmail?.toLowerCase() === userEmail ||
+          conversation.buyerContactEmail?.toLowerCase() === userEmail ||
+          conversation.sellerContactEmail?.toLowerCase() === userEmail
+        ))
+      );
+
       if (role === 'seller') {
         const isSellerBroadcast = conversation.targetAudience === 'seller' || conversation.status === 'broadcast_seller' || (conversation.type === 'broadcast' && !conversation.targetAudience);
-        const isForMyCompany = conversation.sellerCompanyId === company?.id;
+        const isForMyCompany = conversation.sellerCompanyId === company?.id || isMyDeskThread;
         if (!isSellerBroadcast && !isForMyCompany) return;
       } else if (role === 'buyer') {
         const isBuyerBroadcast = conversation.targetAudience === 'buyer' || conversation.status === 'broadcast_buyer';
-        const isForMyCompany = conversation.buyerCompanyId === company?.id || (company?.email && conversation.buyerEmail?.toLowerCase() === company.email.toLowerCase());
+        const isForMyCompany = conversation.buyerCompanyId === company?.id || (userEmail && conversation.buyerEmail?.toLowerCase() === userEmail) || isMyDeskThread;
         if (!isBuyerBroadcast && !isForMyCompany) return;
       }
 

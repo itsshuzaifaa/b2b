@@ -18,8 +18,8 @@ export interface CustomerQuery {
 const INITIAL_QUERIES: CustomerQuery[] = [];
 
 function getFilePath(): string {
-  // Store safely in project directory or fallback to temp
-  const dataDir = path.join(process.cwd(), '.next');
+  // Store safely in project data directory
+  const dataDir = path.join(process.cwd(), 'data');
   if (!fs.existsSync(dataDir)) {
     try {
       fs.mkdirSync(dataDir, { recursive: true });
@@ -28,6 +28,10 @@ function getFilePath(): string {
     }
   }
   return path.join(dataDir, 'b2b_customer_queries.json');
+}
+
+function getLegacyFilePath(): string {
+  return path.join(process.cwd(), '.next', 'b2b_customer_queries.json');
 }
 
 // In-memory cache fallback (starts empty for clean testing)
@@ -70,13 +74,21 @@ function deduplicateQueries(list: CustomerQuery[]): CustomerQuery[] {
 export function getServerCustomerQueries(): CustomerQuery[] {
   try {
     const filePath = getFilePath();
+    const legacyPath = getLegacyFilePath();
+    let content: string | null = null;
+
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      content = fs.readFileSync(filePath, 'utf-8');
+    } else if (fs.existsSync(legacyPath)) {
+      content = fs.readFileSync(legacyPath, 'utf-8');
+    }
+
+    if (content) {
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
         const cleaned = deduplicateQueries(parsed);
-        // Persist deduplicated list if duplicates were pruned
-        if (cleaned.length !== parsed.length) {
+        // Persist deduplicated list if duplicates were pruned or migrating
+        if (cleaned.length !== parsed.length || !fs.existsSync(filePath)) {
           try {
             fs.writeFileSync(filePath, JSON.stringify(cleaned, null, 2), 'utf-8');
           } catch {}

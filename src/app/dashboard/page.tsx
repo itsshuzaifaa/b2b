@@ -10,6 +10,7 @@ import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
 import { BroadcastWtbModal } from '@/components/modals/BroadcastWtbModal';
 import { BroadcastWtsModal } from '@/components/modals/BroadcastWtsModal';
 import { TradingMatchesWidget } from '@/components/dashboard/TradingMatchesWidget';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
 import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -50,6 +51,7 @@ interface InquiryItem {
 
 export default function OverviewPage() {
   const { company, role, isLoading } = useAuth();
+  const isBuyer = role === 'buyer' || company?.role === 'buyer';
 
   // Modals state
   const [csvModalOpen, setCsvModalOpen] = useState(false);
@@ -120,25 +122,50 @@ export default function OverviewPage() {
         .catch(() => {});
     }
 
-    // 4. WTB Requests
+    // 4. WTB Requests: Display full active demand board across the market
     import('@/lib/actions/wtb').then(({ getBuyerWtbRequests, getPublicWtbRequests }) => {
-      if (company.email) {
+      if (isBuyer && company.email) {
         getBuyerWtbRequests(company.email).then((list) => {
           if (list && list.length > 0) {
             setWtbList(list);
           } else {
             getPublicWtbRequests().then((openList: WtbRequest[]) => {
-              setWtbList(openList.slice(0, 5));
+              setWtbList(openList);
             });
           }
         });
       } else {
         getPublicWtbRequests().then((openList: WtbRequest[]) => {
-          setWtbList(openList.slice(0, 5));
+          setWtbList(openList);
         });
       }
     });
   };
+
+  // Active inquiries strictly for this account (including direct Trade inquiries + Admin Desk messages)
+  const activeInquiries = React.useMemo(() => {
+    return inquiries.filter(
+      (c) =>
+        (!c.broadcastKind || c.type === 'seller_admin' || c.status === 'admin_desk') &&
+        !c.id.startsWith('conv-broadcast-')
+    );
+  }, [inquiries]);
+
+  // Awaiting reply: inquiries where the last message was NOT sent by the current user
+  const awaitingReplyInquiries = React.useMemo(() => {
+    if (!company) return [];
+    return activeInquiries.filter((c) => {
+      const msgs = c.messages || [];
+      if (msgs.length === 0) return false;
+      const lastMsg = msgs[msgs.length - 1];
+      const isSentByMe = Boolean(
+        (lastMsg.senderId && (lastMsg.senderId === company.id || lastMsg.senderId === company.user_id)) ||
+        (lastMsg.senderEmail && company.email && lastMsg.senderEmail.toLowerCase() === company.email.toLowerCase()) ||
+        (lastMsg.senderRole === (isBuyer ? 'buyer' : 'seller') && lastMsg.senderRole !== 'admin')
+      );
+      return !isSentByMe;
+    });
+  }, [activeInquiries, company, isBuyer]);
 
   const handleOpenBroadcastWtb = () => {
     if (currentTier !== 'gold') {
@@ -172,7 +199,13 @@ export default function OverviewPage() {
     window.addEventListener('b2b_billing_update', loadData);
     window.addEventListener('b2b_account_status_change', loadData);
     if (company) {
-      void syncWithSupabase(role || undefined, company.id, company.email, company?.membership_tier || company?.tier || 'bronze').then(() => {
+      void syncWithSupabase(
+        role || undefined,
+        company.id,
+        company.email,
+        company?.membership_tier || company?.tier || 'bronze',
+        company.created_at
+      ).then(() => {
         setInquiries(getConversationsForUser(company));
       });
     }
@@ -257,7 +290,7 @@ export default function OverviewPage() {
             </div>
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className="text-[32px] font-extrabold text-[#0B1F3A] tracking-tight leading-none">
-                {isUnlimitedUnlocks ? '∞' : remainingUnlocks}
+                {isUnlimitedUnlocks ? '∞' : <AnimatedNumber value={remainingUnlocks} />}
               </span>
               <span className="text-[13px] font-medium text-[#8A9BB0]">
                 {isUnlimitedUnlocks ? 'unlimited unlocks' : `left of ${maxUnlocks}`}
@@ -266,7 +299,7 @@ export default function OverviewPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between">
             <span className="text-[11px] text-[#5B6B82]">
-              {unlockedCount} counterparties unlocked
+              <AnimatedNumber value={unlockedCount} /> counterparties unlocked
             </span>
             {!isUnlimitedUnlocks && (
               <button
@@ -290,7 +323,7 @@ export default function OverviewPage() {
             </div>
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className="text-[32px] font-extrabold text-[#0B1F3A] tracking-tight leading-none">
-                {listingsCount}
+                <AnimatedNumber value={listingsCount} />
               </span>
               <span className="text-[13px] font-medium text-[#8A9BB0]">
                 {isUnlimitedProducts ? '/ unlimited' : `/ ${maxActiveProducts}`}
@@ -317,7 +350,7 @@ export default function OverviewPage() {
             </div>
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className="text-[32px] font-extrabold text-[#0B1F3A] tracking-tight leading-none">
-                {wtbList.length}
+                <AnimatedNumber value={wtbList.length} />
               </span>
               <span className="text-[13px] font-medium text-[#8A9BB0]">active requests</span>
             </div>
@@ -333,18 +366,30 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Card 4: Trade Inquiries & Chat */}
+        {/* Card 4: Inquiries & Messages */}
         <div className="bg-white rounded-[24px] p-5 sm:p-6 border border-[#EAEFF6] shadow-[0_4px_20px_rgba(11,31,58,0.03)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-[13px] font-medium text-[#5B6B82]">Trade inquiries</span>
-              <Inbox className="w-4 h-4 text-[#8A9BB0]" />
+              <span className="text-[13px] font-medium text-[#5B6B82]">Inquiries &amp; Messages</span>
+              <div className="relative">
+                <Inbox className="w-4 h-4 text-[#8A9BB0]" />
+                {awaitingReplyInquiries.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#EF4444] animate-pulse" />
+                )}
+              </div>
             </div>
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className="text-[32px] font-extrabold text-[#0B1F3A] tracking-tight leading-none">
-                {inquiries.length}
+                <AnimatedNumber value={awaitingReplyInquiries.length} />
               </span>
-              <span className="text-[13px] font-medium text-[#8A9BB0]">conversations</span>
+              <span className="text-[13px] font-medium text-[#8A9BB0]">
+                {awaitingReplyInquiries.length === 1 ? 'awaiting reply' : 'awaiting reply'}
+              </span>
+              {awaitingReplyInquiries.length > 0 && (
+                <span className="ml-auto bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/20 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                  {awaitingReplyInquiries.length} NEW
+                </span>
+              )}
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between">
@@ -405,12 +450,12 @@ export default function OverviewPage() {
             </div>
 
             <div className="space-y-3">
-              {inquiries.length === 0 ? (
+              {activeInquiries.length === 0 ? (
                 <div className="p-8 text-center text-[#5B6B82] bg-slate-50/60 rounded-2xl border border-dashed border-[#CFD9E8]">
                   <Inbox className="w-8 h-8 text-[#0A6CFF] mx-auto mb-2 opacity-60" />
-                  <p className="text-[13px] font-bold text-[#0B1F3A]">No active trade inquiries yet</p>
+                  <p className="text-[13px] font-bold text-[#0B1F3A]">No active messages yet</p>
                   <p className="text-[12px] text-[#5B6B82] mt-0.5">
-                    When you contact a wholesale seller or receive inquiries on your listings, threads show here.
+                    When buyers, sellers, or platform administrators send messages, trade and direct support threads appear here.
                   </p>
                   <div className="mt-4 flex items-center justify-center gap-3">
                     <Link
@@ -435,32 +480,57 @@ export default function OverviewPage() {
                   </div>
                 </div>
               ) : (
-                inquiries.slice(0, 4).map((conv) => (
-                  <div
-                    key={conv.id}
-                    className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-center justify-between gap-3 hover:bg-slate-100/70 transition"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-bold text-[#0B1F3A] truncate">
-                          {conv.productTitle || 'Wholesale Lot'}
-                        </span>
-                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-blue-50 text-[#0A6CFF]">
-                          Active
-                        </span>
-                      </div>
-                      <p className="text-[12px] text-[#5B6B82] mt-0.5 truncate">
-                        {conv.sellerCompanyName || conv.buyerCompanyName || 'Counterparty'} · {conv.lastMessageText || 'Chat open'}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/dashboard/inquiries?id=${conv.id}`}
-                      className="bg-white border border-[#EAEFF6] hover:border-[#0A6CFF] text-[#0A6CFF] font-bold text-[12px] px-3.5 py-1.5 rounded-full transition shadow-2xs shrink-0"
+                activeInquiries.slice(0, 4).map((conv) => {
+                  const isAwaitingReply = awaitingReplyInquiries.some((a) => a.id === conv.id);
+                  const isAdminDesk = conv.status === 'admin_desk' || conv.type === 'seller_admin';
+                  const title = isAdminDesk ? 'Platform Administrator (Executive Desk)' : (conv.productTitle || 'Wholesale Lot');
+                  const subtitle = isAdminDesk
+                    ? `Jeff Vetting Director · ${conv.lastMessageText || 'Direct message'}`
+                    : `${conv.sellerCompanyName || conv.buyerCompanyName || 'Counterparty'} · ${conv.lastMessageText || 'Chat open'}`;
+
+                  return (
+                    <div
+                      key={conv.id}
+                      className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition ${
+                        isAdminDesk
+                          ? 'bg-[#EBF3FF]/60 border-[#0A6CFF]/25 hover:bg-[#EBF3FF]'
+                          : 'bg-[#F8FAFC] border-[#EAEFF6] hover:bg-slate-100/70'
+                      }`}
                     >
-                      Open Chat
-                    </Link>
-                  </div>
-                ))
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {isAdminDesk && (
+                            <span className="bg-[#0A6CFF] text-white text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs shrink-0">
+                              <ShieldCheck className="w-3 h-3" />
+                              <span>Admin Desk</span>
+                            </span>
+                          )}
+                          <span className="text-[14px] font-bold text-[#0B1F3A] truncate">
+                            {title}
+                          </span>
+                          {isAwaitingReply ? (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 shrink-0 animate-pulse">
+                              Awaiting Reply
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                              Replied
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12px] text-[#5B6B82] mt-0.5 truncate">
+                          {subtitle}
+                        </p>
+                      </div>
+                      <Link
+                        href={`/dashboard/inquiries?id=${conv.id}`}
+                        className="bg-white border border-[#EAEFF6] hover:border-[#0A6CFF] text-[#0A6CFF] font-bold text-[12px] px-3.5 py-1.5 rounded-full transition shadow-2xs shrink-0 cursor-pointer"
+                      >
+                        Open Chat
+                      </Link>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

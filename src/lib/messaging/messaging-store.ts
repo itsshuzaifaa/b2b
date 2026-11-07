@@ -231,7 +231,13 @@ export function saveStoredConversations(
 export const saveConversations = saveStoredConversations;
 
 // Sync conversations with Supabase backend
-export async function syncWithSupabase(role?: string, companyId?: string, email?: string, tier?: string): Promise<InquiryConversation[]> {
+export async function syncWithSupabase(
+  role?: string,
+  companyId?: string,
+  email?: string,
+  tier?: string,
+  companyCreatedAt?: string
+): Promise<InquiryConversation[]> {
   if (typeof window === 'undefined') return [];
   try {
     const params = new URLSearchParams();
@@ -239,6 +245,7 @@ export async function syncWithSupabase(role?: string, companyId?: string, email?
     if (companyId) params.set('companyId', companyId);
     if (email) params.set('email', email);
     if (tier) params.set('tier', tier);
+    if (companyCreatedAt) params.set('companyCreatedAt', companyCreatedAt);
 
     const url = `/api/inquiries${params.toString() ? `?${params.toString()}` : ''}`;
     const res = await fetch(url);
@@ -284,10 +291,19 @@ export function getConversationsForUser(company: Company | null): InquiryConvers
 
   const userEmail = company.email?.toLowerCase().trim();
   const contactEmail = company.contact_email?.toLowerCase().trim();
+  const accountCreatedTime = company.created_at ? new Date(company.created_at).getTime() : 0;
 
   return all.filter((c) => {
-    // 1. Broadcasts - filtered by role or membership package tier
+    // 1. Broadcasts - strictly filtered by role, tier, and account creation date
     if (c.type === 'broadcast') {
+      // Broadcasts sent before this account was registered must not be visible to this new account
+      if (accountCreatedTime > 0) {
+        const bcastTime = c.messages?.[0]?.timestamp ? new Date(c.messages[0].timestamp).getTime() : 0;
+        if (bcastTime && bcastTime < (accountCreatedTime - 60000)) {
+          return false;
+        }
+      }
+
       const aud = c.targetAudience;
       if (!aud || aud === 'all') return true;
       const userTier = (company.membership_tier || company.tier || 'bronze').toLowerCase();
@@ -930,24 +946,120 @@ export function markConversationAsRead(conversationId: string, role: 'buyer' | '
   if (!conv) return;
 
   let changed = false;
-  if (role === 'seller' && conv.unreadBySeller) {
+  if (role === 'seller' && (conv.unreadBySeller || conv.messages.some((m) => !m.isRead))) {
     conv.unreadBySeller = false;
     changed = true;
-  } else if (role === 'buyer' && conv.unreadByBuyer) {
+  } else if (role === 'buyer' && (conv.unreadByBuyer || conv.messages.some((m) => !m.isRead))) {
     conv.unreadByBuyer = false;
     changed = true;
-  } else if (role === 'admin' && conv.unreadByAdmin) {
+  } else if (role === 'admin' && (conv.unreadByAdmin || conv.messages.some((m) => !m.isRead))) {
     conv.unreadByAdmin = false;
     changed = true;
+  }
+
+  // Also clear unread flags on all individual messages
+  if (conv.messages && conv.messages.length > 0) {
+    for (const m of conv.messages) {
+      if (!m.isRead) {
+        m.isRead = true;
+        changed = true;
+      }
+    }
   }
 
   if (changed) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: all }));
+      if (liveBroadcastChannel) {
+        liveBroadcastChannel.postMessage({
+          type: 'INQUIRY_UPDATE',
+          conversations: all,
+        });
+      }
     } catch {
       // ignore
     }
+
+    // Persist to server backend
+    try {
+      fetch('/api/inquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'mark_read',
+          conversationId,
+          role,
+        }),
+      }).catch(() => {});
+    } catch {}
   }
+}
+
+/**
+ * Calculates the exact unread conversation count for an authenticated member.
+ * Returns count of active conversations where the latest message is from counterparty or admin and unread.
+ */
+export function getUnreadInquiriesCountForUser(company: Company | null): number {
+  if (!company || !company.id) return 0;
+  const convs = getConversationsForUser(company);
+  let count = 0;
+
+  const userEmail = (company.email || '').toLowerCase().trim();
+  const contactEmail = (company.contact_email || '').toLowerCase().trim();
+  const isBuyer = company.role === 'buyer';
+
+  for (const c of convs) {
+    const msgs = c.messages || [];
+    if (msgs.length === 0) continue;
+    const lastMsg = msgs[msgs.length - 1];
+
+    const isLastFromMe = Boolean(
+      (lastMsg.senderId && (lastMsg.senderId === company.id || lastMsg.senderId === company.user_id)) ||
+      (lastMsg.senderRole === (isBuyer ? 'buyer' : 'seller')) ||
+      (userEmail && (lastMsg.senderId?.toLowerCase() === userEmail || (lastMsg as any).senderEmail?.toLowerCase() === userEmail)) ||
+      (contactEmail && (lastMsg.senderId?.toLowerCase() === contactEmail || (lastMsg as any).senderEmail?.toLowerCase() === contactEmail))
+    );
+
+    // If the last message was NOT sent by the active user:
+    if (!isLastFromMe) {
+      if (c.status === 'admin_desk' || c.type === 'seller_admin') {
+        // Admin desk thread: unread if last message was from admin and unread
+        if (c.unreadBySeller || c.unreadByBuyer || !lastMsg.isRead) {
+          count++;
+        }
+      } else if (isBuyer) {
+        if (c.unreadByBuyer || !lastMsg.isRead) {
+          count++;
+        }
+      } else {
+        if (c.unreadBySeller || !lastMsg.isRead) {
+          count++;
+        }
+      }
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Calculates unread conversations count for Admin Executive Desk.
+ */
+export function getUnreadInquiriesCountForAdmin(): number {
+  const all = getStoredConversations();
+  let count = 0;
+  for (const c of all) {
+    if (c.type === 'seller_admin' || c.status === 'admin_desk') {
+      const msgs = c.messages || [];
+      if (msgs.length === 0) continue;
+      const last = msgs[msgs.length - 1];
+      if (last.senderRole !== 'admin' && (c.unreadByAdmin || !last.isRead)) {
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 // Subscribe to conversation updates

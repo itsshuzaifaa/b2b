@@ -12,7 +12,7 @@ import {
   ChevronDown,
   Clock,
 } from 'lucide-react';
-import { addCustomerQuery } from '@/lib/admin/admin-store';
+import { addCustomerQuery, syncLocalCustomerQuery } from '@/lib/admin/admin-store';
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
@@ -29,6 +29,7 @@ export default function ContactPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -41,29 +42,30 @@ export default function ContactPage() {
     };
 
     try {
-      // 1. Send to server API endpoint for cross-session/database persistence & email alerts
+      // 1. Single authoritative transmission to server API endpoint
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        console.warn('Server contact API returned non-200, falling back to local store');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.query) {
+          // Reflect server query directly into client cache without duplicate POST
+          syncLocalCustomerQuery(data.query);
+        }
+      } else {
+        console.warn('Server contact API returned non-200, saving to local store');
+        addCustomerQuery(payload);
       }
     } catch (err) {
-      console.warn('Network error posting to /api/contact, using local store', err);
-    }
-
-    // 2. Also register in local admin store for instant client reflection
-    try {
+      console.warn('Network error posting to /api/contact, using local fallback', err);
       addCustomerQuery(payload);
-    } catch (storeErr) {
-      console.warn('Error saving to local admin store', storeErr);
+    } finally {
+      setIsSubmitting(false);
+      setSubmitted(true);
     }
-
-    setIsSubmitting(false);
-    setSubmitted(true);
   };
 
   const faqs = [

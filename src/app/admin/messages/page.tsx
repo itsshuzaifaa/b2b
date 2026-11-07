@@ -81,11 +81,18 @@ function AdminMessagesContent() {
 
   useEffect(() => {
     loadData();
-    void syncWithSupabase('admin');
+    void syncWithSupabase('admin').then(() => loadData());
+
+    const pollInterval = setInterval(() => {
+      void syncWithSupabase('admin').then(() => loadData());
+    }, 2500);
 
     const handleUpdate = () => loadData();
     window.addEventListener('b2b_inquiry_update', handleUpdate);
-    return () => window.removeEventListener('b2b_inquiry_update', handleUpdate);
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('b2b_inquiry_update', handleUpdate);
+    };
   }, [targetId]);
 
   useEffect(() => {

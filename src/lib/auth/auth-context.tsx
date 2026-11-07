@@ -90,6 +90,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resolveVerifiedStatus = (userId?: string, email?: string, currentStatus?: string): ApprovalStatus => {
     if (typeof window === 'undefined') return (currentStatus || 'pending') as ApprovalStatus;
     try {
+      // 1. If this account was already marked verified in localStorage, preserve it permanently!
+      const userKey = userId ? `b2b_account_verified_${userId}` : null;
+      const emailKey = email ? `b2b_account_verified_${email.toLowerCase().trim()}` : null;
+      if (
+        (userKey && localStorage.getItem(userKey) === 'true') ||
+        (emailKey && localStorage.getItem(emailKey) === 'true')
+      ) {
+        return 'approved';
+      }
+
+      // 2. Check cached company in localStorage
+      const cached = localStorage.getItem('b2b_cached_company');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (
+          ((userId && parsed.id === userId) || (email && parsed.email?.toLowerCase().trim() === email.toLowerCase().trim())) &&
+          parsed.approval_status === 'approved'
+        ) {
+          return 'approved';
+        }
+      }
+
+      // 3. Check admin store
       const accounts = getAdminAccounts();
       const match = accounts.find((a) =>
         (userId && a.id === userId) ||
@@ -194,6 +217,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setCompany(resolvedCompany);
           if (typeof window !== 'undefined') {
             localStorage.setItem('b2b_cached_company', JSON.stringify(resolvedCompany));
+            if (verifiedStatus === 'approved') {
+              if (resolvedCompany.id) localStorage.setItem(`b2b_account_verified_${resolvedCompany.id}`, 'true');
+              if (resolvedCompany.email) localStorage.setItem(`b2b_account_verified_${resolvedCompany.email.toLowerCase().trim()}`, 'true');
+            }
           }
           setDemoRole(resolvedCompany.role as DemoRoleType);
           setIsLoading(false);
@@ -291,6 +318,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCompany(normalized);
     if (typeof window !== 'undefined') {
       localStorage.setItem('b2b_cached_company', JSON.stringify(normalized));
+      if (effectiveStatus === 'approved') {
+        if (normalized.id) localStorage.setItem(`b2b_account_verified_${normalized.id}`, 'true');
+        if (normalized.email) localStorage.setItem(`b2b_account_verified_${normalized.email.toLowerCase().trim()}`, 'true');
+      }
     }
     setDemoRole(metaRole as DemoRoleType);
     setIsLoading(false);

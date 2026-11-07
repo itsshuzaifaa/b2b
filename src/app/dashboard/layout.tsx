@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getAdminAccounts } from '@/lib/admin/admin-store';
+import { getUnreadInquiriesCountForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
+import { WelcomeModal } from '@/components/modals/WelcomeModal';
 import {
   LayoutGrid,
   Store,
@@ -23,6 +25,7 @@ import {
   RefreshCw,
   Menu,
   X,
+  Zap,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -34,10 +37,53 @@ export default function DashboardLayout({
   const { company, signOut, role, isLoading } = useAuth();
   const isBuyer = role === 'buyer' || company?.role === 'buyer';
 
+  // Client mounting state to prevent hydration mismatches with cached profiles
+  const [isMounted, setIsMounted] = useState<boolean>(false);
+
   // Sidebar collapse state (desktop) & Mobile drawer state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
   const [matchesCount, setMatchesCount] = useState<number>(0);
+  const [unreadInquiriesCount, setUnreadInquiriesCount] = useState<number>(0);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Sync real-time unread inquiries count
+  useEffect(() => {
+    const updateUnread = () => {
+      if (company) {
+        const count = getUnreadInquiriesCountForUser(company);
+        setUnreadInquiriesCount(count);
+      }
+    };
+
+    updateUnread();
+    window.addEventListener('b2b_inquiry_update', updateUnread);
+    window.addEventListener('storage', updateUnread);
+
+    // Light background sync every 5 seconds to catch counterparty & admin messages
+    const interval = setInterval(() => {
+      if (company) {
+        void syncWithSupabase(
+          role || undefined,
+          company.id,
+          company.email,
+          company.membership_tier || company.tier || 'bronze',
+          company.created_at
+        ).then(() => {
+          updateUnread();
+        });
+      }
+    }, 5000);
+
+    return () => {
+      window.removeEventListener('b2b_inquiry_update', updateUnread);
+      window.removeEventListener('storage', updateUnread);
+      clearInterval(interval);
+    };
+  }, [company, role]);
 
   // Close mobile drawer whenever route changes
   useEffect(() => {
@@ -75,7 +121,7 @@ export default function DashboardLayout({
 
   const sellerFullName = company?.contact_name || company?.name || company?.email?.split('@')[0] || (isBuyer ? 'Buyer Account' : 'Seller Account');
   const companyName = isBuyer ? 'Verified Buyer' : (company?.name || 'Seller Enterprise');
-  const rawTier = ((company?.membership_tier || company?.tier || (typeof window !== 'undefined' ? localStorage.getItem('b2b_registered_tier') : null) || 'bronze') as string).toLowerCase();
+  const rawTier = ((company?.membership_tier || company?.tier || 'bronze') as string).toLowerCase();
   const membershipTier = rawTier === 'gold' ? 'GOLD' : rawTier === 'silver' ? 'SILVER' : 'BRONZE';
 
   // Compute initials
@@ -97,6 +143,7 @@ export default function DashboardLayout({
 
   const navItems = [
     { label: 'Overview', href: '/dashboard', icon: LayoutGrid },
+    { label: 'Matching stock', href: '/dashboard/matches', icon: Zap },
     { label: 'Marketplace', href: '/marketplace', icon: Store },
     { label: 'Product listings', href: '/dashboard/listings', icon: Package },
     { label: 'WTB Requests', href: '/requests', icon: FileText },
@@ -160,16 +207,36 @@ export default function DashboardLayout({
 
   const isVerifiedInAdminStore = adminStoreAccount?.approval_status === 'approved';
 
+  const isAccountPersistentlyVerified = React.useMemo(() => {
+    if (typeof window === 'undefined' || !company) return false;
+    const idKey = company.id ? `b2b_account_verified_${company.id}` : null;
+    const emailKey = company.email ? `b2b_account_verified_${company.email.toLowerCase().trim()}` : null;
+    return Boolean(
+      (idKey && localStorage.getItem(idKey) === 'true') ||
+      (emailKey && localStorage.getItem(emailKey) === 'true') ||
+      company.approval_status === 'approved' ||
+      adminStoreAccount?.approval_status === 'approved'
+    );
+  }, [company, adminStoreAccount]);
+
   const effectiveApprovalStatus = (
     role === 'admin'
       ? 'approved'
       : (adminStoreAccount?.approval_status || company?.approval_status || (isLoading ? 'loading' : 'pending'))
   );
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && company && (effectiveApprovalStatus === 'approved' || isVerifiedInAdminStore)) {
+      if (company.id) localStorage.setItem(`b2b_account_verified_${company.id}`, 'true');
+      if (company.email) localStorage.setItem(`b2b_account_verified_${company.email.toLowerCase().trim()}`, 'true');
+    }
+  }, [company, effectiveApprovalStatus, isVerifiedInAdminStore]);
+
   const isPendingVerification = (
     !isLoading &&
     !!company &&
     role !== 'admin' &&
+    !isAccountPersistentlyVerified &&
     !isVerifiedInAdminStore &&
     effectiveApprovalStatus !== 'approved' &&
     (effectiveApprovalStatus === 'pending' || effectiveApprovalStatus === 'pending_verification')
@@ -259,7 +326,20 @@ export default function DashboardLayout({
         </Link>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#0A6CFF]/10 text-[#0A6CFF] border border-[#0A6CFF]/20">
+          {/* Quick Messages Bell/Inbox on Mobile Header with WhatsApp-style Red Badge */}
+          <Link
+            href="/dashboard/inquiries"
+            aria-label="Messages & Inquiries"
+            className="relative p-1.5 rounded-xl bg-slate-100 text-[#0B1F3A] hover:bg-slate-200 transition cursor-pointer flex items-center justify-center"
+          >
+            <Inbox className="w-5 h-5 text-[#0B1F3A]" />
+            {unreadInquiriesCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-[#EF4444] text-white text-[9px] font-black min-w-[17px] h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-white shadow-xs animate-pulse">
+                {unreadInquiriesCount}
+              </span>
+            )}
+          </Link>
+          <span suppressHydrationWarning className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#0A6CFF]/10 text-[#0A6CFF] border border-[#0A6CFF]/20">
             {membershipTier}
           </span>
           <button
@@ -338,9 +418,14 @@ export default function DashboardLayout({
                     >
                       <Icon className="w-4 h-4 shrink-0" />
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.href === '/dashboard' && matchesCount > 0 && (
+                      {(item.href === '/dashboard' || item.href === '/dashboard/matches') && matchesCount > 0 && (
                         <span className="bg-emerald-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse">
                           {matchesCount}
+                        </span>
+                      )}
+                      {item.href === '/dashboard/inquiries' && unreadInquiriesCount > 0 && (
+                        <span className="bg-[#EF4444] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                          {unreadInquiriesCount}
                         </span>
                       )}
                       {isLockedItem && (
@@ -357,22 +442,22 @@ export default function DashboardLayout({
               <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-3">
                 <div className="flex items-center justify-between text-[11px] font-bold mb-1">
                   <span>Contact unlocks</span>
-                  <span className="bg-[#0A6CFF] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                  <span suppressHydrationWarning className="bg-[#0A6CFF] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                     {membershipTier}
                   </span>
                 </div>
-                <p className="text-[10.5px] text-slate-400">
+                <p suppressHydrationWarning className="text-[10.5px] text-slate-400">
                   {maxUnlocks === Infinity ? 'Unlimited unlocks' : `${unlockedCount} of ${maxUnlocks} used`}
                 </p>
               </div>
 
               <div className="flex items-center gap-2.5 px-1">
                 <div className="w-8 h-8 rounded-full bg-[#0A6CFF] text-white font-extrabold text-[12px] flex items-center justify-center shrink-0">
-                  {initials}
+                  <span suppressHydrationWarning>{initials}</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-bold text-white truncate">{sellerFullName}</div>
-                  <div className="text-[10.5px] text-slate-400 truncate">{companyName}</div>
+                  <div suppressHydrationWarning className="text-[12px] font-bold text-white truncate">{sellerFullName}</div>
+                  <div suppressHydrationWarning className="text-[10.5px] text-slate-400 truncate">{companyName}</div>
                 </div>
               </div>
 
@@ -494,16 +579,26 @@ export default function DashboardLayout({
                 >
                   <div className="relative shrink-0 flex items-center justify-center">
                     <Icon className="w-5 h-5" />
-                    {isCollapsed && item.href === '/dashboard' && matchesCount > 0 && (
+                    {isCollapsed && (item.href === '/dashboard' || item.href === '/dashboard/matches') && matchesCount > 0 && (
                       <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#050E1D] animate-pulse" />
+                    )}
+                    {isCollapsed && item.href === '/dashboard/inquiries' && unreadInquiriesCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-[#EF4444] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-[#050E1D] shadow-xs animate-pulse">
+                        {unreadInquiriesCount}
+                      </span>
                     )}
                   </div>
                   {!isCollapsed && (
                     <div className="flex-1 flex items-center justify-between">
                       <span>{item.label}</span>
-                      {item.href === '/dashboard' && matchesCount > 0 && (
+                      {(item.href === '/dashboard' || item.href === '/dashboard/matches') && matchesCount > 0 && (
                         <span className="bg-emerald-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse">
                           {matchesCount}
+                        </span>
+                      )}
+                      {item.href === '/dashboard/inquiries' && unreadInquiriesCount > 0 && (
+                        <span className="bg-[#EF4444] text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                          {unreadInquiriesCount}
                         </span>
                       )}
                       {isLockedItem && (
@@ -524,11 +619,11 @@ export default function DashboardLayout({
             <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 mb-4">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[13px] font-bold text-white">Contact unlocks</span>
-                <span className="bg-[#0A6CFF] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide">
+                <span suppressHydrationWarning className="bg-[#0A6CFF] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide">
                   {membershipTier}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 mb-2 font-medium">
+              <p suppressHydrationWarning className="text-[11px] text-slate-400 mb-2 font-medium">
                 {maxUnlocks === Infinity
                   ? 'Unlimited unlocks active'
                   : `${unlockedCount} of ${maxUnlocks} used (${remainingUnlocks} remaining)`}
@@ -556,7 +651,7 @@ export default function DashboardLayout({
               className="w-12 h-12 mx-auto rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mb-3 text-cyan-400 relative"
               title={`Contact unlocks: ${unlockedCount} used (${membershipTier})`}
             >
-              <span className="text-[10px] font-extrabold">{membershipTier[0]}</span>
+              <span suppressHydrationWarning className="text-[10px] font-extrabold">{membershipTier[0]}</span>
               <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
             </div>
           )}
@@ -574,14 +669,14 @@ export default function DashboardLayout({
                       className="object-cover"
                     />
                   ) : (
-                    <span>{initials}</span>
+                    <span suppressHydrationWarning>{initials}</span>
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[13px] font-bold text-white leading-tight truncate">
+                  <div suppressHydrationWarning className="text-[13px] font-bold text-white leading-tight truncate">
                     {sellerFullName}
                   </div>
-                  <div className="text-[11px] text-slate-400 leading-tight truncate mt-0.5">
+                  <div suppressHydrationWarning className="text-[11px] text-slate-400 leading-tight truncate mt-0.5">
                     {companyName}
                   </div>
                 </div>
@@ -611,7 +706,7 @@ export default function DashboardLayout({
                     className="object-cover"
                   />
                 ) : (
-                  <span>{initials}</span>
+                  <span suppressHydrationWarning>{initials}</span>
                 )}
               </div>
               <button
@@ -785,6 +880,14 @@ export default function DashboardLayout({
           </div>
         )}
       </main>
+
+      {/* Onboarding Feature Tour Modal (Replaced auto-welcome chat from Jeff with animated interactive walkthrough) */}
+      <WelcomeModal
+        buyerName={sellerFullName}
+        buyerEmail={company?.email || ''}
+        companyId={company?.id}
+        role={company?.role}
+      />
     </div>
   );
 }

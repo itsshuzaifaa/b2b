@@ -110,6 +110,76 @@ export function TradingMatchesWidget({
     return true;
   });
 
+  // Bundle matches by product so a single product with multiple matches doesn't overwhelm the dashboard
+  interface ProductMatchBundle {
+    key: string;
+    productId: string;
+    productTitle: string;
+    barcode?: string;
+    isUserBuyer: boolean;
+    listPrice: number;
+    availableStock: number;
+    matches: TradeMatch[];
+    highestTargetPrice: number;
+    lowestTargetPrice: number;
+    totalTargetQuantity: number;
+    counterpartyNames: string[];
+    hasBarcodeMatch: boolean;
+    topConfidence: number;
+  }
+
+  const bundledMatches = React.useMemo(() => {
+    const map = new Map<string, ProductMatchBundle>();
+
+    for (const match of filteredMatches) {
+      const isUserBuyer = Boolean(
+        (userCompanyId && match.buyerCompanyId === userCompanyId) ||
+        (userEmail && match.buyerEmail?.toLowerCase() === userEmail)
+      );
+
+      const title = isUserBuyer ? (match.wtbProductName || 'Procurement Request') : (match.wtsTitle || 'Stock Lot');
+      const key = isUserBuyer
+        ? `wtb-${match.wtbId || match.wtbProductName?.toLowerCase().trim()}`
+        : `wts-${match.wtsProductId || match.wtsTitle?.toLowerCase().trim()}`;
+
+      const barcode = (isUserBuyer ? match.wtbBarcode : match.wtsBarcode) || undefined;
+      const counterparty = isUserBuyer ? match.sellerCompanyName : match.buyerCompanyName;
+      const isBarcode = match.matchType === 'exact_barcode';
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          productId: isUserBuyer ? match.wtbId : match.wtsProductId,
+          productTitle: title,
+          barcode,
+          isUserBuyer,
+          listPrice: match.wtsUnitPrice || 0,
+          availableStock: match.wtsQuantityAvailable || 0,
+          matches: [match],
+          highestTargetPrice: match.wtbTargetPrice || 0,
+          lowestTargetPrice: match.wtbTargetPrice || 0,
+          totalTargetQuantity: match.wtbTargetQuantity || 0,
+          counterpartyNames: counterparty ? [counterparty] : [],
+          hasBarcodeMatch: isBarcode,
+          topConfidence: match.confidence || 95,
+        });
+      } else {
+        const bundle = map.get(key)!;
+        bundle.matches.push(match);
+        bundle.highestTargetPrice = Math.max(bundle.highestTargetPrice, match.wtbTargetPrice || 0);
+        bundle.lowestTargetPrice = Math.min(bundle.lowestTargetPrice, match.wtbTargetPrice || 0);
+        bundle.totalTargetQuantity += (match.wtbTargetQuantity || 0);
+        bundle.topConfidence = Math.max(bundle.topConfidence, match.confidence || 0);
+        if (isBarcode) bundle.hasBarcodeMatch = true;
+        if (counterparty && !bundle.counterpartyNames.includes(counterparty)) {
+          bundle.counterpartyNames.push(counterparty);
+        }
+      }
+    }
+
+    return Array.from(map.values());
+  }, [filteredMatches, userCompanyId, userEmail]);
+
   return (
     <div className="bg-white rounded-[28px] p-6 sm:p-7 border border-[#EAEFF6] shadow-[0_4px_20px_rgba(11,31,58,0.03)] mt-7">
       {/* Header */}
@@ -134,42 +204,53 @@ export function TradingMatchesWidget({
           </p>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 bg-[#F8FAFC] p-1 rounded-xl border border-[#EAEFF6] self-start sm:self-auto shrink-0">
-          <button
-            type="button"
-            onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
-              filter === 'all'
-                ? 'bg-white text-[#0B1F3A] shadow-xs'
-                : 'text-[#64748B] hover:text-[#0B1F3A]'
-            }`}
-          >
-            All ({matches.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter('wtb')}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
-              filter === 'wtb'
-                ? 'bg-white text-[#059669] shadow-xs'
-                : 'text-[#64748B] hover:text-[#0B1F3A]'
-            }`}
-          >
-            Stock for My WTB
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter('wts')}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
-              filter === 'wts'
-                ? 'bg-white text-[#0A6CFF] shadow-xs'
-                : 'text-[#64748B] hover:text-[#0B1F3A]'
-            }`}
-          >
-            Buyers for My Stock
-          </button>
-        </div>
+          {/* Filter Pills and Matching Stock Link */}
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+            <Link
+              href="/dashboard/matches"
+              className="px-4 py-1.5 bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[12px] rounded-full flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white" />
+              <span>Matching Stock Page</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+
+            <div className="flex items-center gap-1.5 bg-[#F8FAFC] p-1 rounded-xl border border-[#EAEFF6]">
+              <button
+                type="button"
+                onClick={() => setFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
+                  filter === 'all'
+                    ? 'bg-white text-[#0B1F3A] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B1F3A]'
+                }`}
+              >
+                All ({matches.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter('wtb')}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
+                  filter === 'wtb'
+                    ? 'bg-white text-[#059669] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B1F3A]'
+                }`}
+              >
+                Stock for My WTB
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter('wts')}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer ${
+                  filter === 'wts'
+                    ? 'bg-white text-[#0A6CFF] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B1F3A]'
+                }`}
+              >
+                Buyers for My Stock
+              </button>
+            </div>
+          </div>
       </div>
 
       {/* Content Area */}
@@ -211,50 +292,53 @@ export function TradingMatchesWidget({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredMatches.map((match) => {
-              const isUserBuyer =
-                (userCompanyId && match.buyerCompanyId === userCompanyId) ||
-                (userEmail && match.buyerEmail?.toLowerCase() === userEmail);
-
-              const isBarcode = match.matchType === 'exact_barcode';
+            {bundledMatches.map((bundle) => {
+              const topMatch = bundle.matches[0];
 
               return (
                 <div
-                  key={match.id}
-                  className="relative p-5 rounded-2xl border border-[#EAEFF6] bg-[#FFFFFF] hover:border-[#0A6CFF]/40 hover:shadow-[0_6px_24px_rgba(11,31,58,0.06)] transition flex flex-col justify-between group"
+                  key={bundle.key}
+                  className="relative p-5 rounded-2xl border border-[#EAEFF6] bg-[#FFFFFF] hover:border-[#0A6CFF]/40 hover:shadow-[0_8px_28px_rgba(11,31,58,0.07)] transition flex flex-col justify-between group"
                 >
                   {/* Top Bar: Match Direction & Confidence */}
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {isUserBuyer ? (
+                        {bundle.isUserBuyer ? (
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10.5px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                             <Package className="w-3 h-3 text-emerald-600" />
-                            <span>Stock Found for your WTB</span>
+                            <span>Stock Found for your WTB ({bundle.matches.length})</span>
+                          </span>
+                        ) : bundle.matches.length > 1 ? (
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-extrabold px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{bundle.matches.length} Waiting Buyers Found</span>
                           </span>
                         ) : (
                           <span className="bg-blue-50 text-[#0A6CFF] border border-blue-200 text-[10.5px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                             <FileText className="w-3 h-3 text-[#0A6CFF]" />
-                            <span>Buyer Looking for your Stock</span>
+                            <span>1 Buyer Match Found</span>
                           </span>
                         )}
 
-                        {isBarcode ? (
+                        {bundle.hasBarcodeMatch ? (
                           <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Barcode className="w-3 h-3 text-amber-600" />
                             <span>100% Barcode Match</span>
                           </span>
                         ) : (
                           <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            {match.confidence}% Model Match
+                            {bundle.topConfidence}% Model Match
                           </span>
                         )}
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => handleDismiss(match.id, Boolean(isUserBuyer))}
-                        title="Dismiss match"
+                        onClick={() => {
+                          bundle.matches.forEach((m) => handleDismiss(m.id, Boolean(bundle.isUserBuyer)));
+                        }}
+                        title="Dismiss bundle"
                         className="text-[#94A3B8] hover:text-[#0B1F3A] p-1 rounded-full hover:bg-slate-100 transition cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -263,94 +347,87 @@ export function TradingMatchesWidget({
 
                     {/* Product Title */}
                     <h4 className="text-[15px] font-bold text-[#0B1F3A] leading-snug line-clamp-2">
-                      {isUserBuyer ? match.wtsTitle : match.wtbProductName}
+                      {bundle.productTitle}
                     </h4>
 
-                    {(match.wtsBarcode || match.wtbBarcode) && (
+                    {bundle.barcode && (
                       <div className="mt-1 flex items-center gap-1.5 text-[11px] text-[#64748B]">
                         <span className="font-semibold">EAN/SKU:</span>
                         <code className="bg-slate-100 text-[#0B1F3A] px-1.5 py-0.5 rounded text-[10.5px] font-mono">
-                          {match.wtsBarcode || match.wtbBarcode}
+                          {bundle.barcode}
                         </code>
                       </div>
                     )}
 
-                    {/* Price & Quantity Grid */}
+                    {/* Price & Quantity Summary Grid */}
                     <div className="grid grid-cols-2 gap-2 my-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#F1F5F9]">
                       <div>
                         <div className="text-[11px] font-medium text-[#64748B]">
-                          {isUserBuyer ? 'Your WTB Target' : 'Buyer Target Price'}
+                          {bundle.isUserBuyer ? 'Your WTB Target' : 'Buyer Target Price'}
                         </div>
                         <div className="text-[14px] font-extrabold text-[#0B1F3A] mt-0.5">
-                          €{match.wtbTargetPrice.toFixed(2)}
+                          {bundle.lowestTargetPrice === bundle.highestTargetPrice ? (
+                            `€${bundle.highestTargetPrice.toFixed(2)}`
+                          ) : (
+                            `€${bundle.lowestTargetPrice.toFixed(2)} - €${bundle.highestTargetPrice.toFixed(2)}`
+                          )}
                           <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
                         </div>
                         <div className="text-[11px] text-[#64748B] mt-0.5">
-                          Target: <strong className="text-[#0B1F3A]">{match.wtbTargetQuantity.toLocaleString()}</strong> pcs
+                          Demand: <strong className="text-[#0B1F3A]">{bundle.totalTargetQuantity.toLocaleString()}</strong> pcs ({bundle.matches.length} {bundle.matches.length === 1 ? 'buyer' : 'buyers'})
                         </div>
                       </div>
 
                       <div className="border-l border-[#E2E8F0] pl-3">
                         <div className="text-[11px] font-medium text-[#64748B]">
-                          {isUserBuyer ? 'Supplier List Price' : 'Your List Price'}
+                          {bundle.isUserBuyer ? 'Supplier List Price' : 'Your List Price'}
                         </div>
                         <div className="text-[14px] font-extrabold text-[#059669] mt-0.5">
-                          €{match.wtsUnitPrice.toFixed(2)}
+                          €{bundle.listPrice.toFixed(2)}
                           <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
                         </div>
                         <div className="text-[11px] text-[#64748B] mt-0.5">
-                          Available: <strong className="text-[#0B1F3A]">{match.wtsQuantityAvailable.toLocaleString()}</strong> pcs
+                          Available: <strong className="text-[#0B1F3A]">{bundle.availableStock.toLocaleString()}</strong> pcs
                         </div>
                       </div>
                     </div>
 
-                    {/* Counterparty Summary */}
+                    {/* Counterparties Preview */}
                     <div className="flex items-center justify-between text-[11px] text-[#5B6B82] mb-3">
-                      <div className="flex items-center gap-1 truncate">
+                      <div className="flex items-center gap-1 truncate max-w-[70%]">
                         <Building2 className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
                         <span className="truncate">
-                          {isUserBuyer ? match.sellerCompanyName : match.buyerCompanyName}
+                          {bundle.counterpartyNames.length > 0 ? (
+                            bundle.counterpartyNames.slice(0, 2).join(', ') +
+                            (bundle.counterpartyNames.length > 2 ? ` +${bundle.counterpartyNames.length - 2} more` : '')
+                          ) : (
+                            'Verified Counterparties'
+                          )}
                         </span>
                       </div>
-                      <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                        Verified Counterparty
+                      <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded shrink-0">
+                        Verified Matches
                       </span>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-[#8A9BB0]">
-                      Email sent immediately
-                    </span>
+                  <div className="pt-2 border-t border-[#F1F5F9] flex flex-wrap items-center justify-between gap-2">
+                    <Link
+                      href={`/dashboard/matches?product=${encodeURIComponent(bundle.productTitle)}`}
+                      className="text-[12px] font-bold text-[#0A6CFF] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Unlock &amp; Quote ({bundle.matches.length})</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
 
-                    {isUserBuyer ? (
-                      <Link
-                        href={`/dashboard/inquiries?startTrade=${encodeURIComponent(match.wtsProductId)}`}
-                        className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-3.5 py-1.5 rounded-full transition flex items-center gap-1.5 shadow-xs"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Contact Supplier</span>
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onOpenQuoteModal) {
-                            onOpenQuoteModal(
-                              match.wtbId,
-                              match.wtbProductName,
-                              match.wtbTargetPrice,
-                              match.wtbTargetQuantity
-                            );
-                          }
-                        }}
-                        className="bg-[#10B981] hover:bg-[#059669] text-white text-[12px] font-bold px-3.5 py-1.5 rounded-full transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Quote Buyer</span>
-                      </button>
-                    )}
+                    <Link
+                      href={`/dashboard/matches?product=${encodeURIComponent(bundle.productTitle)}`}
+                      className="bg-[#10B981] hover:bg-[#059669] text-white text-[12px] font-bold px-4 py-1.5 rounded-full transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-white" />
+                      <span>Quote Counterparty</span>
+                    </Link>
                   </div>
                 </div>
               );

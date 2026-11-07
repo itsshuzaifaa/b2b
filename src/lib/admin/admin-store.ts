@@ -1000,58 +1000,8 @@ export interface AdminSellerThread {
 const ADMIN_CONVERSATIONS_KEY = 'b2b_admin_threads_v1';
 
 export function getAdminSellerThreads(): InquiryConversation[] {
-  // Ensure every registered seller has a thread in messaging-store
-  const sellers = getAdminAccounts().filter((a) => a.role === 'seller');
+  // Return existing admin desk / compliance threads without auto-injecting mock welcome messages
   const conversations = getStoredConversations();
-
-  let modified = false;
-
-  for (const seller of sellers) {
-    const threadId = `conv-admin-${seller.id}`;
-    const exists = conversations.find((c) => c.id === threadId);
-
-    if (!exists) {
-      const nowIso = new Date().toISOString();
-      const newThread: InquiryConversation = {
-        id: threadId,
-        productId: 'admin-desk',
-        productTitle: 'Executive Desk & Compliance Support',
-        productImage: '/b2b-link-logo-tight.png',
-        productPrice: 0,
-        productMoq: 0,
-        sellerCompanyId: seller.id,
-        sellerCompanyName: seller.name,
-        buyerCompanyId: 'comp-admin-support',
-        buyerCompanyName: 'B2B LINK Support Team',
-        buyerEmail: 'support@b2blink.eu',
-        buyerContactEmail: 'support@b2blink.eu',
-        buyerPhone: '+372 612 3456',
-        buyerContactPhone: '+372 612 3456',
-        lastMessageText: `Welcome to B2B LINK. B2B LINK is designed to make wholesale trading faster and simpler.`,
-        lastMessageTime: 'Just now',
-        unreadByBuyer: false,
-        unreadBySeller: true,
-        messages: [
-          {
-            id: `msg-${Date.now()}-${seller.id}`,
-            senderRole: 'buyer', // 'buyer' is admin perspective towards seller
-            senderName: 'B2B LINK Support Team',
-            senderId: 'comp-admin-support',
-            text: `Hello ${seller.contact_name || seller.name},\n\nWelcome to B2B LINK.\n\nB2B LINK is designed to make wholesale trading faster and simpler.\n\nYou can use the platform to:\n• Browse live BUY and SELL listings\n• Post what you have available or what you need\n• Receive relevant Buyer-Seller Matches\n• Search by product, EAN/UPC or item code\n• Connect directly with other members\n\nIf you need any assistance, our Support Team is here to help.\n\nWelcome to the network.\n\nKind regards,\nB2B LINK Support Team`,
-            timestamp: nowIso,
-            isRead: false,
-          },
-        ],
-      };
-      conversations.unshift(newThread);
-      modified = true;
-    }
-  }
-
-  if (modified) {
-    saveStoredConversations(conversations);
-  }
-
   return conversations.filter((c) => c.id.startsWith('conv-admin-'));
 }
 

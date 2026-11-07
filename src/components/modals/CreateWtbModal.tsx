@@ -4,7 +4,20 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { createWtbRequest } from '@/lib/actions/wtb';
-import { X, CheckCircle2, AlertCircle, Send, ShoppingCart, HelpCircle } from 'lucide-react';
+import {
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Send,
+  ShoppingCart,
+  HelpCircle,
+  Zap,
+  Bell,
+  Loader2,
+  ArrowRight,
+  Sparkles,
+} from 'lucide-react';
+import { ALL_TRADING_BOARD_ITEMS } from '@/lib/trading-board-data';
 import { POPULAR_BRANDS } from '@/app/dashboard/listings/page';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS } from '@/lib/constants/conditions';
@@ -15,6 +28,18 @@ interface CreateWtbModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   initialMode?: 'WTB' | 'WTS';
+}
+
+interface FoundCounterpartyMatch {
+  id: string;
+  type: 'BUY' | 'SELL';
+  companyName: string;
+  productTitle: string;
+  price: number;
+  quantity: number;
+  location: string;
+  condition?: string;
+  confidence: number;
 }
 
 export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB' }: CreateWtbModalProps) {
@@ -39,11 +64,16 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isScanningMatches, setIsScanningMatches] = useState(false);
+  const [foundMatches, setFoundMatches] = useState<FoundCounterpartyMatch[]>([]);
 
   useEffect(() => {
     if (initialMode) {
       setTradeMode(initialMode);
     }
+    setIsSuccess(false);
+    setIsScanningMatches(false);
+    setFoundMatches([]);
   }, [initialMode, isOpen]);
 
   useEffect(() => {
@@ -193,8 +223,97 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         } catch {}
       }
 
-      setIsSuccess(true);
+      // Instantly dispatch updates across all tabs and components
+      try {
+        window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+        window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+        window.dispatchEvent(new CustomEvent('b2b_trade_matches_updated'));
+      } catch {}
+
       if (onSuccess) onSuccess();
+
+      // Launch instant counterparty scanning animation
+      setIsSuccess(true);
+      setIsScanningMatches(true);
+
+      const queryClean = productName.trim().toLowerCase();
+      const brandClean = brand.toLowerCase();
+      const eanClean = ean.trim();
+
+      // Scan local and remote trading items with 1.3s visual scanning feedback
+      setTimeout(async () => {
+        const matchesList: FoundCounterpartyMatch[] = [];
+
+        try {
+          if (tradeMode === 'WTS') {
+            // Find buyers who posted WTB for this product
+            const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
+            const userWtbs = rawWtb ? JSON.parse(rawWtb) : [];
+            const allItems = [...ALL_TRADING_BOARD_ITEMS, ...userWtbs];
+
+            for (const item of allItems) {
+              if (item.type !== 'BUY') continue;
+              const titleMatch = item.description?.toLowerCase().includes(queryClean) || queryClean.includes(item.description?.toLowerCase() || '');
+              const brandMatch = item.brand?.toLowerCase() === brandClean;
+              const eanMatch = eanClean && eanClean !== 'n/a' && item.ean === eanClean;
+
+              if (eanMatch || (titleMatch && brandMatch) || titleMatch) {
+                matchesList.push({
+                  id: item.id,
+                  type: 'BUY',
+                  companyName: item.companyName || 'Verified Procurement Partner',
+                  productTitle: item.description,
+                  price: item.price,
+                  quantity: item.qty,
+                  location: item.location || 'DE',
+                  condition: item.condition,
+                  confidence: eanMatch ? 100 : 92,
+                });
+              }
+              if (matchesList.length >= 3) break;
+            }
+          } else {
+            // Find sellers who posted WTS stock for this product
+            const rawWts = localStorage.getItem('b2b_seller_listings_v3');
+            const sellerListings = rawWts ? JSON.parse(rawWts) : [];
+            const allItems = [...ALL_TRADING_BOARD_ITEMS, ...sellerListings];
+
+            for (const item of allItems) {
+              const isSell = item.type === 'SELL' || (item.status && item.status !== 'Draft');
+              if (!isSell) continue;
+              const itemTitle = (item.title || item.description || '').toLowerCase();
+              const titleMatch = itemTitle.includes(queryClean) || queryClean.includes(itemTitle);
+              const brandMatch = (item.brand || '').toLowerCase() === brandClean;
+              const eanMatch = eanClean && eanClean !== 'n/a' && item.ean === eanClean;
+
+              if (eanMatch || (titleMatch && brandMatch) || titleMatch) {
+                matchesList.push({
+                  id: item.id,
+                  type: 'SELL',
+                  companyName: item.companyName || 'Verified Global Stockholder',
+                  productTitle: item.title || item.description,
+                  price: item.unitPrice || item.price,
+                  quantity: item.available || item.qty,
+                  location: item.location || 'DE',
+                  condition: item.condition,
+                  confidence: eanMatch ? 100 : 95,
+                });
+              }
+              if (matchesList.length >= 3) break;
+            }
+          }
+        } catch (scanErr) {
+          console.warn('[SCAN MATCHES NOTICE]', scanErr);
+        }
+
+        setFoundMatches(matchesList);
+        setIsScanningMatches(false);
+
+        try {
+          window.dispatchEvent(new CustomEvent('b2b_trade_matches_updated'));
+          window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+        } catch {}
+      }, 1300);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : `Failed to post ${tradeMode} request.`);
     } finally {
@@ -267,33 +386,149 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         {/* Modal Body */}
         <div className="p-6 sm:p-8 overflow-y-auto flex-1">
           {isSuccess ? (
-            <div className="py-8 text-center space-y-4">
-              <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center border ${
-                tradeMode === 'WTB'
-                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                  : 'bg-blue-50 text-blue-600 border-blue-200'
-              }`}>
-                <CheckCircle2 className="w-9 h-9" />
-              </div>
-              <h4 className="text-[22px] font-extrabold text-[#0B1F3A]">
-                {tradeMode === 'WTB' ? 'WTB Request Posted!' : 'WTS Listing Posted!'}
-              </h4>
-              <p className="text-[14px] text-[#64748B] max-w-md mx-auto leading-relaxed">
-                {tradeMode === 'WTB'
-                  ? 'Your request is now live on the Trading Board. Global verified suppliers matching this item will receive instant alert notifications.'
-                  : 'Your wholesale stock lot is now live on the Trading Board and your active listings. Buyers can now view and submit inquiries directly.'}
-              </p>
-              <button
-                type="button"
-                onClick={onClose}
-                className={`mt-4 px-8 py-3 rounded-full text-white text-[14px] font-bold shadow-xs transition cursor-pointer ${
-                  tradeMode === 'WTB'
-                    ? 'bg-[#16A34A] hover:bg-emerald-700'
-                    : 'bg-[#0A6CFF] hover:bg-blue-700'
-                }`}
-              >
-                Close & View Board
-              </button>
+            <div className="py-4 text-center space-y-4">
+              {isScanningMatches ? (
+                /* ANIMATED SONAR SCANNING STATE */
+                <div className="py-8 flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-200">
+                  <div className="relative w-20 h-20 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full border-2 border-blue-400 animate-ping opacity-35" />
+                    <div className="absolute -inset-3 rounded-full border-2 border-indigo-400 animate-pulse opacity-25" />
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#0A6CFF] to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30">
+                      <Zap className="w-8 h-8 fill-white animate-bounce" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-[19px] font-extrabold text-[#0B1F3A]">
+                      Scanning European Trading Board...
+                    </h4>
+                    <p className="text-[13px] text-[#5B6B82] max-w-sm mx-auto mt-1 leading-relaxed">
+                      Scanning live counterparties for matching {tradeMode === 'WTS' ? 'WTB procurement requests' : 'WTS stock lots'}...
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[12px] font-bold text-[#0A6CFF] bg-blue-50 px-3.5 py-1.5 rounded-full border border-blue-200/60 animate-pulse">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Comparing EAN barcode, model spec &amp; pricing</span>
+                  </div>
+                </div>
+              ) : foundMatches.length > 0 ? (
+                /* INSTANT MATCHES FOUND STATE */
+                <div className="space-y-4 text-left animate-in fade-in duration-300">
+                  <div className="text-center">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 mb-3">
+                      <Zap className="w-7 h-7 fill-white" />
+                    </div>
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                      INSTANT COUNTERPARTY MATCH FOUND
+                    </span>
+                    <h4 className="text-[20px] font-extrabold text-[#0B1F3A] mt-2">
+                      {foundMatches.length} Matching Counterpart{foundMatches.length === 1 ? 'y' : 'ies'} Ready to Trade!
+                    </h4>
+                    <p className="text-[13px] text-[#5B6B82] mt-1">
+                      Immediate counterparty requests match your {tradeMode === 'WTS' ? 'wholesale stock lot' : 'procurement order'}.
+                    </p>
+                  </div>
+
+                  {/* Counterparty match preview cards */}
+                  <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                    {foundMatches.map((match) => (
+                      <div
+                        key={match.id}
+                        className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] hover:border-blue-300 transition flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-[#0A6CFF]">
+                              {match.type === 'BUY' ? 'Buyer Looking to Buy' : 'Seller Has In Stock'}
+                            </span>
+                            <span className="text-[10.5px] font-bold text-emerald-600">
+                              {match.confidence}% Match
+                            </span>
+                          </div>
+                          <div className="text-[13.5px] font-bold text-[#0B1F3A] truncate">
+                            {match.productTitle}
+                          </div>
+                          <div className="text-[11.5px] text-[#5B6B82] mt-0.5">
+                            {match.companyName} &bull; <span className="font-semibold text-[#0B1F3A]">€{match.price.toFixed(2)}</span> &bull; {match.quantity} units &bull; {match.location}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            router.push(`/dashboard/matches?product=${encodeURIComponent(productName.trim())}`);
+                          }}
+                          className="shrink-0 bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-3 py-2 rounded-xl transition flex items-center gap-1 shadow-xs cursor-pointer"
+                        >
+                          <span>Unlock &amp; Quote</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        router.push(`/dashboard/matches?product=${encodeURIComponent(productName.trim())}`);
+                      }}
+                      className="w-full sm:flex-1 py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                    >
+                      <span>Review Matches in Dashboard</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-full sm:w-auto px-5 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] transition cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* NO MATCHES YET STATE (EXACTLY AS USER SPECIFIED) */
+                <div className="py-4 text-center space-y-4 animate-in fade-in duration-300">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 border border-blue-200 text-[#0A6CFF] flex items-center justify-center shadow-xs">
+                    <Bell className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#0A6CFF] bg-blue-50 px-3 py-1 rounded-full border border-blue-200/60">
+                      {tradeMode === 'WTB' ? 'WTB Sourcing Request Live' : 'WTS Listing Published Live'}
+                    </span>
+                    <h4 className="text-[20px] font-extrabold text-[#0B1F3A] mt-2.5">
+                      Post Successfully Live on the Board
+                    </h4>
+                    <p className="text-[13.5px] text-[#5B6B82] max-w-md mx-auto mt-2 leading-relaxed">
+                      No matching {tradeMode === 'WTS' ? 'WTB buyer requests' : 'WTS seller listings'} yet. Your request is now active on the Trading Board, and you will be immediately notified via email and in-app message as soon as a counterparty submits a matching request.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        router.push('/marketplace');
+                      }}
+                      className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition shadow-xs cursor-pointer"
+                    >
+                      Explore Trading Board
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] transition cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">

@@ -132,61 +132,9 @@ export async function POST(request: NextRequest) {
 
     const companyId = compInsert?.id || userId;
 
-    // 2.3 Send Automated Welcome Message from B2B LINK Support Team (Message 6)
-    try {
-      const { data: adminComp } = await admin.from('companies').select('id').eq('role', 'admin').maybeSingle();
-      const adminCompanyId = adminComp?.id || 'facbb93f-080f-480f-b54b-8ef26664da86';
-      const deskProductId = '00000000-0000-4000-a000-000000000001';
-
-      const userDisplayName = firstName || contactName || 'there';
-      const welcomeText = `Hello ${userDisplayName},
-
-Welcome to B2B LINK.
-
-B2B LINK is designed to make wholesale trading faster and simpler.
-
-You can use the platform to:
-• Browse live BUY and SELL listings
-• Post what you have available or what you need
-• Receive relevant Buyer-Seller Matches
-• Search by product, EAN/UPC or item code
-• Connect directly with other members
-
-If you need any assistance, our Support Team is here to help.
-
-Welcome to the network.
-
-Kind regards,
-B2B LINK Support Team`;
-
-      const welcomeThread = [
-        {
-          id: `welcome-${Date.now()}`,
-          senderId: adminCompanyId,
-          senderName: 'B2B LINK Support Team',
-          senderRole: 'admin',
-          text: welcomeText,
-          timestamp: new Date().toISOString(),
-          isRead: false,
-          isBroadcast: false,
-        },
-      ];
-
-      await admin.from('product_inquiries').insert({
-        product_id: deskProductId,
-        seller_company_id: adminCompanyId,
-        buyer_name: contactName || userDisplayName,
-        buyer_email: email,
-        buyer_company: effectiveCompanyName,
-        buyer_phone: phone || null,
-        requested_quantity: 1,
-        target_price: 0,
-        message: JSON.stringify(welcomeThread),
-        status: 'admin_desk',
-      });
-    } catch (welcomeErr) {
-      console.warn('[WELCOME MESSAGE DISPATCH NOTICE]', welcomeErr);
-    }
+    // 2.3 Onboarding is presented via the interactive App Walkthrough Modal upon login,
+    // rather than an automated chat message from Jeff / Support.
+    // (Per user requirement: replaced auto welcome chat with interactive onboarding tour)
 
     // 2.5 Save to Admin Campaign Leads (Email & WhatsApp list for future outreach campaigns)
     try {

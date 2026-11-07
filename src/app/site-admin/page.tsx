@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import {
   getAdminAccounts,
   saveAdminAccounts,
@@ -68,7 +69,6 @@ export default function SiteAdminOverviewPage() {
     }
     setPayments(getAdminPayments());
     setListingsCount(getAdminListings().length);
-    setQueries(getCustomerQueries());
 
     try {
       const pRes = await fetch('/api/admin/payments', { cache: 'no-store' });
@@ -89,14 +89,24 @@ export default function SiteAdminOverviewPage() {
         const qData = await qRes.json();
         if (Array.isArray(qData.queries)) {
           setQueries(qData.queries);
+          try {
+            localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(qData.queries));
+          } catch {
+            // ignore
+          }
         }
       }
     } catch {
-      // ignore
+      // Keep existing queries state on network failure
     }
   };
 
   useEffect(() => {
+    // Immediate initial hydration from local cache
+    const initialQueries = getCustomerQueries();
+    if (initialQueries.length > 0) {
+      setQueries(initialQueries);
+    }
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
@@ -129,7 +139,19 @@ export default function SiteAdminOverviewPage() {
   const pendingAccounts = accounts.filter(
     (a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification'
   );
-  const newQueries = queries.filter((q) => q.status === 'new');
+  const uniqueQueries: CustomerQuery[] = useMemo(() => {
+    const seen = new Set<string>();
+    return queries.filter((q: CustomerQuery) => {
+      if (!q || !q.id || seen.has(q.id)) return false;
+      const sig = `${(q.email || '').toLowerCase().trim()}::${(q.message || '').toLowerCase().trim()}`;
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      seen.add(q.id);
+      return true;
+    });
+  }, [queries]);
+
+  const newQueries: CustomerQuery[] = uniqueQueries.filter((q: CustomerQuery) => q.status === 'new');
 
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,7 +227,7 @@ export default function SiteAdminOverviewPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              €{totalCompletedGbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+              <AnimatedNumber value={totalCompletedGbp} decimals={2} prefix="€" />
             </div>
             <p className="text-[12px] text-emerald-700 font-semibold mt-1.5 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -226,7 +248,7 @@ export default function SiteAdminOverviewPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              {accounts.length}
+              <AnimatedNumber value={accounts.length} />
             </div>
             <p className="text-[12px] text-[#5B6B82] font-medium mt-1.5">
               Unified wholesale accounts on file
@@ -246,7 +268,7 @@ export default function SiteAdminOverviewPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none">
-              {listingsCount}
+              <AnimatedNumber value={listingsCount} />
             </div>
             <p className="text-[12px] text-[#5B6B82] font-medium mt-1.5">
               Live physical lots global stock
@@ -269,10 +291,10 @@ export default function SiteAdminOverviewPage() {
           </div>
           <div>
             <div className="text-[28px] font-black text-[#0B1F3A] leading-none flex items-center justify-between">
-              <span>{queries.length}</span>
+              <span><AnimatedNumber value={uniqueQueries.length} /></span>
               {newQueries.length > 0 && (
                 <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                  {newQueries.length} New
+                  <AnimatedNumber value={newQueries.length} /> New
                 </span>
               )}
             </div>
@@ -417,7 +439,7 @@ export default function SiteAdminOverviewPage() {
 
               {/* Alert Items: Unreplied Customer Queries */}
               {newQueries.length > 0 ? (
-                newQueries.slice(0, 2).map((q) => (
+                newQueries.slice(0, 2).map((q: CustomerQuery) => (
                   <div
                     key={q.id}
                     className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-3"

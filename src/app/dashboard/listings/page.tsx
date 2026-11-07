@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { RequestBulkCsvModal } from '@/components/modals/RequestBulkCsvModal';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS, WholesaleCondition } from '@/lib/constants/conditions';
 import { TRADING_HUB_LOCATIONS } from '@/lib/constants/locations';
@@ -107,20 +108,26 @@ export default function ListingsPage() {
   const [matches, setMatches] = useState<TradeMatch[]>([]);
   const [isRequestBulkCsvOpen, setIsRequestBulkCsvOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'Hot' | 'Drafts' | 'Unpublished'>('All');
+  const [activeTab, setActiveTab] = useState<'All' | 'Matched' | 'Active' | 'Hot' | 'Drafts' | 'Unpublished'>('All');
   const [selectedUnpublishedIds, setSelectedUnpublishedIds] = useState<string[]>([]);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const currentTier = ((company?.tier || (company as any)?.membership_tier || 'bronze') as string).toLowerCase();
   const isGold = currentTier === 'gold';
 
-  // Read URL query params on mount (e.g. ?tab=unpublished from notification emails)
+  // Read URL query params on mount (e.g. ?tab=unpublished or ?tab=matched&product=...)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const search = new URLSearchParams(window.location.search);
       const tabParam = search.get('tab');
+      const productParam = search.get('product');
       if (tabParam && tabParam.toLowerCase() === 'unpublished') {
         setActiveTab('Unpublished');
+      } else if (tabParam && tabParam.toLowerCase() === 'matched') {
+        setActiveTab('Matched');
+      }
+      if (productParam) {
+        setSearchQuery(productParam);
       }
     }
   }, []);
@@ -575,10 +582,23 @@ export default function ListingsPage() {
     setIsModalOpen(false);
   };
 
+  const hasItemMatch = (item: ListingItem) => {
+    return matches.some(
+      (m) =>
+        m.wtsProductId === item.id ||
+        (m.wtsBarcode && item.ean && m.wtsBarcode === item.ean && item.ean !== 'n/a') ||
+        (m.wtsTitle && item.title && (
+          m.wtsTitle.toLowerCase().includes(item.title.toLowerCase()) ||
+          item.title.toLowerCase().includes(m.wtsTitle.toLowerCase())
+        ))
+    );
+  };
+
   const activeCount = listings.filter(
     (l) => l.status === 'Active' || l.status === 'Hot'
   ).length;
   const unpublishedCount = listings.filter((l) => l.status === 'Unpublished').length;
+  const matchedCount = listings.filter((l) => l.status !== 'Unpublished' && hasItemMatch(l)).length;
 
   const filteredListings = listings.filter((item) => {
     const matchesSearch =
@@ -591,6 +611,7 @@ export default function ListingsPage() {
     if (!matchesSearch) return false;
 
     if (activeTab === 'Unpublished') return item.status === 'Unpublished';
+    if (activeTab === 'Matched') return item.status !== 'Unpublished' && hasItemMatch(item);
     if (activeTab === 'Hot') return item.status === 'Hot';
     if (activeTab === 'Active') return item.status === 'Active' || item.status === 'Hot';
     if (activeTab === 'Drafts') return item.status === 'Draft';
@@ -607,10 +628,10 @@ export default function ListingsPage() {
             Product listings
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            {activeCount} active wholesale listing{activeCount === 1 ? '' : 's'} on your {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)} plan.
+            <AnimatedNumber value={activeCount} /> active wholesale listing{activeCount === 1 ? '' : 's'} on your {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)} plan.
             {unpublishedCount > 0 && (
               <span className="text-amber-700 font-semibold ml-1.5">
-                ({unpublishedCount} unpublished in 30-day recovery window)
+                (<AnimatedNumber value={unpublishedCount} /> unpublished in 30-day recovery window)
               </span>
             )}
           </p>
@@ -671,10 +692,36 @@ export default function ListingsPage() {
             </div>
           </div>
           <Link
-            href="/dashboard"
-            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-xs"
+            href="/dashboard/matches"
+            className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-xs cursor-pointer"
           >
-            <span>Review Matches in Overview</span>
+            <span>Unlock &amp; Quote Matches</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
+
+      {/* Matched Tab Callout Banner */}
+      {activeTab === 'Matched' && (
+        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Zap className="w-4 h-4 fill-white" />
+            </div>
+            <div>
+              <h4 className="text-[14px] font-bold text-[#0B1F3A]">
+                Matched Inventory with Active Purchase Orders
+              </h4>
+              <p className="text-[12px] text-[#5B6B82] mt-0.5">
+                Qualified buyers have active purchase requests for these stocks. You can unlock their verified company and contact information to quote them directly.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard/matches"
+            className="bg-[#059669] hover:bg-[#047857] text-white text-[12px] font-bold px-4 py-2 rounded-full transition flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-xs cursor-pointer"
+          >
+            <span>Open Matching Stock Page</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -713,10 +760,12 @@ export default function ListingsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-7 mb-6">
         {/* Tabs with Badge Counts */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full [scrollbar-width:none]">
-          {(['All', 'Active', 'Hot', 'Drafts', 'Unpublished'] as const).map((tab) => {
+          {(['All', 'Matched', 'Active', 'Hot', 'Drafts', 'Unpublished'] as const).map((tab) => {
             const count =
               tab === 'All'
                 ? listings.filter((l) => l.status !== 'Unpublished').length
+                : tab === 'Matched'
+                ? matchedCount
                 : tab === 'Active'
                 ? listings.filter((l) => l.status === 'Active' || l.status === 'Hot').length
                 : tab === 'Hot'
@@ -739,12 +788,17 @@ export default function ListingsPage() {
                   isSelected
                     ? tab === 'Unpublished'
                       ? 'bg-[#E11D48] text-white shadow-xs'
+                      : tab === 'Matched'
+                      ? 'bg-[#0A6CFF] text-white shadow-xs'
                       : 'bg-[#0B1F3A] text-white shadow-xs'
                     : tab === 'Unpublished' && count > 0
                     ? 'text-[#E11D48] hover:bg-rose-50 bg-rose-50/60'
+                    : tab === 'Matched' && count > 0
+                    ? 'text-[#0A6CFF] hover:bg-blue-50 bg-blue-50/70 border border-blue-200/60'
                     : 'text-[#5B6B82] hover:text-[#0B1F3A] bg-transparent'
                 }`}
               >
+                {tab === 'Matched' && <Zap className={`w-3.5 h-3.5 ${isSelected ? 'fill-white text-white' : 'fill-[#0A6CFF] text-[#0A6CFF]'}`} />}
                 <span>{tab}</span>
                 <span
                   className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
@@ -752,10 +806,12 @@ export default function ListingsPage() {
                       ? 'bg-white/20 text-white'
                       : tab === 'Unpublished' && count > 0
                       ? 'bg-rose-100 text-[#E11D48]'
+                      : tab === 'Matched' && count > 0
+                      ? 'bg-blue-100 text-[#0A6CFF]'
                       : 'bg-slate-100 text-[#5B6B82]'
                   }`}
                 >
-                  {count}
+                  <AnimatedNumber value={count} />
                 </span>
               </button>
             );

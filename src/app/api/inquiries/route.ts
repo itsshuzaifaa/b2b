@@ -248,9 +248,32 @@ export async function GET(req: NextRequest) {
         });
       }
 
+      // Determine user account registration time to prevent showing past broadcasts
+      const companyCreatedAtParam = searchParams.get('companyCreatedAt');
+      let accountCreatedTime = companyCreatedAtParam ? new Date(companyCreatedAtParam).getTime() : 0;
+
+      if (!accountCreatedTime && companyId) {
+        try {
+          const { data: comp } = await supabase.from('companies').select('created_at').eq('id', companyId).maybeSingle();
+          if (comp?.created_at) {
+            accountCreatedTime = new Date(comp.created_at).getTime();
+          }
+        } catch {}
+      }
+
       conversations = conversations.filter((c) => {
-        // 1. Broadcasts - strictly respect member package tiers
+        // 1. Broadcasts - strictly respect member package tiers and account creation date
         if (c.type === 'broadcast') {
+          // Exclude broadcasts that were dispatched BEFORE the user's account was created
+          if (accountCreatedTime > 0) {
+            const bcastTime = c.messages?.[0]?.timestamp
+              ? new Date(c.messages[0].timestamp).getTime()
+              : 0;
+            if (bcastTime && bcastTime < (accountCreatedTime - 60000)) {
+              return false;
+            }
+          }
+
           const aud = c.targetAudience;
           if (!aud || aud === 'all') return true;
           if (aud === 'seller' && role === 'seller') return true;
@@ -516,6 +539,32 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, sellers: sellers || [] });
+    }
+
+    // Mark all messages in a conversation as read
+    if (action === 'mark_read') {
+      const { conversationId } = body;
+      if (conversationId) {
+        try {
+          const { data: row } = await supabase
+            .from('product_inquiries')
+            .select('id, message, status, created_at')
+            .eq('id', conversationId)
+            .maybeSingle();
+
+          if (row && row.message) {
+            const msgs = parseMessagesFromRow(row.message, row as unknown as RawInquiryRow);
+            const updatedMsgs = msgs.map((m) => ({ ...m, isRead: true }));
+            await supabase
+              .from('product_inquiries')
+              .update({ message: JSON.stringify(updatedMsgs) })
+              .eq('id', conversationId);
+          }
+        } catch (readErr) {
+          console.warn('[MARK READ WARNING]', readErr);
+        }
+      }
+      return NextResponse.json({ success: true });
     }
 
     // 2. Admin sends a private direct message to a specific member/seller
