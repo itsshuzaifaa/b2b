@@ -16,6 +16,11 @@ import {
   Layers,
   Package,
 } from 'lucide-react';
+import {
+  PricingOptionSelector,
+  PriceBadge,
+  type PricingType,
+} from '@/lib/utils/pricing';
 
 interface BroadcastWtsModalProps {
   isOpen: boolean;
@@ -42,6 +47,7 @@ export function BroadcastWtsModal({
   const [formCondition, setFormCondition] = useState<'new' | 'refurbished' | 'used'>('new');
   const [formAvailable, setFormAvailable] = useState('100');
   const [formMoq, setFormMoq] = useState('10');
+  const [formPricingType, setFormPricingType] = useState<PricingType>('fixed');
   const [formPrice, setFormPrice] = useState('450.00');
   const [formEan, setFormEan] = useState('');
   const [formDescription, setFormDescription] = useState('');
@@ -211,7 +217,8 @@ export function BroadcastWtsModal({
           return;
         }
         const price = parseFloat(formPrice);
-        if (isNaN(price) || price <= 0) {
+        const isSpecialPricing = formPricingType === 'neg' || formPricingType === 'poa';
+        if (!isSpecialPricing && (isNaN(price) || price <= 0)) {
           setErrorMsg('Unit price must be greater than zero.');
           setIsSubmitting(false);
           return;
@@ -223,7 +230,7 @@ export function BroadcastWtsModal({
         broadcastCondition = formCondition;
         broadcastQty = qty;
         broadcastMoq = moq;
-        broadcastPrice = price;
+        broadcastPrice = isSpecialPricing ? 0 : price;
         broadcastEan = formEan.trim();
         broadcastNotes = formDescription.trim();
         broadcastItemId = `listing-wts-${Date.now()}`;
@@ -239,6 +246,7 @@ export function BroadcastWtsModal({
             category: broadcastCategory,
             condition: broadcastCondition as any,
             unitPrice: broadcastPrice,
+            pricingType: formPricingType,
             available: broadcastQty,
             moq: broadcastMoq,
             ean: broadcastEan,
@@ -476,7 +484,7 @@ export function BroadcastWtsModal({
                                 </span>
                                 <span>·</span>
                                 <span>
-                                  Price: <strong className="text-[#0A6CFF]">€{listing.unitPrice.toFixed(2)}</strong>
+                                  Price: <strong className="text-[#0A6CFF]"><PriceBadge price={listing.unitPrice} pricingType={listing.pricingType} /></strong>
                                 </span>
                               </div>
                             </div>
@@ -568,22 +576,38 @@ export function BroadcastWtsModal({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                        Unit Price (€) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        value={formPrice}
-                        onChange={(e) => setFormPrice(e.target.value)}
-                        className="w-full px-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#0A6CFF] bg-white text-[#0B1F3A]"
-                      />
-                    </div>
+                  {/* 3 Pricing Options for WTS */}
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                    <PricingOptionSelector
+                      value={formPricingType}
+                      onChange={setFormPricingType}
+                      tradeMode="WTS"
+                    />
 
+                    {formPricingType === 'fixed' && (
+                      <div className="pt-1">
+                        <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                          Fixed Unit Price (€) *
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
+                            €
+                          </span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            required={formPricingType === 'fixed'}
+                            value={formPrice}
+                            onChange={(e) => setFormPrice(e.target.value)}
+                            className="w-full pl-8 pr-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#0A6CFF] bg-white text-[#0B1F3A] font-medium"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                         Available Qty <span className="text-red-500">*</span>

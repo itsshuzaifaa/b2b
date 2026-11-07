@@ -149,6 +149,7 @@ export type WtbRequest = {
   category_slug: string;
   target_quantity: number;
   target_price: number;
+  pricing_type?: 'fixed' | 'neg' | 'poa';
   delivery_deadline?: string | null;
   barcode_or_sku?: string | null;
   notes?: string | null;

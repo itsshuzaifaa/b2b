@@ -72,7 +72,10 @@ function parseMessagesFromRow(rawMessage: string, row: RawInquiryRow): ChatMessa
   ];
 }
 
-function rowToConversation(row: RawInquiryRow): InquiryConversation {
+function rowToConversation(
+  row: RawInquiryRow,
+  companyLookup?: { byEmail?: Map<string, any>; byId?: Map<string, any> }
+): InquiryConversation {
   const messages = parseMessagesFromRow(row.message, row);
   const lastMsg = messages[messages.length - 1];
 
@@ -114,6 +117,48 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
   const broadcastDetails = firstBroadcastMsg?.broadcastDetails;
   const broadcastKind = isMemberWtbBroadcast ? 'wtb' : isMemberWtsBroadcast ? 'wts' : (firstBroadcastMsg?.broadcastKind || (isBroadcast ? 'admin' : undefined));
 
+  // Determine buyer and seller details with company lookup
+  const cleanBuyerEmail = row.buyer_email?.toLowerCase().trim();
+  const matchedBuyerComp = cleanBuyerEmail ? companyLookup?.byEmail?.get(cleanBuyerEmail) : undefined;
+  const resolvedBuyerCompanyId = matchedBuyerComp?.id || (row as any).buyer_company_id || undefined;
+
+  let sellerCompId = row.seller_company_id;
+  let sellerCompName = row.seller_company?.company_name || 'Verified Supplier';
+  let sellerContName = row.seller_company?.contact_name || 'Trade Desk';
+  let sellerContEmail = row.seller_company?.contact_email || (row.seller_company as any)?.email;
+
+  let buyerCompId = resolvedBuyerCompanyId;
+  let buyerCompName = matchedBuyerComp?.company_name || row.buyer_company || `${row.buyer_name || 'Member'} Commercial`;
+  let buyerContName = matchedBuyerComp?.contact_name || row.buyer_name || 'Commercial Representative';
+  let buyerEmail = row.buyer_email;
+
+  if (isAdminDesk) {
+    const isSellerAdmin = sellerCompId === 'facbb93f-080f-480f-b54b-8ef26664da86' || sellerContEmail === 'admin@b2blink.eu';
+    if (isSellerAdmin) {
+      // Seller is Platform Admin, Buyer is the Member
+      sellerCompName = 'B2B LINK OÜ (Platform Desk)';
+      sellerContName = 'Jeff Vetting Director';
+      sellerContEmail = 'admin@b2blink.eu';
+
+      buyerCompName = matchedBuyerComp?.company_name || row.buyer_company || 'Member Organization';
+      buyerContName = matchedBuyerComp?.contact_name || row.buyer_name || 'Valued Member';
+    } else {
+      // Seller is the Member, Buyer is Platform Admin
+      buyerCompId = 'facbb93f-080f-480f-b54b-8ef26664da86';
+      buyerCompName = 'B2B LINK OÜ (Platform Desk)';
+      buyerContName = 'Jeff Vetting Director';
+      buyerEmail = 'admin@b2blink.eu';
+    }
+  } else if (isBroadcast) {
+    if (isMemberWtbBroadcast || isMemberWtsBroadcast) {
+      buyerCompName = broadcastDetails?.ownerCompanyName || row.buyer_company || 'Verified Commercial Member';
+      buyerContName = broadcastDetails?.ownerContactName || row.buyer_name || 'Commercial Representative';
+    } else {
+      buyerCompName = 'B2B LINK OÜ (Platform Desk)';
+      buyerContName = 'Jeff Vetting Director';
+    }
+  }
+
   let title = row.products?.title || 'Verified Global Stock Lot';
   if (broadcastDetails?.title) {
     title = `[${broadcastDetails.itemType.toUpperCase()} BROADCAST] ${broadcastDetails.title}`;
@@ -121,7 +166,9 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
     title = row.buyer_company?.startsWith('[WTB') ? row.buyer_company : `[WTB BROADCAST] ${row.buyer_company || 'Wholesale Sourcing Request'}`;
   } else if (isMemberWtsBroadcast) {
     title = row.buyer_company?.startsWith('[WTS') ? row.buyer_company : `[WTS BROADCAST] ${row.buyer_company || 'Wholesale Inventory Offer'}`;
-  } else if (isSellerBroadcast || isBuyerBroadcast || isAllBroadcast || isFreeBroadcast || isSilverBroadcast || isGoldBroadcast || isAdminDesk) {
+  } else if (isAdminDesk) {
+    title = 'Jeff Vetting Director (B2B LINK Desk)';
+  } else if (isBroadcast) {
     title = 'Jeff Vetting Director (B2B LINK Desk)';
   }
 
@@ -166,23 +213,15 @@ function rowToConversation(row: RawInquiryRow): InquiryConversation {
     productPrice: row.products?.unit_price || row.target_price || 0,
     productMoq: row.products?.moq || row.requested_quantity || 1,
     productCategory: isBroadcast ? (broadcastDetails?.category || 'Member Broadcast') : isAdminDesk ? 'Compliance Desk' : 'Wholesale Trade',
-    sellerCompanyId: row.seller_company_id,
-    sellerCompanyName: row.seller_company?.company_name || 'Verified Supplier',
-    sellerContactName: row.seller_company?.contact_name || 'Trade Desk',
-    sellerContactEmail: row.seller_company?.contact_email || (row.seller_company as any)?.email,
-    buyerCompanyId: undefined,
-    buyerCompanyName: isMemberWtbBroadcast || isMemberWtsBroadcast
-      ? (broadcastDetails?.ownerCompanyName || row.buyer_company || 'Verified Commercial Member')
-      : isBroadcast || isAdminDesk
-      ? 'B2B LINK OÜ (Platform Desk)'
-      : row.buyer_company || `${row.buyer_name} Commercial`,
-    buyerContactName: isMemberWtbBroadcast || isMemberWtsBroadcast
-      ? (broadcastDetails?.ownerContactName || row.buyer_name)
-      : isBroadcast || isAdminDesk
-      ? 'Jeff Vetting Director'
-      : row.buyer_name,
-    buyerEmail: row.buyer_email,
-    buyerContactEmail: row.buyer_email,
+    sellerCompanyId: sellerCompId,
+    sellerCompanyName: sellerCompName,
+    sellerContactName: sellerContName,
+    sellerContactEmail: sellerContEmail,
+    buyerCompanyId: buyerCompId,
+    buyerCompanyName: buyerCompName,
+    buyerContactName: buyerContName,
+    buyerEmail: buyerEmail,
+    buyerContactEmail: buyerEmail,
     buyerPhone: row.buyer_phone || undefined,
     buyerContactPhone: row.buyer_phone || undefined,
     lastMessageText: lastMsg?.text || 'No message content',
@@ -228,7 +267,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    let conversations = (rows as unknown as RawInquiryRow[]).map(rowToConversation);
+    // Build company lookup to resolve real member company names and IDs
+    const { data: allCompanies } = await supabase
+      .from('companies')
+      .select('id, user_id, contact_email, company_name, contact_name');
+
+    const byEmail = new Map<string, any>();
+    const byId = new Map<string, any>();
+    if (allCompanies) {
+      for (const comp of allCompanies) {
+        if (comp.contact_email) byEmail.set(comp.contact_email.toLowerCase().trim(), comp);
+        if (comp.id) byId.set(comp.id, comp);
+        if (comp.user_id) byId.set(comp.user_id, comp);
+      }
+    }
+
+    const companyLookup = { byEmail, byId };
+    let conversations = (rows as unknown as RawInquiryRow[]).map((r) => rowToConversation(r, companyLookup));
 
     // Filter strictly to preserve commercial confidentiality:
     if (role === 'admin') {
@@ -543,7 +598,7 @@ export async function POST(req: NextRequest) {
 
     // Mark all messages in a conversation as read
     if (action === 'mark_read') {
-      const { conversationId } = body;
+      const { conversationId, role } = body;
       if (conversationId) {
         try {
           const { data: row } = await supabase
@@ -554,11 +609,24 @@ export async function POST(req: NextRequest) {
 
           if (row && row.message) {
             const msgs = parseMessagesFromRow(row.message, row as unknown as RawInquiryRow);
-            const updatedMsgs = msgs.map((m) => ({ ...m, isRead: true }));
-            await supabase
-              .from('product_inquiries')
-              .update({ message: JSON.stringify(updatedMsgs) })
-              .eq('id', conversationId);
+            let hasUnread = false;
+            const updatedMsgs = msgs.map((m) => {
+              const isIncoming = role === 'admin' ? m.senderRole !== 'admin' :
+                                 role === 'seller' ? m.senderRole !== 'seller' :
+                                 m.senderRole !== 'buyer';
+              if (!m.isRead && isIncoming) {
+                hasUnread = true;
+                return { ...m, isRead: true };
+              }
+              return m;
+            });
+
+            if (hasUnread) {
+              await supabase
+                .from('product_inquiries')
+                .update({ message: JSON.stringify(updatedMsgs) })
+                .eq('id', conversationId);
+            }
           }
         } catch (readErr) {
           console.warn('[MARK READ WARNING]', readErr);
@@ -801,6 +869,35 @@ export async function POST(req: NextRequest) {
         .eq('id', resolvedThreadId)
         .maybeSingle();
 
+      if (!row && typeof resolvedThreadId === 'string' && resolvedThreadId.startsWith('admin-desk-')) {
+        const targetSellerCompId = resolvedThreadId.replace('admin-desk-', '');
+        const { data: fallbackRow } = await supabase
+          .from('product_inquiries')
+          .select(`
+            id,
+            product_id,
+            seller_company_id,
+            buyer_name,
+            buyer_email,
+            buyer_phone,
+            buyer_company,
+            status,
+            message,
+            created_at,
+            products:products(id, title, unit_price, moq, image_urls),
+            seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+          `)
+          .eq('status', 'admin_desk')
+          .or(`seller_company_id.eq.${targetSellerCompId},buyer_email.ilike.${targetSellerCompId}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackRow) {
+          row = fallbackRow;
+          resolvedThreadId = fallbackRow.id;
+        }
+      }
+
       if (!row && typeof resolvedThreadId === 'string' && resolvedThreadId.startsWith('conv-')) {
         const parts = resolvedThreadId.split('-');
         if (parts.length >= 2) {
@@ -850,21 +947,36 @@ export async function POST(req: NextRequest) {
 
       existingMessages.push(newChatMessage);
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRowData, error: updateErr } = await supabase
         .from('product_inquiries')
         .update({
           message: JSON.stringify(existingMessages),
         })
-        .eq('id', resolvedThreadId);
+        .eq('id', resolvedThreadId)
+        .select(`
+          id,
+          product_id,
+          seller_company_id,
+          buyer_name,
+          buyer_email,
+          buyer_phone,
+          buyer_company,
+          status,
+          message,
+          created_at,
+          products:products(id, title, unit_price, moq, image_urls),
+          seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+        `)
+        .maybeSingle();
 
       if (updateErr) {
         return NextResponse.json({ success: false, error: updateErr.message }, { status: 500 });
       }
 
-      const updatedRow = {
+      const updatedRow = (updatedRowData || {
         ...(row as unknown as RawInquiryRow),
         message: JSON.stringify(existingMessages),
-      };
+      }) as unknown as RawInquiryRow;
 
       // Dispatch in-app message email notification to recipient
       void notifyInAppMessageRecipient({

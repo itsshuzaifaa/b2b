@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import {
   getConversationsForUser,
   sendInquiryMessage,
+  sendInquiryMessageAsync,
   markConversationAsRead,
   syncWithSupabase,
   isMessageSentByMe,
@@ -248,7 +249,7 @@ function InquiriesContent() {
     }
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeConv) return;
 
@@ -266,18 +267,18 @@ function InquiriesContent() {
       (senderRole === 'buyer' ? 'Buyer Representative' : 'Seller Representative');
     const senderId = company?.id || company?.email || 'user';
 
-    const updated = sendInquiryMessage(
+    const textToSend = replyText.trim();
+    setReplyText('');
+
+    await sendInquiryMessageAsync(
       activeConv.id,
       senderRole,
       senderName,
       senderId,
-      replyText.trim()
+      textToSend
     );
 
-    if (updated) {
-      setConversations(getConversationsForUser(company));
-      setReplyText('');
-    }
+    setConversations(getConversationsForUser(company));
   };
 
   const handleQuickPreset = (presetType: 'quote' | 'stock' | 'delivery') => {

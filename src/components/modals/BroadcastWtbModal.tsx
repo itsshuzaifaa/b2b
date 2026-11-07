@@ -19,6 +19,11 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
+import {
+  PricingOptionSelector,
+  PriceBadge,
+  type PricingType,
+} from '@/lib/utils/pricing';
 
 interface BroadcastWtbModalProps {
   isOpen: boolean;
@@ -42,6 +47,7 @@ export function BroadcastWtbModal({
   const [formProductName, setFormProductName] = useState('');
   const [formCategory, setFormCategory] = useState(WHOLESALE_CATEGORIES[0]?.name || 'Consumer Electronics');
   const [formTargetQty, setFormTargetQty] = useState('100');
+  const [formPricingType, setFormPricingType] = useState<PricingType>('fixed');
   const [formTargetPrice, setFormTargetPrice] = useState('450');
   const [formBarcode, setFormBarcode] = useState('');
   const [formNotes, setFormNotes] = useState('');
@@ -177,7 +183,8 @@ export function BroadcastWtbModal({
           return;
         }
         const price = parseFloat(formTargetPrice);
-        if (isNaN(price) || price <= 0) {
+        const isSpecialPricing = formPricingType === 'neg' || formPricingType === 'poa';
+        if (!isSpecialPricing && (isNaN(price) || price <= 0)) {
           setErrorMsg('Target price must be greater than zero.');
           setIsSubmitting(false);
           return;
@@ -186,7 +193,7 @@ export function BroadcastWtbModal({
         broadcastTitle = formProductName.trim();
         broadcastCategory = formCategory;
         broadcastQty = qty;
-        broadcastPrice = price;
+        broadcastPrice = isSpecialPricing ? 0 : price;
         broadcastBarcode = formBarcode.trim();
         broadcastNotes = formNotes.trim();
 
@@ -201,6 +208,7 @@ export function BroadcastWtbModal({
           categorySlug: broadcastCategory.toLowerCase().replace(/\s+/g, '-'),
           targetQuantity: broadcastQty,
           targetPrice: broadcastPrice,
+          pricingType: formPricingType,
           barcodeOrSku: broadcastBarcode || undefined,
           notes: broadcastNotes || undefined,
         });
@@ -421,7 +429,7 @@ export function BroadcastWtbModal({
                                 </span>
                                 <span>·</span>
                                 <span>
-                                  Target Price: <strong className="text-[#16A34A]">€{wtb.target_price.toFixed(2)}</strong>
+                                  Target Price: <strong className="text-[#16A34A]"><PriceBadge price={wtb.target_price} pricingType={wtb.pricing_type} /></strong>
                                 </span>
                                 {wtb.barcode_or_sku && (
                                   <>
@@ -500,7 +508,7 @@ export function BroadcastWtbModal({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div>
                       <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                         Target Quantity (units) <span className="text-red-500">*</span>
@@ -515,19 +523,34 @@ export function BroadcastWtbModal({
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                        Target Price (€ / unit) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        value={formTargetPrice}
-                        onChange={(e) => setFormTargetPrice(e.target.value)}
-                        className="w-full px-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#16A34A] bg-white text-[#0B1F3A]"
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+                      <PricingOptionSelector
+                        value={formPricingType}
+                        onChange={setFormPricingType}
+                        tradeMode="WTB"
                       />
+
+                      {formPricingType === 'fixed' && (
+                        <div className="pt-2">
+                          <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                            Target Fixed Price (€ / unit) *
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
+                              €
+                            </span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              required={formPricingType === 'fixed'}
+                              value={formTargetPrice}
+                              onChange={(e) => setFormTargetPrice(e.target.value)}
+                              className="w-full pl-8 pr-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#16A34A] bg-white text-[#0B1F3A] font-medium"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

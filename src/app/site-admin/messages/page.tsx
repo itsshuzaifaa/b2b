@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import {
   getStoredConversations,
   sendInquiryMessage,
+  sendInquiryMessageAsync,
   broadcastToTargetAudience,
   sendAdminDirectMessage,
   fetchAllSellersForAdmin,
@@ -211,7 +212,7 @@ function SiteAdminMessagesContent() {
     setLoadingSellers(false);
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeConv) return;
 
@@ -219,8 +220,9 @@ function SiteAdminMessagesContent() {
     const senderName = 'Platform Administrator (Executive Desk)';
     const senderId = 'facbb93f-080f-480f-b54b-8ef26664da86';
 
-    sendInquiryMessage(activeConv.id, senderRole, senderName, senderId, replyText.trim());
+    const textToSend = replyText.trim();
     setReplyText('');
+    await sendInquiryMessageAsync(activeConv.id, senderRole, senderName, senderId, textToSend);
     loadData();
   };
 
@@ -493,7 +495,11 @@ function SiteAdminMessagesContent() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
                         <span className="font-black text-xs text-slate-900 truncate">
-                          {isTrade ? conv.buyerCompanyName : conv.sellerCompanyName}
+                          {isTrade
+                            ? conv.buyerCompanyName
+                            : conv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                            ? `${conv.buyerCompanyName} (${conv.buyerContactName || conv.buyerEmail})`
+                            : `${conv.sellerCompanyName} (${conv.sellerContactName || conv.sellerContactEmail})`}
                         </span>
                         <span className="text-[10px] text-slate-400 shrink-0 font-medium">
                           {conv.lastMessageTime}
@@ -558,13 +564,32 @@ function SiteAdminMessagesContent() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 mt-1 truncate">
-                      <span>
-                        Seller: <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
-                      </span>
-                      <span>•</span>
-                      <span>
-                        Buyer: <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
-                      </span>
+                      {isTradeChat(activeConv) ? (
+                        <>
+                          <span>
+                            Seller: <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Buyer: <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            Member:{' '}
+                            <strong className="text-slate-800">
+                              {activeConv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                                ? `${activeConv.buyerCompanyName} (${activeConv.buyerContactName || activeConv.buyerEmail})`
+                                : `${activeConv.sellerCompanyName} (${activeConv.sellerContactName || activeConv.sellerContactEmail})`}
+                            </strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Channel: <strong className="text-blue-600 font-bold">Executive Desk Support</strong>
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

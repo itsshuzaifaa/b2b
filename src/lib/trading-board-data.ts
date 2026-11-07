@@ -17,6 +17,7 @@ export interface TradingBoardItem {
   contactName: string;
   contactPhone?: string;
   moq: number;
+  pricingType?: 'fixed' | 'neg' | 'poa';
 }
 
 export const SAMPLE_SELL_LISTINGS: TradingBoardItem[] = [];

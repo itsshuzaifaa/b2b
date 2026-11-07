@@ -63,6 +63,7 @@ export function LiveTradingBoard() {
                 : l.condition
               : 'New',
             price: Number(l.unitPrice || l.price || 99),
+            pricingType: l.pricingType || (l.description?.includes('POA') ? 'poa' : l.description?.includes('NEG') ? 'neg' : 'fixed'),
             currency: l.currency || '€',
             location: l.location || 'DE',
             match: '98%',
@@ -91,6 +92,7 @@ export function LiveTradingBoard() {
             qty: Number(w.qty || 50),
             condition: w.condition || 'New',
             price: Number(w.price || 0),
+            pricingType: w.pricingType || (w.notes?.includes('POA') ? 'poa' : w.notes?.includes('NEG') ? 'neg' : 'fixed'),
             currency: w.currency || '€',
             location: w.location || 'EU',
             match: w.match || '96%',
@@ -121,6 +123,7 @@ export function LiveTradingBoard() {
             qty: req.target_quantity || 50,
             condition: (req.notes?.match(/Condition:\s*([^.|]+)/i)?.[1]?.trim()) || 'New',
             price: req.target_price || 0,
+            pricingType: (req as any).pricing_type || (req.notes?.includes('POA') ? 'poa' : req.notes?.includes('NEG') ? 'neg' : 'fixed'),
             currency: '€',
             location: 'EU',
             match: '96%',

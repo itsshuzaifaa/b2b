@@ -252,20 +252,60 @@ export async function syncWithSupabase(
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.conversations)) {
-        // The server is authoritative for confirmed conversations.
-        // We only retain in-flight local conversations created in the last 60 seconds
         const local = getStoredConversations();
+        const localMap = new Map<string, InquiryConversation>();
+        for (const c of local) {
+          localMap.set(c.id, c);
+        }
+
         const serverIds = new Set(data.conversations.map((c: InquiryConversation) => c.id));
         const now = Date.now();
-        const inFlight = local.filter((c) => {
+
+        // 1. Merge server conversations with local in-flight messages so local messages NEVER vanish
+        const updatedServerConvs = data.conversations.map((serverConv: InquiryConversation) => {
+          const localConv = localMap.get(serverConv.id);
+          if (!localConv || !localConv.messages || localConv.messages.length === 0) {
+            return serverConv;
+          }
+
+          const serverMsgIds = new Set((serverConv.messages || []).map((m) => m.id));
+          const serverMsgSignatures = new Set(
+            (serverConv.messages || []).map((m) => `${m.senderRole}:${m.text?.trim()}:${m.timestamp?.slice(0, 16)}`)
+          );
+
+          const unconfirmedLocal = localConv.messages.filter((m) => {
+            if (serverMsgIds.has(m.id)) return false;
+            const sig = `${m.senderRole}:${m.text?.trim()}:${m.timestamp?.slice(0, 16)}`;
+            if (serverMsgSignatures.has(sig)) return false;
+            // Retain recent local messages (last 2 minutes)
+            const ageMs = now - new Date(m.timestamp).getTime();
+            return ageMs < 120000;
+          });
+
+          if (unconfirmedLocal.length > 0) {
+            const mergedMsgs = [...(serverConv.messages || []), ...unconfirmedLocal];
+            const last = mergedMsgs[mergedMsgs.length - 1];
+            return {
+              ...serverConv,
+              messages: mergedMsgs,
+              lastMessageText: last?.text || serverConv.lastMessageText,
+              lastMessageTime: 'Just now',
+            };
+          }
+
+          return serverConv;
+        });
+
+        // 2. Retain pure local in-flight conversations not yet returned by server
+        const inFlightConvs = local.filter((c) => {
           if (serverIds.has(c.id)) return false;
           const lastMsg = c.messages?.[c.messages.length - 1];
           if (!lastMsg?.timestamp) return false;
           const ageMs = now - new Date(lastMsg.timestamp).getTime();
-          return ageMs < 60000;
+          return ageMs < 120000;
         });
 
-        const merged = [...data.conversations, ...inFlight];
+        const merged = [...updatedServerConvs, ...inFlightConvs];
         saveStoredConversations(merged);
         return merged;
       }
@@ -397,7 +437,7 @@ export function sendInquiryMessage(
   // Background persist to Supabase
   void (async () => {
     try {
-      await fetch('/api/inquiries', {
+      const res = await fetch('/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -406,10 +446,69 @@ export function sendInquiryMessage(
           message: newMsg,
         }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.conversation) {
+          const currentAll = getStoredConversations();
+          const idx = currentAll.findIndex((c) => c.id === conversationId || c.id === data.conversation.id);
+          if (idx >= 0) {
+            currentAll[idx] = {
+              ...currentAll[idx],
+              ...data.conversation,
+              id: data.conversation.id,
+            };
+            saveStoredConversations(currentAll, undefined, currentAll[idx], true);
+          }
+        }
+      }
     } catch {
       // offline/silent fallback
     }
   })();
+
+  return conv;
+}
+
+export async function sendInquiryMessageAsync(
+  conversationId: string,
+  senderRole: 'buyer' | 'seller' | 'admin',
+  senderName: string,
+  senderId: string,
+  text: string
+): Promise<InquiryConversation | null> {
+  const conv = sendInquiryMessage(conversationId, senderRole, senderName, senderId, text);
+  if (!conv) return null;
+
+  try {
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    const res = await fetch('/api/inquiries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'send_message',
+        conversationId,
+        message: lastMsg,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.conversation) {
+        const currentAll = getStoredConversations();
+        const idx = currentAll.findIndex((c) => c.id === conversationId || c.id === data.conversation.id);
+        if (idx >= 0) {
+          currentAll[idx] = {
+            ...currentAll[idx],
+            ...data.conversation,
+            id: data.conversation.id,
+          };
+          saveStoredConversations(currentAll, undefined, currentAll[idx], true);
+          return currentAll[idx];
+        }
+      }
+    }
+  } catch {
+    // offline/silent fallback
+  }
 
   return conv;
 }
@@ -945,22 +1044,30 @@ export function markConversationAsRead(conversationId: string, role: 'buyer' | '
   const conv = all.find((c) => c.id === conversationId);
   if (!conv) return;
 
+  const isIncomingMessage = (m: ChatMessage) => {
+    if (role === 'admin') return m.senderRole !== 'admin';
+    if (role === 'seller') return m.senderRole !== 'seller';
+    return m.senderRole !== 'buyer';
+  };
+
+  const hasUnreadIncoming = Boolean(conv.messages?.some((m) => !m.isRead && isIncomingMessage(m)));
+
   let changed = false;
-  if (role === 'seller' && (conv.unreadBySeller || conv.messages.some((m) => !m.isRead))) {
+  if (role === 'seller' && (conv.unreadBySeller || hasUnreadIncoming)) {
     conv.unreadBySeller = false;
     changed = true;
-  } else if (role === 'buyer' && (conv.unreadByBuyer || conv.messages.some((m) => !m.isRead))) {
+  } else if (role === 'buyer' && (conv.unreadByBuyer || hasUnreadIncoming)) {
     conv.unreadByBuyer = false;
     changed = true;
-  } else if (role === 'admin' && (conv.unreadByAdmin || conv.messages.some((m) => !m.isRead))) {
+  } else if (role === 'admin' && (conv.unreadByAdmin || hasUnreadIncoming)) {
     conv.unreadByAdmin = false;
     changed = true;
   }
 
-  // Also clear unread flags on all individual messages
+  // Only clear unread flags on incoming messages
   if (conv.messages && conv.messages.length > 0) {
     for (const m of conv.messages) {
-      if (!m.isRead) {
+      if (!m.isRead && isIncomingMessage(m)) {
         m.isRead = true;
         changed = true;
       }
@@ -981,18 +1088,20 @@ export function markConversationAsRead(conversationId: string, role: 'buyer' | '
       // ignore
     }
 
-    // Persist to server backend
-    try {
-      fetch('/api/inquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'mark_read',
-          conversationId,
-          role,
-        }),
-      }).catch(() => {});
-    } catch {}
+    // Persist to server backend ONLY if there were incoming messages to mark as read
+    if (hasUnreadIncoming) {
+      try {
+        fetch('/api/inquiries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'mark_read',
+            conversationId,
+            role,
+          }),
+        }).catch(() => {});
+      } catch {}
+    }
   }
 }
 

@@ -701,7 +701,11 @@ function MatchingStockContent() {
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-[#5B6B82]">
                       <div>
                         Your Unit Price:{' '}
-                        <strong className="text-[#0B1F3A]">€{(match.wtsUnitPrice || 0).toFixed(2)}</strong>
+                        <strong className="text-[#0B1F3A]">
+                          {match.wtsUnitPrice && match.wtsUnitPrice > 0
+                            ? `€${match.wtsUnitPrice.toFixed(2)}`
+                            : 'NEG / POA'}
+                        </strong>
                       </div>
                       <div>&bull;</div>
                       <div>
@@ -730,10 +734,18 @@ function MatchingStockContent() {
 
                     <div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-[22px] font-black text-[#059669]">
-                          €{match.wtbTargetPrice.toFixed(2)}
-                        </span>
-                        <span className="text-[12px] text-[#5B6B82] font-semibold">target price</span>
+                        {match.wtbTargetPrice > 0 ? (
+                          <>
+                            <span className="text-[22px] font-black text-[#059669]">
+                              €{match.wtbTargetPrice.toFixed(2)}
+                            </span>
+                            <span className="text-[12px] text-[#5B6B82] font-semibold">target price</span>
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/30">
+                            NEG (Negotiable Target)
+                          </span>
+                        )}
                       </div>
                       <div className="text-[12.5px] text-[#5B6B82] mt-0.5">
                         Quantity Needed: <strong className="text-[#0B1F3A] font-bold">{match.wtbTargetQuantity.toLocaleString()} units</strong>
@@ -877,7 +889,13 @@ function MatchingStockContent() {
                       {quotingMatch.wtbProductName || quotingMatch.wtsTitle}
                     </div>
                     <div className="text-[#5B6B82]">
-                      Target Buyer Price: <strong className="text-emerald-700">€{quotingMatch.wtbTargetPrice.toFixed(2)}</strong> &bull; Quantity: <strong>{quotingMatch.wtbTargetQuantity} u</strong>
+                      Target Buyer Price:{' '}
+                      <strong className="text-emerald-700">
+                        {quotingMatch.wtbTargetPrice > 0
+                          ? `€${quotingMatch.wtbTargetPrice.toFixed(2)}`
+                          : 'Open to Negotiation (NEG)'}
+                      </strong>{' '}
+                      &bull; Quantity: <strong>{quotingMatch.wtbTargetQuantity} u</strong>
                     </div>
                   </div>
 

@@ -17,6 +17,7 @@ export interface WtbInput {
   categoryId?: string;
   targetQuantity: number;
   targetPrice: number;
+  pricingType?: 'fixed' | 'neg' | 'poa';
   barcodeOrSku?: string;
   deliveryDeadline?: string;
   notes?: string;
@@ -49,7 +50,8 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
     if (!data.targetQuantity || data.targetQuantity <= 0) {
       return { success: false, error: 'Target quantity must be greater than zero.' };
     }
-    if (data.targetPrice === undefined || data.targetPrice <= 0) {
+    const isSpecialPricing = data.pricingType === 'neg' || data.pricingType === 'poa';
+    if (!isSpecialPricing && (data.targetPrice === undefined || data.targetPrice <= 0)) {
       return { success: false, error: 'Target price must be greater than zero.' };
     }
 
@@ -100,6 +102,13 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
     const matchedCategory = dbCategories?.find((c) => c.id === resolvedCategoryId);
     const resolvedCategorySlug = matchedCategory?.slug || data.categorySlug || 'general';
 
+    let formattedNotes = data.notes?.trim() || '';
+    if (data.pricingType === 'neg' && !formattedNotes.includes('Pricing: NEG')) {
+      formattedNotes = formattedNotes ? `${formattedNotes} | Pricing: NEG` : 'Pricing: NEG';
+    } else if (data.pricingType === 'poa' && !formattedNotes.includes('Pricing: POA')) {
+      formattedNotes = formattedNotes ? `${formattedNotes} | Pricing: POA` : 'Pricing: POA';
+    }
+
     // 4. Insert into wtb_requests table
     const { data: insertedWtb, error: insertError } = await admin
       .from('wtb_requests')
@@ -113,9 +122,9 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
         product_name: data.productName.trim(),
         barcode_or_sku: data.barcodeOrSku?.trim() || null,
         target_quantity: data.targetQuantity,
-        target_price: data.targetPrice,
+        target_price: (data.pricingType === 'neg' || data.pricingType === 'poa') ? 0 : data.targetPrice,
         delivery_deadline: data.deliveryDeadline || null,
-        notes: data.notes?.trim() || null,
+        notes: formattedNotes || null,
         status: 'open',
       } as any)
       .select('id')
@@ -186,23 +195,31 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
       return [];
     }
 
-    return data.map((row: any) => ({
-      id: row.id,
-      buyer_company_id: row.buyer_user_id || null,
-      buyer_company: row.buyer_company || null,
-      buyer_name: row.buyer_name,
-      buyer_email: row.buyer_email,
-      buyer_phone: row.buyer_phone,
-      product_name: row.product_name,
-      category_id: row.category_id,
-      category_slug: row.category?.slug || 'electronics',
-      target_quantity: Number(row.target_quantity),
-      target_price: Number(row.target_price),
-      barcode_or_sku: row.barcode_or_sku,
-      notes: row.notes,
-      status: (row.status || 'open') as any,
-      created_at: row.created_at,
-    }));
+    return data.map((row: any) => {
+      const noteStr = row.notes || '';
+      const detectedPricingType: 'fixed' | 'neg' | 'poa' =
+        noteStr.includes('Pricing: NEG') || noteStr.includes('NEG') ? 'neg' :
+        noteStr.includes('Pricing: POA') || noteStr.includes('POA') ? 'poa' : 'fixed';
+
+      return {
+        id: row.id,
+        buyer_company_id: row.buyer_user_id || null,
+        buyer_company: row.buyer_company || null,
+        buyer_name: row.buyer_name,
+        buyer_email: row.buyer_email,
+        buyer_phone: row.buyer_phone,
+        product_name: row.product_name,
+        category_id: row.category_id,
+        category_slug: row.category?.slug || 'electronics',
+        target_quantity: Number(row.target_quantity),
+        target_price: Number(row.target_price),
+        pricing_type: detectedPricingType,
+        barcode_or_sku: row.barcode_or_sku,
+        notes: row.notes,
+        status: (row.status || 'open') as any,
+        created_at: row.created_at,
+      };
+    });
   } catch (err) {
     console.error('[GET PUBLIC WTB EXCEPTION]', err);
     return [];
@@ -227,23 +244,31 @@ export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbReques
       return [];
     }
 
-    return data.map((row: any) => ({
-      id: row.id,
-      buyer_company_id: row.buyer_user_id || null,
-      buyer_company: row.buyer_company || null,
-      buyer_name: row.buyer_name,
-      buyer_email: row.buyer_email,
-      buyer_phone: row.buyer_phone,
-      product_name: row.product_name,
-      category_id: row.category_id,
-      category_slug: row.category?.slug || 'electronics',
-      target_quantity: Number(row.target_quantity),
-      target_price: Number(row.target_price),
-      barcode_or_sku: row.barcode_or_sku,
-      notes: row.notes,
-      status: (row.status || 'open') as any,
-      created_at: row.created_at,
-    }));
+    return data.map((row: any) => {
+      const noteStr = row.notes || '';
+      const detectedPricingType: 'fixed' | 'neg' | 'poa' =
+        noteStr.includes('Pricing: NEG') || noteStr.includes('NEG') ? 'neg' :
+        noteStr.includes('Pricing: POA') || noteStr.includes('POA') ? 'poa' : 'fixed';
+
+      return {
+        id: row.id,
+        buyer_company_id: row.buyer_user_id || null,
+        buyer_company: row.buyer_company || null,
+        buyer_name: row.buyer_name,
+        buyer_email: row.buyer_email,
+        buyer_phone: row.buyer_phone,
+        product_name: row.product_name,
+        category_id: row.category_id,
+        category_slug: row.category?.slug || 'electronics',
+        target_quantity: Number(row.target_quantity),
+        target_price: Number(row.target_price),
+        pricing_type: detectedPricingType,
+        barcode_or_sku: row.barcode_or_sku,
+        notes: row.notes,
+        status: (row.status || 'open') as any,
+        created_at: row.created_at,
+      };
+    });
   } catch (err) {
     console.error('[GET BUYER WTB EXCEPTION]', err);
     return [];

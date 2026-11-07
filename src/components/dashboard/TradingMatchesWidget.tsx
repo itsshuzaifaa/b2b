@@ -366,12 +366,16 @@ export function TradingMatchesWidget({
                           {bundle.isUserBuyer ? 'Your WTB Target' : 'Buyer Target Price'}
                         </div>
                         <div className="text-[14px] font-extrabold text-[#0B1F3A] mt-0.5">
-                          {bundle.lowestTargetPrice === bundle.highestTargetPrice ? (
+                          {bundle.highestTargetPrice <= 0 ? (
+                            <span className="text-amber-700 text-[13px]">Open to Offers (NEG)</span>
+                          ) : bundle.lowestTargetPrice === bundle.highestTargetPrice ? (
                             `€${bundle.highestTargetPrice.toFixed(2)}`
                           ) : (
                             `€${bundle.lowestTargetPrice.toFixed(2)} - €${bundle.highestTargetPrice.toFixed(2)}`
                           )}
-                          <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
+                          {bundle.highestTargetPrice > 0 && (
+                            <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
+                          )}
                         </div>
                         <div className="text-[11px] text-[#64748B] mt-0.5">
                           Demand: <strong className="text-[#0B1F3A]">{bundle.totalTargetQuantity.toLocaleString()}</strong> pcs ({bundle.matches.length} {bundle.matches.length === 1 ? 'buyer' : 'buyers'})
@@ -383,8 +387,14 @@ export function TradingMatchesWidget({
                           {bundle.isUserBuyer ? 'Supplier List Price' : 'Your List Price'}
                         </div>
                         <div className="text-[14px] font-extrabold text-[#059669] mt-0.5">
-                          €{bundle.listPrice.toFixed(2)}
-                          <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
+                          {bundle.listPrice > 0 ? (
+                            <>
+                              €{bundle.listPrice.toFixed(2)}
+                              <span className="text-[11px] font-normal text-[#8A9BB0]"> /unit</span>
+                            </>
+                          ) : (
+                            <span className="text-purple-700 text-[13px]">NEG / POA</span>
+                          )}
                         </div>
                         <div className="text-[11px] text-[#64748B] mt-0.5">
                           Available: <strong className="text-[#0B1F3A]">{bundle.availableStock.toLocaleString()}</strong> pcs

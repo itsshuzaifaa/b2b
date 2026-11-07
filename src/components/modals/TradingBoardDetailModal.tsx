@@ -14,6 +14,7 @@ import { submitQuotation } from '@/lib/actions/quotations';
 import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipModal';
 import type { TradingBoardItem } from '@/lib/trading-board-data';
 import type { Product, WtbRequest, MembershipTier } from '@/types/database';
+import { PriceBadge } from '@/lib/utils/pricing';
 import {
   X,
   Lock,
@@ -329,9 +330,16 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
                 <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
                   {isBuy ? 'Target Price' : 'Wholesale Price'}
                 </div>
-                <div className="text-[24px] font-black text-[#0B1F3A] leading-tight">
-                  {item.currency}{item.price.toFixed(2)}
-                  <span className="text-[13px] font-medium text-[#64748B]"> / unit</span>
+                <div className="text-[24px] font-black text-[#0B1F3A] leading-tight mt-0.5">
+                  <PriceBadge
+                    price={item.price}
+                    pricingType={item.pricingType}
+                    currency={item.currency}
+                    textSize="text-[24px]"
+                  />
+                  {item.pricingType !== 'neg' && item.pricingType !== 'poa' && (
+                    <span className="text-[13px] font-medium text-[#64748B]"> / unit</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -528,7 +536,7 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
                         required
                         value={unitPrice}
                         onChange={(e) => setUnitPrice(e.target.value)}
-                        placeholder={String(item.price)}
+                        placeholder={item.price > 0 ? String(item.price) : '450.00'}
                         className="w-full pl-8 pr-4 py-2.5 text-[13.5px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
                       />
                     </div>

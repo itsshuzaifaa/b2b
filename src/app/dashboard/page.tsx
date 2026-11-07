@@ -11,6 +11,7 @@ import { BroadcastWtbModal } from '@/components/modals/BroadcastWtbModal';
 import { BroadcastWtsModal } from '@/components/modals/BroadcastWtsModal';
 import { TradingMatchesWidget } from '@/components/dashboard/TradingMatchesWidget';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { PriceBadge } from '@/lib/utils/pricing';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
 import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -583,7 +584,8 @@ export default function OverviewPage() {
                           {req.product_name}
                         </h4>
                         <div className="text-[12px] text-[#5B6B82] mt-0.5">
-                          Target: <strong className="text-[#0B1F3A]">{req.target_quantity} units</strong> · €{req.target_price.toFixed(2)}/unit
+                          Target: <strong className="text-[#0B1F3A]">{req.target_quantity} units</strong> ·{' '}
+                          <PriceBadge price={req.target_price} pricingType={req.pricing_type} />
                         </div>
                       </div>
                       <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border border-emerald-200 shrink-0">

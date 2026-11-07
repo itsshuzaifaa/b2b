@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import {
   getStoredConversations,
   sendInquiryMessage,
+  sendInquiryMessageAsync,
   broadcastToTargetAudience,
   sendAdminDirectMessage,
   fetchAllSellersForAdmin,
@@ -168,7 +169,7 @@ function AdminMessagesContent() {
     setLoadingSellers(false);
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeConv) return;
 
@@ -176,8 +177,9 @@ function AdminMessagesContent() {
     const senderName = 'Jeff Vetting Director (B2B LINK Desk)';
     const senderId = 'facbb93f-080f-480f-b54b-8ef26664da86';
 
-    sendInquiryMessage(activeConv.id, senderRole, senderName, senderId, replyText.trim());
+    const textToSend = replyText.trim();
     setReplyText('');
+    await sendInquiryMessageAsync(activeConv.id, senderRole, senderName, senderId, textToSend);
     loadData();
   };
 
@@ -434,7 +436,9 @@ function AdminMessagesContent() {
                             : isBuyerBroadcast
                             ? '📢 Buyers Broadcast'
                             : isAdminDesk
-                            ? conv.sellerCompanyName
+                            ? (conv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                                ? `${conv.buyerCompanyName} (${conv.buyerContactName || conv.buyerEmail})`
+                                : `${conv.sellerCompanyName} (${conv.sellerContactName || conv.sellerContactEmail})`)
                             : conv.buyerCompanyName}
                         </span>
                         <span className="text-[10px] text-slate-400 shrink-0 font-medium">
@@ -510,15 +514,34 @@ function AdminMessagesContent() {
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-                    <span>
-                      Seller:{' '}
-                      <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
-                    </span>
-                    <span>•</span>
-                    <span>
-                      Counterparty:{' '}
-                      <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
-                    </span>
+                    {activeConv.type === 'seller_admin' ? (
+                      <>
+                        <span>
+                          Member:{' '}
+                          <strong className="text-slate-800">
+                            {activeConv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                              ? `${activeConv.buyerCompanyName} (${activeConv.buyerContactName || activeConv.buyerEmail})`
+                              : `${activeConv.sellerCompanyName} (${activeConv.sellerContactName || activeConv.sellerContactEmail})`}
+                          </strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Channel: <strong className="text-blue-600 font-bold">Executive Desk Support</strong>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          Seller:{' '}
+                          <strong className="text-slate-800">{activeConv.sellerCompanyName}</strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Counterparty:{' '}
+                          <strong className="text-slate-800">{activeConv.buyerCompanyName}</strong>
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

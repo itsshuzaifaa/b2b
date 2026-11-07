@@ -14,6 +14,7 @@ import {
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { PriceBadge } from '@/lib/utils/pricing';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 
 function MarketplaceContent() {
@@ -67,6 +68,7 @@ function MarketplaceContent() {
                 : l.condition
               : 'New',
             price: Number(l.unitPrice || l.price || 99),
+            pricingType: l.pricingType || (l.description?.includes('POA') ? 'poa' : l.description?.includes('NEG') ? 'neg' : 'fixed'),
             currency: '€',
             location: l.location || 'DE',
             match: '98%',
@@ -83,6 +85,7 @@ function MarketplaceContent() {
       const userWtbs: TradingBoardItem[] = rawUserWtbs
         ? JSON.parse(rawUserWtbs).map((w: any) => ({
             ...w,
+            pricingType: w.pricingType || (w.notes?.includes('POA') ? 'poa' : w.notes?.includes('NEG') ? 'neg' : 'fixed'),
             ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
           }))
         : [];
@@ -466,7 +469,7 @@ function MarketplaceContent() {
 
                         {/* 9. PRICE */}
                         <td className="py-3.5 px-3 text-[14px] font-black text-[#0B1F3A] whitespace-nowrap">
-                          {item.currency}{item.price.toFixed(2)}
+                          <PriceBadge price={item.price} pricingType={item.pricingType} currency={item.currency} />
                         </td>
 
                         {/* 10. LOCATION */}

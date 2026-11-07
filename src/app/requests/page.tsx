@@ -15,6 +15,7 @@ import {
 } from '@/lib/trading-board-data';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { PriceBadge } from '@/lib/utils/pricing';
 
 function RequestsContent() {
   const router = useRouter();
@@ -42,6 +43,7 @@ function RequestsContent() {
       const userWtbs: TradingBoardItem[] = rawUserWtbs
         ? JSON.parse(rawUserWtbs).map((w: any) => ({
             ...w,
+            pricingType: w.pricingType || (w.notes?.includes('NEG') ? 'neg' : w.notes?.includes('POA') ? 'poa' : 'fixed'),
             ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
           }))
         : [];
@@ -64,6 +66,7 @@ function RequestsContent() {
             qty: req.target_quantity || 50,
             condition: (req.notes?.match(/Condition:\s*([^|]+)/i)?.[1]?.trim()) || 'New',
             price: req.target_price || 0,
+            pricingType: (req as any).pricing_type || (req.notes?.includes('NEG') ? 'neg' : req.notes?.includes('POA') ? 'poa' : 'fixed'),
             currency: '€',
             location: 'EU',
             match: '96%',
@@ -436,7 +439,7 @@ function RequestsContent() {
 
                         {/* 9. TARGET PRICE */}
                         <td className="py-3.5 px-3 text-[14px] font-black text-[#0B1F3A] whitespace-nowrap">
-                          {item.currency}{item.price.toFixed(2)}
+                          <PriceBadge price={item.price} pricingType={item.pricingType} currency={item.currency} />
                         </td>
 
                         {/* 10. LOCATION */}

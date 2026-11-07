@@ -9,6 +9,11 @@ import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS, WholesaleCondition } from '@/lib/constants/conditions';
 import { TRADING_HUB_LOCATIONS } from '@/lib/constants/locations';
 import {
+  PricingOptionSelector,
+  PriceBadge,
+  type PricingType,
+} from '@/lib/utils/pricing';
+import {
   Search,
   Plus,
   Edit2,
@@ -52,6 +57,7 @@ export interface ListingItem {
   ean: string;
   category: string;
   unitPrice: number;
+  pricingType?: 'fixed' | 'neg' | 'poa';
   available: number;
   moq: number;
   location?: string;
@@ -150,6 +156,7 @@ export default function ListingsPage() {
   const [formEan, setFormEan] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formLocation, setFormLocation] = useState('DE');
+  const [formPricingType, setFormPricingType] = useState<PricingType>('fixed');
   const [formPrice, setFormPrice] = useState('920.00');
   const [formAvailable, setFormAvailable] = useState('50');
   const [formMoq, setFormMoq] = useState('10');
@@ -419,6 +426,7 @@ export default function ListingsPage() {
     setFormEan('');
     setFormDescription('');
     setFormLocation('DE');
+    setFormPricingType('fixed');
     setFormPrice('920.00');
     setFormAvailable('50');
     setFormMoq('10');
@@ -448,7 +456,9 @@ export default function ListingsPage() {
     setFormEan(item.ean);
     setFormDescription(item.description);
     setFormLocation(item.location || 'DE');
-    setFormPrice(String(item.unitPrice));
+    const initialPricingType: PricingType = item.pricingType || (item.unitPrice > 0 ? 'fixed' : item.description?.includes('POA') ? 'poa' : item.description?.includes('NEG') ? 'neg' : 'fixed');
+    setFormPricingType(initialPricingType);
+    setFormPrice(item.unitPrice ? String(item.unitPrice) : '0');
     setFormAvailable(String(item.available));
     setFormMoq(String(item.moq));
     setFormIsHot(item.status === 'Hot');
@@ -479,8 +489,9 @@ export default function ListingsPage() {
     const priceNum = parseFloat(formPrice);
     const availNum = parseInt(formAvailable, 10);
     const moqNum = parseInt(formMoq, 10);
+    const isSpecialPricing = formPricingType === 'neg' || formPricingType === 'poa';
 
-    if (isNaN(priceNum) || priceNum <= 0) {
+    if (!isSpecialPricing && (isNaN(priceNum) || priceNum <= 0)) {
       setFormError('Please enter a valid unit price.');
       return;
     }
@@ -493,9 +504,16 @@ export default function ListingsPage() {
       return;
     }
 
+    const effectivePrice = isSpecialPricing ? 0 : priceNum;
     const finalSku = formEan.trim() || 'n/a';
     const finalItemCode = formItemCode.trim() || (finalSku !== 'n/a' ? finalSku.slice(0, 8) : `MDL-${Date.now().toString().slice(-5)}`);
     const finalCategory = formCategory === 'Other' && formCustomCategory.trim() ? formCustomCategory.trim() : formCategory;
+    const pricingTag = isSpecialPricing ? ` | Pricing: ${formPricingType.toUpperCase()}` : '';
+    const descWithPricing = formDescription.trim() || formTitle.trim();
+    const finalDescription = isSpecialPricing && !descWithPricing.includes(pricingTag)
+      ? `${descWithPricing}${pricingTag}`
+      : descWithPricing;
+
     const now = new Date();
     const expires = new Date(now.getTime() + LISTING_ACTIVE_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -510,8 +528,9 @@ export default function ListingsPage() {
             condition: formCondition,
             category: finalCategory,
             ean: finalSku,
-            description: formDescription.trim() || formTitle.trim(),
-            unitPrice: priceNum,
+            description: finalDescription,
+            unitPrice: effectivePrice,
+            pricingType: formPricingType,
             available: availNum,
             moq: moqNum,
             location: formLocation.toUpperCase(),
@@ -530,8 +549,9 @@ export default function ListingsPage() {
         condition: formCondition,
         category: finalCategory,
         ean: finalSku,
-        description: formDescription.trim() || formTitle.trim(),
-        unitPrice: priceNum,
+        description: finalDescription,
+        unitPrice: effectivePrice,
+        pricingType: formPricingType,
         available: availNum,
         moq: moqNum,
         location: formLocation.toUpperCase(),
@@ -557,10 +577,10 @@ export default function ListingsPage() {
             title: formTitle.trim(),
             brand: formBrand,
             condition: formCondition,
-            description: formDescription.trim() || formTitle.trim(),
+            description: finalDescription,
             barcodeOrSku: finalSku !== 'n/a' ? finalSku : undefined,
             categorySlug: finalCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
-            unitPrice: priceNum,
+            unitPrice: effectivePrice,
             quantityAvailable: availNum,
             moq: moqNum,
             isHot: formIsHot,
@@ -971,7 +991,9 @@ export default function ListingsPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-5 whitespace-nowrap">
-                          <div className="font-bold text-[#0B1F3A]">€{item.unitPrice.toFixed(2)}</div>
+                          <div className="font-bold text-[#0B1F3A]">
+                            <PriceBadge price={item.unitPrice} pricingType={item.pricingType} />
+                          </div>
                           <div className="text-[11px] text-[#8A9BB0]">
                             {item.available.toLocaleString()} u &bull; {item.moq} MOQ
                           </div>
@@ -1140,7 +1162,7 @@ export default function ListingsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-5 font-bold text-[#0B1F3A] whitespace-nowrap">
-                        €{item.unitPrice.toFixed(2)}
+                        <PriceBadge price={item.unitPrice} pricingType={item.pricingType} />
                       </td>
                       <td className="py-3.5 px-5 font-medium text-[#5B6B82] whitespace-nowrap">
                         {item.available.toLocaleString()} u
@@ -1481,20 +1503,39 @@ export default function ListingsPage() {
             {/* STEP 2: PRICING & COMMERCIAL TERMS */}
             {currentStep === 2 && (
               <form onSubmit={handleSaveListing} className="py-5 space-y-4">
+                {/* 3 OPTIONS FOR PRICING: Fixed Price, NEG, POA */}
+                <div className="space-y-2 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80">
+                  <PricingOptionSelector
+                    value={formPricingType}
+                    onChange={setFormPricingType}
+                    tradeMode="WTS"
+                  />
+
+                  {formPricingType === 'fixed' && (
+                    <div className="pt-1">
+                      <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
+                        Fixed Unit Price (€) *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
+                          €
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          required={formPricingType === 'fixed'}
+                          value={formPrice}
+                          onChange={(e) => setFormPrice(e.target.value)}
+                          placeholder="e.g. 450.00"
+                          className="w-full pl-8 pr-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#0A6CFF] font-bold bg-white text-[#0B1F3A]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Unit Price (€) *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formPrice}
-                      onChange={(e) => setFormPrice(e.target.value)}
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
-                    />
-                  </div>
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
                       Available Stock (Units) *
@@ -1507,9 +1548,6 @@ export default function ListingsPage() {
                       className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
                       Minimum Order (MOQ) *
@@ -1522,6 +1560,7 @@ export default function ListingsPage() {
                       className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
                     />
                   </div>
+                </div>
                   <div>
                     <div className="flex items-center gap-1.5 mb-1">
                       <label className="text-[12px] font-bold uppercase text-[#8A9BB0]">
@@ -1575,7 +1614,6 @@ export default function ListingsPage() {
                       ))}
                     </select>
                   </div>
-                </div>
 
                 {/* Hot Lot Promotion Toggle */}
                 <div className="p-4 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-between">

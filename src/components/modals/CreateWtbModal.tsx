@@ -22,6 +22,11 @@ import { POPULAR_BRANDS } from '@/app/dashboard/listings/page';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS } from '@/lib/constants/conditions';
 import { TRADING_HUB_LOCATIONS } from '@/lib/constants/locations';
+import {
+  PricingOptionSelector,
+  PriceBadge,
+  type PricingType,
+} from '@/lib/utils/pricing';
 
 interface CreateWtbModalProps {
   isOpen: boolean;
@@ -40,6 +45,7 @@ interface FoundCounterpartyMatch {
   location: string;
   condition?: string;
   confidence: number;
+  pricingType?: 'fixed' | 'neg' | 'poa';
 }
 
 export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB' }: CreateWtbModalProps) {
@@ -57,6 +63,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
   const [ean, setEan] = useState('');
   const [condition, setCondition] = useState('New');
   const [targetQuantity, setTargetQuantity] = useState('');
+  const [pricingType, setPricingType] = useState<PricingType>('fixed');
   const [targetPrice, setTargetPrice] = useState('');
   const [location, setLocation] = useState('DE');
   const [notes, setNotes] = useState('');
@@ -74,6 +81,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
     setIsSuccess(false);
     setIsScanningMatches(false);
     setFoundMatches([]);
+    setPricingType('fixed');
+    setTargetPrice('');
   }, [initialMode, isOpen]);
 
   useEffect(() => {
@@ -107,15 +116,18 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
 
     const qtyNum = parseInt(targetQuantity, 10);
     const priceNum = parseFloat(targetPrice);
+    const isSpecialPricing = pricingType === 'neg' || pricingType === 'poa';
 
     if (!qtyNum || qtyNum <= 0) {
       setErrorMsg('Target quantity must be greater than 0.');
       return;
     }
-    if (!priceNum || priceNum <= 0) {
-      setErrorMsg('Target unit price must be greater than 0.');
+    if (!isSpecialPricing && (!priceNum || priceNum <= 0)) {
+      setErrorMsg(tradeMode === 'WTB' ? 'Target unit price must be greater than 0.' : 'Unit price must be greater than 0.');
       return;
     }
+
+    const effectivePrice = isSpecialPricing ? 0 : priceNum;
 
     setIsSubmitting(true);
     try {
@@ -126,6 +138,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         try {
           const localKey = 'b2b_seller_listings_v3';
           const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
+          const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
           const newListingItem = {
             id: `lst-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
@@ -134,8 +147,9 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
             category: finalCategory,
             ean: ean.trim() || 'n/a',
             condition,
-            description: notes ? `${notes} | Stock Location: ${location}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.`,
-            unitPrice: priceNum,
+            description: notes ? `${notes} | Stock Location: ${location}${pricingTag}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.${pricingTag}`,
+            unitPrice: effectivePrice,
+            pricingType,
             available: qtyNum,
             moq: Math.min(10, qtyNum),
             location,
@@ -152,6 +166,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         // Persist to Supabase & trigger automatic matching with open WTB requests
         if (company?.id) {
           try {
+            const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
             await fetch('/api/products', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -160,10 +175,10 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                 title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
                 brand,
                 condition,
-                description: notes ? `${notes} | Stock Location: ${location}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.`,
+                description: notes ? `${notes} | Stock Location: ${location}${pricingTag}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.${pricingTag}`,
                 barcodeOrSku: ean.trim() && ean.trim() !== 'n/a' ? ean.trim() : undefined,
                 categorySlug: finalCategory.toLowerCase().replace(/\s+/g, '-'),
-                unitPrice: priceNum,
+                unitPrice: effectivePrice,
                 quantityAvailable: qtyNum,
                 moq: Math.min(10, qtyNum),
                 isHot: true,
@@ -178,6 +193,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         // Submit WTB request
         const buyerName = company?.contact_name || company?.name || 'Verified Buyer';
         const buyerEmail = company?.email || 'buyer@b2blink.eu';
+        const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
 
         await createWtbRequest({
           buyerName,
@@ -188,9 +204,10 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           productName: `${brand ? `${brand} ` : ''}${productName.trim()}`,
           categorySlug: finalCategory.toLowerCase().replace(/\s+/g, '-'),
           targetQuantity: qtyNum,
-          targetPrice: priceNum,
+          targetPrice: effectivePrice,
+          pricingType,
           barcodeOrSku: ean.trim() || undefined,
-          notes: `${notes ? `${notes} | ` : ''}Condition: ${condition} | Delivery: ${location} | Model: ${itemCode || 'Standard'}`,
+          notes: `${notes ? `${notes} | ` : ''}Condition: ${condition} | Delivery: ${location} | Model: ${itemCode || 'Standard'}${pricingTag}`,
         });
 
         // Also save to local storage for immediate visibility in Trading Board
@@ -208,7 +225,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
             ean: ean.trim() || 'n/a',
             qty: qtyNum,
             condition,
-            price: priceNum,
+            price: effectivePrice,
+            pricingType,
             currency: '€',
             location,
             match: '96%',
@@ -654,8 +672,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                 />
               </div>
 
-              {/* Target Quantity & Target Price */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Target Quantity & Pricing Options */}
+              <div className="space-y-3.5">
                 <div>
                   <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                     {tradeMode === 'WTB' ? 'Target Quantity' : 'Available Quantity'} <span className="text-red-500">*</span>
@@ -673,27 +691,33 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   />
                 </div>
 
+                {/* 3 Pricing Options: Fixed Price, NEG, POA */}
                 <div>
-                  <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
-                    {tradeMode === 'WTB' ? 'Target Unit Price (€ EUR)' : 'Unit Price (€ EUR)'} <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
-                      €
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      required
-                      value={targetPrice}
-                      onChange={(e) => setTargetPrice(e.target.value)}
-                      placeholder="e.g. 420.00"
-                      className={`w-full pl-8 pr-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
-                        tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
-                      }`}
-                    />
-                  </div>
+                  <PricingOptionSelector
+                    value={pricingType}
+                    onChange={setPricingType}
+                    tradeMode={tradeMode}
+                  />
+
+                  {pricingType === 'fixed' && (
+                    <div className="relative mt-2">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
+                        €
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required={pricingType === 'fixed'}
+                        value={targetPrice}
+                        onChange={(e) => setTargetPrice(e.target.value)}
+                        placeholder={tradeMode === 'WTB' ? 'Target price e.g. 420.00' : 'Unit price e.g. 450.00'}
+                        className={`w-full pl-8 pr-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
+                          tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
+                        }`}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

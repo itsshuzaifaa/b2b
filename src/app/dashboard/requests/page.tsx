@@ -26,6 +26,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
+import { PriceBadge } from '@/lib/utils/pricing';
 import type { TradeMatch } from '@/lib/matching/match-types';
 import { getUserMatches } from '@/lib/matching/match-types';
 
@@ -282,12 +283,17 @@ export default function BuyerRequestsPage() {
                           Target: <strong className="text-[#0B1F3A]">{req.target_quantity.toLocaleString()} units</strong>
                         </div>
                         <div>
-                          Target Price: <strong className="text-[#0A6CFF]">€{req.target_price.toFixed(2)} / unit</strong>
+                          Target Price:{' '}
+                          <PriceBadge price={req.target_price} pricingType={req.pricing_type} />
                         </div>
                         <div>
                           Total Budget:{' '}
                           <strong className="text-[#0B1F3A]">
-                            €{(req.target_quantity * req.target_price).toLocaleString()}
+                            {req.pricing_type === 'neg'
+                              ? 'Negotiable'
+                              : req.pricing_type === 'poa'
+                              ? 'On Application'
+                              : `€${(req.target_quantity * req.target_price).toLocaleString()}`}
                           </strong>
                         </div>
                         {req.barcode_or_sku && (
