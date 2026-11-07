@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { sendAccountApprovalEmail, sendAccountSuspensionEmail } from '@/lib/email/dispatcher';
+import {
+  sendAccountApprovalEmail,
+  sendAccountSuspensionEmail,
+  sendEmailChangeNoticeCurrentEmail,
+  sendEmailChangeActivationNewEmail,
+} from '@/lib/email/dispatcher';
 
 // In-memory deduplication cache to prevent duplicate verification/approval emails
 const approvalEmailDedupeCache = new Map<string, number>();
@@ -141,21 +146,36 @@ export async function GET() {
             .then(() => {});
         }
 
+        const lastActiveTimestamp = c.last_active_at || metaUser?.last_sign_in_at || c.updated_at || c.created_at;
+        let lastActiveLabel = 'Recently';
+        if (lastActiveTimestamp) {
+          const diffDays = Math.floor((Date.now() - new Date(lastActiveTimestamp).getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays <= 0) lastActiveLabel = 'Today';
+          else if (diffDays === 1) lastActiveLabel = 'Yesterday';
+          else if (diffDays < 30) lastActiveLabel = `${diffDays}d ago`;
+          else if (diffDays < 60) lastActiveLabel = '1mo ago';
+          else lastActiveLabel = `${Math.floor(diffDays / 30)}mo ago`;
+        }
+
         return {
           id: c.id,
           name: c.company_name || meta.company_name || c.contact_name || 'Enterprise Account',
           contact_name: c.contact_name || meta.contact_name || c.company_name || 'Representative',
           email: c.contact_email || metaUser?.email || 'contact@client.eu',
           phone: c.phone || meta.phone || null,
+          address: c.address || meta.address || null,
+          website: c.website || meta.website || null,
           role: (c.role || meta.role || 'seller') as 'seller' | 'buyer' | 'admin',
           membership_tier: effectiveTier,
           approval_status: (c.approval_status as any) || 'approved',
           account_status: isSuspended ? ('suspended' as const) : ('active' as const),
-          company_number: c.company_number || meta.company_number || null,
-          vat_number: c.vat_number || meta.vat_number || null,
-          country: c.role === 'seller' ? 'Estonia' : 'United Kingdom',
+          company_number: c.company_number || meta.company_number || meta.regNumber || null,
+          vat_number: c.vat_number || meta.vat_number || meta.vatNumber || null,
+          country: c.country || meta.country || (c.role === 'seller' ? 'Estonia' : 'United Kingdom'),
           created_at: c.created_at || metaUser?.created_at || new Date().toISOString(),
-          last_active: 'Recently',
+          last_active: lastActiveLabel,
+          last_active_at: lastActiveTimestamp || null,
+          last_inactivity_reminder_at: c.last_inactivity_reminder_at || null,
           listings_count: listingCounts[c.id] || 0,
           total_spend_or_sales:
             c.role === 'seller'
@@ -314,6 +334,177 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json({ success: true, status: 'tier_updated', tier: targetTier });
+    }
+
+    if (action === 'update_info' || action === 'update_basic_info') {
+      const {
+        contactName,
+        companyName: newCompanyName,
+        email: inputEmail,
+        currentEmail,
+        phone,
+        address,
+        companyNumber,
+        vatNumber,
+        country,
+      } = body;
+
+      const admin = createAdminClient();
+
+      // Guard: fetch company to verify target exists and is not admin
+      const { data: comp } = await admin
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .maybeSingle();
+
+      if (!comp) {
+        return NextResponse.json({ error: 'Company record not found.' }, { status: 404 });
+      }
+
+      if (comp.role === 'admin' || comp.contact_email?.toLowerCase() === 'admin@b2blink.eu') {
+        return NextResponse.json(
+          { error: 'Platform admin account information cannot be edited here.' },
+          { status: 403 }
+        );
+      }
+
+      const effectiveOldEmail = (currentEmail || comp.contact_email || '').toLowerCase().trim();
+      const effectiveNewEmail = (inputEmail || comp.contact_email || '').toLowerCase().trim();
+      const emailChanged = effectiveNewEmail !== '' && effectiveNewEmail !== effectiveOldEmail;
+
+      // If email is changing, ensure new email is not already registered to a different account
+      if (emailChanged) {
+        const { data: duplicateComp } = await admin
+          .from('companies')
+          .select('id')
+          .eq('contact_email', effectiveNewEmail)
+          .neq('id', companyId)
+          .maybeSingle();
+
+        if (duplicateComp) {
+          return NextResponse.json(
+            { error: `The email address "${effectiveNewEmail}" is already registered to another company.` },
+            { status: 400 }
+          );
+        }
+      }
+
+      const finalContactName = (contactName || comp.contact_name || '').trim();
+      const finalCompanyName = (newCompanyName || comp.company_name || comp.name || '').trim();
+
+      // 1. Update companies table
+      const updatePayload: Record<string, any> = {
+        company_name: finalCompanyName,
+        name: finalCompanyName,
+        contact_name: finalContactName,
+        contact_email: effectiveNewEmail || comp.contact_email,
+        phone: phone !== undefined ? (phone ? String(phone).trim() : null) : comp.phone,
+        address: address !== undefined ? (address ? String(address).trim() : null) : comp.address,
+        company_number: companyNumber !== undefined ? (companyNumber ? String(companyNumber).trim() : null) : comp.company_number,
+        vat_number: vatNumber !== undefined ? (vatNumber ? String(vatNumber).trim() : null) : comp.vat_number,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: updatedComp, error: updateErr } = await admin
+        .from('companies')
+        .update(updatePayload)
+        .eq('id', companyId)
+        .select('*')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('[ADMIN UPDATE INFO DB ERROR]', updateErr);
+        return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      }
+
+      // 2. Update Supabase Auth user if available
+      const userId = comp.user_id;
+      if (userId) {
+        try {
+          const authUpdatePayload: any = {
+            user_metadata: {
+              company_name: finalCompanyName,
+              contact_name: finalContactName,
+              phone: updatePayload.phone,
+              address: updatePayload.address,
+              company_number: updatePayload.company_number,
+              regNumber: updatePayload.company_number,
+              vat_number: updatePayload.vat_number,
+              vatNumber: updatePayload.vat_number,
+              country: country || undefined,
+            },
+          };
+          if (emailChanged) {
+            authUpdatePayload.email = effectiveNewEmail;
+            authUpdatePayload.email_confirm = true;
+          }
+          await admin.auth.admin.updateUserById(userId, authUpdatePayload);
+        } catch (authErr) {
+          console.warn('[ADMIN UPDATE AUTH USER WARNING]', authErr);
+        }
+      } else if (emailChanged && effectiveOldEmail) {
+        // Try finding user by old email
+        try {
+          const { data: usersList } = await admin.auth.admin.listUsers();
+          const targetUser = usersList?.users?.find(
+            (u) => u.email?.toLowerCase().trim() === effectiveOldEmail
+          );
+          if (targetUser) {
+            await admin.auth.admin.updateUserById(targetUser.id, {
+              email: effectiveNewEmail,
+              email_confirm: true,
+              user_metadata: {
+                ...targetUser.user_metadata,
+                company_name: finalCompanyName,
+                contact_name: finalContactName,
+                phone: updatePayload.phone,
+                address: updatePayload.address,
+                company_number: updatePayload.company_number,
+                vat_number: updatePayload.vat_number,
+              },
+            });
+          }
+        } catch (authErr) {
+          console.warn('[ADMIN LOOKUP AUTH USER WARNING]', authErr);
+        }
+      }
+
+      // 3. Email notifications if email was changed:
+      // "changing an email should send an email to the curent about the change and the new one to login to activate the change."
+      if (emailChanged && effectiveOldEmail && effectiveNewEmail) {
+        try {
+          // Email to current (old) email about the update
+          await sendEmailChangeNoticeCurrentEmail(effectiveOldEmail, {
+            contactName: finalContactName || 'Valued Member',
+            companyName: finalCompanyName || 'Wholesale Partner',
+            currentEmail: effectiveOldEmail,
+            newEmail: effectiveNewEmail,
+          });
+        } catch (err) {
+          console.error('[EMAIL CHANGE CURRENT NOTICE ERROR]', err);
+        }
+
+        try {
+          // Email to new email to login & activate the change
+          await sendEmailChangeActivationNewEmail(effectiveNewEmail, {
+            contactName: finalContactName || 'Valued Member',
+            companyName: finalCompanyName || 'Wholesale Partner',
+            newEmail: effectiveNewEmail,
+          });
+        } catch (err) {
+          console.error('[EMAIL CHANGE NEW ACTIVATION ERROR]', err);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        emailChanged,
+        message: emailChanged
+          ? 'Member details updated. Change notices sent to current and new emails.'
+          : 'Member details updated successfully.',
+        company: updatedComp,
+      });
     }
 
     if (action === 'delete') {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { Product } from '@/types/database';
+import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
 export async function GET(req: NextRequest) {
   try {
@@ -182,6 +183,24 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (error) throw error;
+
+      // Trigger automatic matching with open WTB requests and send immediate emails
+      try {
+        void processMatchesForNewProduct({
+          id: data.id,
+          company_id: payload.company_id,
+          title: payload.title,
+          brand: body.brand || null,
+          barcode_or_sku: payload.barcode_or_sku,
+          unit_price: payload.unit_price,
+          quantity_available: payload.quantity_available,
+          condition: body.condition || 'New',
+          description: payload.description,
+        });
+      } catch (matchErr) {
+        console.warn('[MATCH NOTIFICATION NOTICE]', matchErr);
+      }
+
       return NextResponse.json({ success: true, product: data });
     } else {
       // Create
@@ -193,6 +212,24 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (error) throw error;
+
+      // Trigger automatic matching with open WTB requests and send immediate emails
+      try {
+        void processMatchesForNewProduct({
+          id: data.id,
+          company_id: payload.company_id,
+          title: payload.title,
+          brand: body.brand || null,
+          barcode_or_sku: payload.barcode_or_sku,
+          unit_price: payload.unit_price,
+          quantity_available: payload.quantity_available,
+          condition: body.condition || 'New',
+          description: payload.description,
+        });
+      } catch (matchErr) {
+        console.warn('[MATCH NOTIFICATION NOTICE]', matchErr);
+      }
+
       return NextResponse.json({ success: true, product: data });
     }
   } catch (err) {
@@ -273,9 +310,17 @@ export async function PATCH(req: NextRequest) {
     }
 
     const admin = createAdminClient();
+    const updatePayload: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+    if (status === 'active') {
+      // Republished: reset active timer
+      updatePayload.created_at = new Date().toISOString();
+    }
     const { error } = await admin
       .from('products')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .in('id', targetIds);
 
     if (error) throw error;

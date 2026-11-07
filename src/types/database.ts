@@ -1,7 +1,7 @@
 export type UserRole = 'admin' | 'seller' | 'buyer';
 export type ApprovalStatus = 'pending' | 'pending_verification' | 'approved' | 'rejected' | 'suspended';
 export type MembershipTier = 'bronze' | 'silver' | 'gold';
-export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft';
+export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft' | 'unpublished';
 export type ProductCondition =
   | 'New'
   | 'CPO'
@@ -74,9 +74,13 @@ export type Company = {
   niches?: string[];
   website?: string | null;
   address?: string | null;
+  country?: string | null;
   unlocks_used?: number;
   created_at: string;
   updated_at?: string;
+  last_login_at?: string | null;
+  last_active_at?: string | null;
+  last_inactivity_reminder_at?: string | null;
 };
 
 export type Category = {
@@ -106,6 +110,9 @@ export type Product = {
   images?: string[];
   created_at: string;
   updated_at?: string;
+  activated_at?: string;
+  expires_at?: string;
+  unpublished_at?: string;
   company?: Company;
 };
 
@@ -148,6 +155,9 @@ export type WtbRequest = {
   status: WtbStatus;
   created_at: string;
   updated_at?: string;
+  last_login_at?: string | null;
+  last_active_at?: string | null;
+  last_inactivity_reminder_at?: string | null;
 };
 
 export type Quotation = {

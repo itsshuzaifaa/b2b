@@ -90,6 +90,73 @@ export interface AccountSuspendedEmailProps {
   actionUrl: string;
 }
 
+export interface BuyerWtsMatchEmailProps {
+  buyerName: string;
+  wtbProductName: string;
+  sellerCompanyName: string;
+  listingTitle: string;
+  barcodeOrSku?: string | null;
+  unitPrice: number;
+  targetPrice: number;
+  quantityAvailable: number;
+  targetQuantity: number;
+  condition?: string | null;
+  location?: string | null;
+  actionUrl: string;
+}
+
+export interface SellerWtbMatchEmailProps {
+  sellerName: string;
+  listingTitle: string;
+  buyerCompanyName: string;
+  wtbProductName: string;
+  barcodeOrSku?: string | null;
+  targetQuantity: number;
+  targetPrice: number;
+  listingPrice: number;
+  deliveryDeadline?: string | null;
+  notes?: string | null;
+  actionUrl: string;
+}
+
+export interface InactivityReminderEmailProps {
+  recipientEmail: string;
+  contactName?: string;
+  companyName?: string;
+  daysInactive?: number;
+  activeWtbCount?: number;
+  activeWtsCount?: number;
+  actionUrl: string;
+}
+
+export interface ListingInactivatedEmailProps {
+  recipientName: string;
+  companyName?: string;
+  listingTitle: string;
+  itemCode?: string;
+  category?: string;
+  unitPrice?: number;
+  unpublishedDate?: string;
+  recoveryDaysLeft?: number;
+  permanentDeleteDate?: string;
+  actionUrl: string;
+}
+
+export interface EmailChangeNoticeCurrentEmailProps {
+  contactName: string;
+  companyName: string;
+  currentEmail: string;
+  newEmail: string;
+  actionUrl: string;
+}
+
+export interface EmailChangeActivationNewEmailProps {
+  contactName: string;
+  companyName: string;
+  newEmail: string;
+  actionUrl: string;
+}
+
 function emailWrapper(title: string, badge: string, content: string, ctaUrl: string, ctaText: string): string {
   const logoUrl = 'https://qmosgopkjqrqogsdgwuy.supabase.co/storage/v1/object/public/public-assets/b2b-link-logo-tight.png';
 
@@ -1214,6 +1281,496 @@ export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
     ),
   };
 }
+
+/**
+ * Dispatches an alert to a buyer when a seller posts a WTS matching their WTB request.
+ */
+export function buyerWtsMatchEmail(props: BuyerWtsMatchEmailProps): { subject: string; html: string } {
+  const subject = `[MATCH FOUND] Stock Available for your WTB: ${props.wtbProductName}`;
+  const barcodeRow = props.barcodeOrSku
+    ? `<tr>
+        <td style="padding: 6px 0; color: #64748b; width: 150px;">Barcode / EAN:</td>
+        <td style="padding: 6px 0; color: #0A6CFF; font-family: monospace; font-size: 14px; font-weight: 700;">${props.barcodeOrSku}</td>
+      </tr>`
+    : '';
+
+  const content = `
+    <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+      <span style="font-weight: 800; color: #047857; font-size: 14px;">⚡ Buyer-Seller Match Detected</span>
+      <p style="font-size: 13px; color: #065f46; margin: 4px 0 0 0;">
+        A verified seller has just listed wholesale stock matching your Want-To-Buy request.
+      </p>
+    </div>
+
+    <h2 style="font-size: 20px; font-weight: 800; color: #0b1f3a; margin: 0 0 12px 0;">Hello ${props.buyerName},</h2>
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      Good news! When you posted your procurement request for <strong>${props.wtbProductName}</strong>, matching stock was not available. A verified supplier has just listed matching inventory on the B2B LINK trading board.
+    </p>
+
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 12px;">
+        MATCH SPECIFICATIONS
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; width: 150px;">Newly Listed Stock:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 700;">${props.listingTitle}</td>
+        </tr>
+        ${barcodeRow}
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Supplier:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 600;">${props.sellerCompanyName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Supplier Unit Price:</td>
+          <td style="padding: 6px 0; color: #059669; font-weight: 800; font-size: 16px;">
+            €${props.unitPrice.toFixed(2)}
+            <span style="font-size: 12px; color: #64748b; font-weight: normal; margin-left: 6px;">(Your target: €${props.targetPrice.toFixed(2)})</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Available Quantity:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 700;">
+            ${props.quantityAvailable.toLocaleString()} units
+            <span style="font-size: 12px; color: #64748b; font-weight: normal; margin-left: 6px;">(Your request: ${props.targetQuantity.toLocaleString()})</span>
+          </td>
+        </tr>
+        ${props.condition ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Condition:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 600;">${props.condition}</td>
+        </tr>` : ''}
+        ${props.location ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Stock Location:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 600;">${props.location}</td>
+        </tr>` : ''}
+      </table>
+    </div>
+
+    <p style="font-size: 13.5px; color: #5B6B82; line-height: 1.6; margin: 0 0 16px 0;">
+      This match has been automatically added to your dashboard. You can review the full listing, unlock direct supplier contact details, or start an in-app negotiation immediately.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Trading Desk</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Stock Match Found',
+      'STOCK AVAILABLE',
+      content,
+      props.actionUrl,
+      'View Matched Listing & Connect'
+    ),
+  };
+}
+
+/**
+ * Dispatches an alert to a seller when a buyer posts a WTB matching their active WTS listing.
+ */
+export function sellerWtbMatchEmail(props: SellerWtbMatchEmailProps): { subject: string; html: string } {
+  const subject = `[BUYER MATCH] Immediate Buyer Demand for: ${props.listingTitle}`;
+  const barcodeRow = props.barcodeOrSku
+    ? `<tr>
+        <td style="padding: 6px 0; color: #64748b; width: 150px;">Barcode / EAN:</td>
+        <td style="padding: 6px 0; color: #0A6CFF; font-family: monospace; font-size: 14px; font-weight: 700;">${props.barcodeOrSku}</td>
+      </tr>`
+    : '';
+
+  const content = `
+    <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+      <span style="font-weight: 800; color: #1d4ed8; font-size: 14px;">🎯 Buyer Demand Match Detected</span>
+      <p style="font-size: 13px; color: #1e40af; margin: 4px 0 0 0;">
+        A verified buyer is actively seeking stock matching your product listing.
+      </p>
+    </div>
+
+    <h2 style="font-size: 20px; font-weight: 800; color: #0b1f3a; margin: 0 0 12px 0;">Hello ${props.sellerName},</h2>
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
+      A qualified wholesale buyer has an active Want-To-Buy (WTB) procurement request matching your listing: <strong>${props.listingTitle}</strong>.
+    </p>
+
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 12px;">
+        BUYER DEMAND DETAILS
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; width: 150px;">Requested Item:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 700;">${props.wtbProductName}</td>
+        </tr>
+        ${barcodeRow}
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Buyer Company:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 600;">${props.buyerCompanyName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Target Volume:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 700;">${props.targetQuantity.toLocaleString()} units</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Buyer Target Price:</td>
+          <td style="padding: 6px 0; color: #059669; font-weight: 800; font-size: 16px;">
+            €${props.targetPrice.toFixed(2)}
+            <span style="font-size: 12px; color: #64748b; font-weight: normal; margin-left: 6px;">(Your list price: €${props.listingPrice.toFixed(2)})</span>
+          </td>
+        </tr>
+        ${props.deliveryDeadline ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Delivery Deadline:</td>
+          <td style="padding: 6px 0; color: #0b1f3a; font-weight: 600;">${props.deliveryDeadline}</td>
+        </tr>` : ''}
+        ${props.notes ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748b;">Buyer Notes:</td>
+          <td style="padding: 6px 0; color: #334155; font-style: italic;">${props.notes}</td>
+        </tr>` : ''}
+      </table>
+    </div>
+
+    <p style="font-size: 13.5px; color: #5B6B82; line-height: 1.6; margin: 0 0 16px 0;">
+      Submit a quotation or open direct messaging to connect with this buyer before other suppliers respond.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Trading Desk</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Buyer Match Found',
+      'BUYER DEMAND',
+      content,
+      props.actionUrl,
+      'Review Buyer Request & Quote'
+    ),
+  };
+}
+
+/**
+ * Monthly Inactivity Reminder Email (WTB & WTS Refresh)
+ * Trigger Event: Account inactive for over 30 days (1 month)
+ * Recipient: Customer registered business email address
+ * Subject: Reminder: Update your BUY & SELL (WTB / WTS) listings on B2B LINK
+ */
+export function inactivityReminderEmail(props: InactivityReminderEmailProps): { subject: string; html: string } {
+  const subject = 'Reminder: Update your BUY & SELL (WTB / WTS) listings on B2B LINK';
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+  const daysText = props.daysInactive && props.daysInactive >= 30
+    ? `${props.daysInactive} days (over 1 month)`
+    : 'a month';
+  const wtbCount = props.activeWtbCount ?? 0;
+  const wtsCount = props.activeWtsCount ?? 0;
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Keep Your Trading Requirements Fresh
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      It has been <strong>${daysText}</strong> since your last activity on the <strong>B2B LINK</strong> wholesale network.
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 18px 0;">
+      Wholesale pricing, buyer demand, and stock availability across consumer technology move rapidly. To ensure your company continues to receive verified Buyer-Seller Matches, competitive quotations, and relevant trade inquiries, we recommend logging in to review and refresh your active listings:
+    </p>
+
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+        <tr>
+          <td style="padding-bottom: 14px; border-bottom: 1px solid #EDF2F7;">
+            <div style="margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 800; background: #0A6CFF; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 8px;">WTB SOURCING</span>
+              <strong style="font-size: 14px; color: #0B1F3A;">Want-To-Buy Procurement Demands</strong>
+            </div>
+            <p style="font-size: 13px; line-height: 1.5; color: #475569; margin: 4px 0 0 0;">
+              ${wtbCount > 0 ? `You currently have <strong style="color: #0A6CFF;">${wtbCount}</strong> active procurement request(s). ` : ''}Refresh your target purchase quantities and target prices, or mark fulfilled requests as closed to prevent outdated quotations.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top: 14px;">
+            <div style="margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 800; background: #00C2FF; color: #0B1F3A; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 8px;">WTS INVENTORY</span>
+              <strong style="font-size: 14px; color: #0B1F3A;">Want-To-Sell Available Lots</strong>
+            </div>
+            <p style="font-size: 13px; line-height: 1.5; color: #475569; margin: 4px 0 0 0;">
+              ${wtsCount > 0 ? `You currently have <strong style="color: #00A3D7;">${wtsCount}</strong> active stock listing(s). ` : ''}Update available quantities, condition grades, and asking prices to ensure high visibility to active European buyers.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; padding: 14px 18px; margin-bottom: 22px;">
+      <p style="font-size: 13px; line-height: 1.5; color: #1E40AF; margin: 0;">
+        💡 <strong>Unified Wholesale Account:</strong> All B2B LINK accounts can both source demand and liquidate excess inventory with <strong>0% transaction commission</strong>.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Please log in to your account to update your listings or browse new wholesale opportunities.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Trading Support</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Trading Board Desk &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Trading Board Reminder',
+      'ACCOUNT REMINDER',
+      content,
+      props.actionUrl,
+      'Log In & Update Listings'
+    ),
+  };
+}
+
+/**
+ * Sent to listing owner when a listing has reached its 14-day active limit
+ * and has been automatically unpublished.
+ * Alerts user of 30-day recovery period before permanent deletion.
+ */
+export function listingInactivatedEmail(props: ListingInactivatedEmailProps): { subject: string; html: string } {
+  const subject = `[Listing Inactivated] "${props.listingTitle}" has been unpublished`;
+  const nameGreeting = props.recipientName ? `Hello ${props.recipientName},` : 'Hello,';
+  const priceDisplay = props.unitPrice !== undefined ? `€${props.unitPrice.toFixed(2)}` : 'N/A';
+  const recoveryDays = props.recoveryDaysLeft ?? 30;
+
+  const content = `
+    <h1 style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Listing Automatically Unpublished
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 18px 0;">
+      We are writing to inform you that your wholesale listing <strong>"${props.listingTitle}"</strong> has completed its <strong>14-day active listing period</strong> and has been automatically set to <strong>Unpublished</strong>.
+    </p>
+
+    <!-- Listing Summary Card -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 12px;">
+        LISTING DETAILS
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748B; width: 150px;">Title:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 700;">${props.listingTitle}</td>
+        </tr>
+        ${props.itemCode ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Item / Model Code:</td>
+          <td style="padding: 6px 0; color: #0A6CFF; font-family: monospace; font-weight: 700;">${props.itemCode}</td>
+        </tr>` : ''}
+        ${props.category ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Category:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 600;">${props.category}</td>
+        </tr>` : ''}
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Unit Price:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 700;">${priceDisplay}</td>
+        </tr>
+        ${props.unpublishedDate ? `
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Unpublished Date:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 600;">${props.unpublishedDate}</td>
+        </tr>` : ''}
+      </table>
+    </div>
+
+    <!-- Critical 30-Day Recovery Notice -->
+    <div style="background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 14px; font-weight: 800; color: #9A3412; margin-bottom: 8px;">
+        ⚠️ 30-Day Recovery Window &amp; Permanent Deletion Notice
+      </div>
+      <p style="font-size: 13.5px; line-height: 1.6; color: #7C2D12; margin: 0 0 10px 0;">
+        You have <strong>${recoveryDays} days</strong>${props.permanentDeleteDate ? ` (until <strong>${props.permanentDeleteDate}</strong>)` : ''} to recover and republish this listing.
+      </p>
+      <p style="font-size: 13px; line-height: 1.5; color: #9A3412; margin: 0;">
+        If not republished within 30 days, this listing and all associated specifications will be <strong>permanently deleted</strong> from the trading network.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      To keep your inventory active and visible to European trade buyers, visit your <strong>Unpublished</strong> listings tab where you can easily republish one or multiple listings with a single click.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Inventory Operations</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Trading Operations Desk &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Listing Inactivated',
+      'LISTING INACTIVATED',
+      content,
+      props.actionUrl,
+      'Republish Listing in Dashboard'
+    ),
+  };
+}
+
+/**
+ * Dispatched to the CURRENT (original) email address when an admin updates the account's email.
+ * Alerts the current address of the change and provides security guidance if unauthorized.
+ */
+export function emailChangeNoticeCurrentEmail(
+  props: EmailChangeNoticeCurrentEmailProps
+): { subject: string; html: string } {
+  const subject = `Security Notice: Email Address Updated for ${props.companyName}`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Account Email Address Updated
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      This is an official security notice that the registered business email address for your B2B LINK account (<strong>${props.companyName}</strong>) has been updated by platform administration.
+    </p>
+
+    <!-- Email Change Summary Card -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 12px;">
+        EMAIL UPDATE DETAILS
+      </div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 14px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748B; width: 140px;">Previous Email:</td>
+          <td style="padding: 6px 0; color: #334155; font-family: monospace; font-weight: 700;">${props.currentEmail}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">New Email:</td>
+          <td style="padding: 6px 0; color: #0A6CFF; font-family: monospace; font-weight: 700;">${props.newEmail}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748B;">Company:</td>
+          <td style="padding: 6px 0; color: #0B1F3A; font-weight: 700;">${props.companyName}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #FEF3C7; border: 1px solid #FDE68A; border-radius: 12px; padding: 14px 18px; margin-bottom: 22px;">
+      <p style="font-size: 13px; line-height: 1.5; color: #92400E; margin: 0;">
+        ⚠️ <strong>Security Advisory:</strong> If you or an authorized representative of <strong>${props.companyName}</strong> did not request or authorize this email modification, please contact B2B LINK Support immediately to secure your account.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      If this change was authorized by your organisation, no further action is required from this inbox.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Account Administration &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Email Updated',
+      'SECURITY NOTICE',
+      content,
+      props.actionUrl,
+      'Contact Support Desk'
+    ),
+  };
+}
+
+/**
+ * Dispatched to the NEW email address when an admin updates the account's email.
+ * Urges the user to log in using the new email to activate and verify their access.
+ */
+export function emailChangeActivationNewEmail(
+  props: EmailChangeActivationNewEmailProps
+): { subject: string; html: string } {
+  const subject = `Action Required: Log In to Activate Your B2B LINK Account (${props.companyName})`;
+  const nameGreeting = props.contactName ? `Hello ${props.contactName},` : 'Hello,';
+
+  const content = `
+    <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
+      Activate Your Account Email
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${nameGreeting}
+    </p>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      The primary business email address for <strong>${props.companyName}</strong> on the <strong>B2B LINK</strong> wholesale platform has been updated to:
+    </p>
+
+    <!-- Activated Email Box -->
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 8px;">
+        NEW PRIMARY EMAIL
+      </div>
+      <div style="font-size: 17px; font-weight: 800; font-family: monospace; color: #0A6CFF;">
+        ${props.newEmail}
+      </div>
+      <p style="font-size: 12px; color: #64748B; margin: 8px 0 0 0;">
+        Company: <strong>${props.companyName}</strong>
+      </p>
+    </div>
+
+    <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 12px; padding: 14px 18px; margin-bottom: 22px;">
+      <p style="font-size: 13px; line-height: 1.5; color: #065F46; margin: 0; font-weight: 700;">
+        ✓ Action Required: Please log in using this email address to confirm and activate your updated credentials.
+      </p>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Click the button below to sign in directly to your B2B LINK wholesale dashboard:
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Support Team</strong><br />
+      <span style="font-size: 12px; color: #64748B;">Platform Onboarding &bull; support@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Activate Your Account Email',
+      'ACTION REQUIRED',
+      content,
+      props.actionUrl,
+      'Log In to Activate Access'
+    ),
+  };
+}
+
+
+
 
 
 

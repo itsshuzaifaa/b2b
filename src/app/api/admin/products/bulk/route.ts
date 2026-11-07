@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { processMatchesForNewProduct, processMatchesForNewWtb } from '@/lib/matching/match-service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -182,6 +183,23 @@ export async function POST(req: NextRequest) {
       }
 
       insertedSellCount = inserted ? inserted.length : preparedRows.length;
+
+      // Trigger automatic matching with open WTB requests
+      try {
+        for (const row of preparedRows) {
+          void processMatchesForNewProduct({
+            company_id: row.company_id,
+            title: row.title,
+            barcode_or_sku: row.barcode_or_sku,
+            unit_price: row.unit_price,
+            quantity_available: row.quantity_available,
+            condition: 'New',
+            description: row.description,
+          });
+        }
+      } catch (mErr) {
+        console.warn('[ADMIN BULK MATCH SELL NOTICE]', mErr);
+      }
     }
 
     // 7. Insert BUY requirements if any
@@ -246,6 +264,26 @@ export async function POST(req: NextRequest) {
       }
 
       insertedBuyCount = insertResult.data ? insertResult.data.length : preparedWtbRows.length;
+
+      // Trigger automatic matching with active WTS inventory
+      try {
+        for (const row of preparedWtbRows) {
+          void processMatchesForNewWtb({
+            buyer_user_id: row.buyer_user_id,
+            buyer_company: row.buyer_company,
+            buyer_name: row.buyer_name,
+            buyer_email: row.buyer_email,
+            buyer_phone: row.buyer_phone,
+            product_name: row.product_name,
+            target_quantity: row.target_quantity,
+            target_price: row.target_price,
+            barcode_or_sku: row.barcode_or_sku,
+            notes: row.notes,
+          });
+        }
+      } catch (mErr) {
+        console.warn('[ADMIN BULK MATCH BUY NOTICE]', mErr);
+      }
     }
 
     return NextResponse.json({

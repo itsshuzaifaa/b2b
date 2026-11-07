@@ -9,6 +9,7 @@ import { UpgradeMembershipModal } from '@/components/modals/UpgradeMembershipMod
 import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
 import { BroadcastWtbModal } from '@/components/modals/BroadcastWtbModal';
 import { BroadcastWtsModal } from '@/components/modals/BroadcastWtsModal';
+import { TradingMatchesWidget } from '@/components/dashboard/TradingMatchesWidget';
 import type { WtbRequest, MembershipTier } from '@/types/database';
 import { TIER_LIMITS } from '@/types/database';
 import { getConversationsForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -357,6 +358,31 @@ export default function OverviewPage() {
           </div>
         </div>
       </div>
+
+      {/* Real-Time Buyer-Seller Smart Matches Widget */}
+      <TradingMatchesWidget
+        onOpenQuoteModal={(wtbId, wtbTitle, targetPrice, targetQty) => {
+          setSelectedWtbForQuote({
+            id: wtbId,
+            product_name: wtbTitle,
+            target_price: targetPrice,
+            target_quantity: targetQty,
+            buyer_name: 'Verified Buyer',
+            buyer_email: '',
+            category_slug: 'electronics',
+            status: 'open',
+            created_at: new Date().toISOString(),
+          } as any);
+        }}
+        onOpenCreateWtb={() => {
+          setTradeModalMode('WTB');
+          setCreateWtbOpen(true);
+        }}
+        onOpenCreateWts={() => {
+          setTradeModalMode('WTS');
+          setCreateWtbOpen(true);
+        }}
+      />
 
       {/* Main Two-Column Row */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-7">
