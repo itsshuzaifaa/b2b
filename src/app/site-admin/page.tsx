@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
@@ -49,55 +49,66 @@ export default function SiteAdminOverviewPage() {
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
 
   const loadData = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
     try {
-      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.accounts)) {
-          setAccounts(data.accounts);
-          saveAdminAccounts(data.accounts);
-        } else {
+      // Parallel fetch to avoid connection waterfall
+      const [accRes, payRes, qRes] = await Promise.allSettled([
+        fetch('/api/admin/accounts', { cache: 'no-store' }),
+        fetch('/api/admin/payments', { cache: 'no-store' }),
+        fetch('/api/admin/queries', { cache: 'no-store' }),
+      ]);
+
+      if (accRes.status === 'fulfilled' && accRes.value.ok) {
+        try {
+          const data = await accRes.value.json();
+          if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+            setAccounts(data.accounts);
+            saveAdminAccounts(data.accounts);
+          }
+        } catch {
           setAccounts(getAdminAccounts());
         }
       } else {
         setAccounts(getAdminAccounts());
       }
-    } catch {
-      setAccounts(getAdminAccounts());
-    }
-    setPayments(getAdminPayments());
-    setListingsCount(getAdminListings().length);
 
-    try {
-      const pRes = await fetch('/api/admin/payments', { cache: 'no-store' });
-      if (pRes.ok) {
-        const pData = await pRes.json();
-        if (Array.isArray(pData.payments) && pData.payments.length > 0) {
-          setPayments(pData.payments);
-          saveAdminPayments(pData.payments);
-        }
-      }
-    } catch {
-      // ignore
-    }
+      setPayments(getAdminPayments());
+      setListingsCount(getAdminListings().length);
 
-    try {
-      const qRes = await fetch('/api/admin/queries', { cache: 'no-store' });
-      if (qRes.ok) {
-        const qData = await qRes.json();
-        if (Array.isArray(qData.queries)) {
-          setQueries(qData.queries);
-          try {
-            localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(qData.queries));
-          } catch {
-            // ignore
+      if (payRes.status === 'fulfilled' && payRes.value.ok) {
+        try {
+          const pData = await payRes.value.json();
+          if (Array.isArray(pData.payments) && pData.payments.length > 0) {
+            setPayments(pData.payments);
+            saveAdminPayments(pData.payments);
           }
+        } catch {
+          // ignore
         }
       }
-    } catch {
-      // Keep existing queries state on network failure
+
+      if (qRes.status === 'fulfilled' && qRes.value.ok) {
+        try {
+          const qData = await qRes.value.json();
+          if (Array.isArray(qData.queries)) {
+            setQueries(qData.queries);
+            try {
+              localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(qData.queries));
+            } catch {
+              // ignore
+            }
+          }
+        } catch {
+          // Keep existing queries state on network failure
+        }
+      }
+    } finally {
+      inFlightRef.current = false;
     }
   };
 
@@ -110,7 +121,7 @@ export default function SiteAdminOverviewPage() {
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
-    const interval = setInterval(loadData, 5000);
+    const interval = setInterval(loadData, 15000);
     return () => {
       window.removeEventListener('b2b_admin_update', loadData);
       window.removeEventListener('b2b_queries_update', loadData);

@@ -20,11 +20,29 @@ export async function POST(request: NextRequest) {
       .eq('contact_email', rawEmail)
       .maybeSingle();
 
-    // 2. Fetch auth user to get metadata
-    const { data: usersList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const user = usersList?.users?.find(
-      (u) => u.email?.toLowerCase().trim() === rawEmail
-    );
+    // 2. Fetch auth user to get metadata (fast direct lookup by user_id)
+    let user: any = null;
+    if (company?.user_id) {
+      try {
+        const { data: uData } = await admin.auth.admin.getUserById(company.user_id);
+        user = uData?.user || null;
+      } catch {
+        // ignore
+      }
+    }
+    if (!user) {
+      try {
+        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+          setTimeout(() => resolve({ data: null }), 2000)
+        );
+        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+        const raceResult = await Promise.race([listPromise, timeoutPromise]);
+        const usersList = (raceResult as any)?.data?.users || [];
+        user = usersList.find((u: any) => u.email?.toLowerCase().trim() === rawEmail) || null;
+      } catch {
+        // ignore
+      }
+    }
 
     const meta = user?.user_metadata || {};
 

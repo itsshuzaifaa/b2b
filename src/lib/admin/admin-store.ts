@@ -259,6 +259,7 @@ export function getAdminAccounts(): AdminClientAccount[] {
 
 export function saveAdminAccounts(accounts: AdminClientAccount[]) {
   if (typeof window === 'undefined') return;
+  if (!Array.isArray(accounts) || accounts.length === 0) return; // Prevent network blips from wiping cached accounts
   try {
     // Reconcile: If active accounts are provided, ensure they are unflagged from deleted blacklist
     for (const a of accounts) {
@@ -672,6 +673,7 @@ export function getAdminPayments(): AdminPaymentRecord[] {
 
 export function saveAdminPayments(payments: AdminPaymentRecord[]) {
   if (typeof window === 'undefined') return;
+  if (!Array.isArray(payments) || payments.length === 0) return; // Prevent empty payload wipes
   try {
     localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(payments));
     broadcastAdminUpdate();

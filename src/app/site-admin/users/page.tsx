@@ -83,16 +83,18 @@ export default function SiteAdminUsersPage() {
       const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.accounts)) {
+        if (Array.isArray(data.accounts) && data.accounts.length > 0) {
           const cleanAccounts = data.accounts.filter(
             (a: AdminClientAccount) =>
               !isAccountDeleted(a.id, a.email) &&
               a.role !== 'admin' &&
               a.email?.toLowerCase() !== 'admin@b2blink.eu'
           );
-          setAccounts(cleanAccounts);
-          saveAdminAccounts(cleanAccounts);
-          return;
+          if (cleanAccounts.length > 0) {
+            setAccounts(cleanAccounts);
+            saveAdminAccounts(cleanAccounts);
+            return;
+          }
         }
       }
     } catch {

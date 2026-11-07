@@ -660,13 +660,16 @@ export async function processInactivityReminders(
       console.warn('[INACTIVITY SCANNER] Could not fetch companies from DB:', e);
     }
 
-    // 2. Fetch auth users
+    // 2. Fetch auth users (with timeout guard)
     let authUsers: any[] = [];
     try {
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      if (usersData?.users) {
-        authUsers = usersData.users;
-      }
+      const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+        setTimeout(() => resolve({ data: null }), 2000)
+      );
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const raceResult = await Promise.race([listPromise, timeoutPromise]);
+      const usersData = (raceResult as any)?.data?.users || [];
+      authUsers = usersData;
     } catch (e) {
       console.warn('[INACTIVITY SCANNER] Could not fetch auth users:', e);
     }

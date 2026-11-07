@@ -65,7 +65,7 @@ export default function SiteAdminCustomerQueriesPage() {
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
-    const interval = setInterval(loadData, 5000); // Polling every 5s for real-time incoming queries
+    const interval = setInterval(loadData, 15000); // Polling every 15s for incoming queries
     return () => {
       window.removeEventListener('b2b_admin_update', loadData);
       window.removeEventListener('b2b_queries_update', loadData);

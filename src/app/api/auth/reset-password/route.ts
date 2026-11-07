@@ -127,17 +127,32 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Code is valid! Find user in Supabase
-      const { data: usersData, error: listError } = await admin.auth.admin.listUsers();
-      if (listError) {
-        console.error('[RESET PASSWORD LIST USERS ERROR]', listError);
+      // Code is valid! Find user: check companies first (takes ~15ms)
+      let targetUserId: string | null = null;
+      const { data: comp } = await admin
+        .from('companies')
+        .select('user_id')
+        .eq('contact_email', rawEmail)
+        .maybeSingle();
+
+      if (comp?.user_id) {
+        targetUserId = comp.user_id;
+      } else {
+        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+          setTimeout(() => resolve({ data: null }), 2000)
+        );
+        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+        const raceResult = await Promise.race([listPromise, timeoutPromise]);
+        const usersData = (raceResult as any)?.data?.users || [];
+        const found = usersData.find(
+          (u: any) => u.email?.toLowerCase() === rawEmail
+        );
+        if (found) {
+          targetUserId = found.id;
+        }
       }
 
-      const targetUser = usersData?.users?.find(
-        (u) => u.email?.toLowerCase() === rawEmail
-      );
-
-      if (!targetUser) {
+      if (!targetUserId) {
         return NextResponse.json(
           { error: `No registered account found with ${rawEmail}. Please check your email or register.` },
           { status: 404 }
@@ -145,7 +160,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Update password via Supabase Admin
-      const { error: updateError } = await admin.auth.admin.updateUserById(targetUser.id, {
+      const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, {
         password: newPassword,
       });
 

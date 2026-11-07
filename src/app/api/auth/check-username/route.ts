@@ -67,31 +67,53 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Database uniqueness check via Supabase Admin
     const admin = createAdminClient();
-    const { data: { users }, error } = await admin.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
+    const normalizedUsername = username.replace(/[^a-z0-9]/g, '');
 
-    if (error) {
-      console.error('[CHECK USERNAME ERROR]', error);
-      // In case of listUsers error, allow user through rather than completely blocking
-      return NextResponse.json({ available: true });
+    // 1. FAST PATH: Check companies table
+    const { data: companies } = await admin
+      .from('companies')
+      .select('contact_name, company_name, contact_email')
+      .limit(100);
+
+    if (companies && companies.length > 0) {
+      const matchInCompanies = companies.some((c: any) => {
+        const cName = (c.contact_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const compName = (c.company_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return cName === normalizedUsername || compName === normalizedUsername;
+      });
+
+      if (matchInCompanies) {
+        return NextResponse.json({
+          available: false,
+          reason: 'This username is already taken. Please choose another.',
+        });
+      }
     }
 
-    const isTaken = users.some((u) => {
-      // Usernames are only locked in if the account email has been verified!
-      if (!u.email_confirmed_at) return false;
-      const existing = (u.user_metadata?.username as string | undefined)?.toLowerCase();
-      return existing === username;
-    });
+    // 2. Auth listUsers fallback with strict 1.5s timeout
+    try {
+      const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+        setTimeout(() => resolve({ data: null }), 1500)
+      );
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const raceResult = await Promise.race([listPromise, timeoutPromise]);
+      const users = (raceResult as any)?.data?.users || [];
 
-    if (isTaken) {
-      return NextResponse.json({
-        available: false,
-        reason: 'This username is already taken. Please choose another.',
+      const isTaken = users.some((u: any) => {
+        if (!u.email_confirmed_at) return false;
+        const existing = (u.user_metadata?.username as string | undefined)?.toLowerCase();
+        return existing === username;
       });
+
+      if (isTaken) {
+        return NextResponse.json({
+          available: false,
+          reason: 'This username is already taken. Please choose another.',
+        });
+      }
+    } catch {
+      // If listUsers fails or times out, proceed without blocking user
     }
 
     return NextResponse.json({

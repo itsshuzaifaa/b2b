@@ -95,9 +95,14 @@ export async function POST(req: NextRequest) {
 
     if (!targetUser && email) {
       try {
-        const { data: usersList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        targetUser = usersList?.users?.find(
-          (u) => u.email?.toLowerCase().trim() === email.toLowerCase().trim()
+        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+          setTimeout(() => resolve({ data: null }), 2000)
+        );
+        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+        const raceResult = await Promise.race([listPromise, timeoutPromise]);
+        const usersList = (raceResult as any)?.data?.users || [];
+        targetUser = usersList.find(
+          (u: any) => u.email?.toLowerCase().trim() === email.toLowerCase().trim()
         );
         if (targetUser) {
           const userMetaUpdate: Record<string, any> = {

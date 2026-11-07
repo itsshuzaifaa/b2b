@@ -167,6 +167,8 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       console.warn('[WTB MATCH PROCESS NOTICE]', mErr);
     }
 
+    cachedPublicWtbs = null;
+
     return {
       success: true,
       wtbRequestId: insertedWtb.id,
@@ -178,25 +180,41 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
   }
 }
 
+// In-memory cache for public WTBs to prevent server action latency spikes
+let cachedPublicWtbs: { data: WtbRequest[]; timestamp: number } | null = null;
+const WTB_CACHE_TTL_MS = 60000; // 60 seconds
+
 /**
  * Fetches all active Want-To-Buy requests from the database for the public board.
  */
 export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
+  if (cachedPublicWtbs && Date.now() - cachedPublicWtbs.timestamp < WTB_CACHE_TTL_MS) {
+    return cachedPublicWtbs.data;
+  }
+
   try {
     const admin = createAdminClient();
-    const { data, error } = await admin
+
+    // Enforce 3-second timeout guard to prevent landing page hangs
+    const queryPromise = admin
       .from('wtb_requests')
       .select('*')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(60);
 
+    const timeoutPromise = new Promise<{ data: any[]; error: any }>((resolve) =>
+      setTimeout(() => resolve({ data: cachedPublicWtbs?.data || [], error: null }), 3000)
+    );
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+
     if (error || !data) {
       console.warn('[GET PUBLIC WTB ERROR]', error?.message);
-      return [];
+      return cachedPublicWtbs?.data || [];
     }
 
-    return data.map((row: any) => {
+    const mapped: WtbRequest[] = data.map((row: any) => {
       const noteStr = row.notes || '';
       const detectedPricingType: 'fixed' | 'neg' | 'poa' =
         noteStr.includes('Pricing: NEG') || noteStr.includes('NEG') ? 'neg' :
@@ -221,9 +239,12 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
         created_at: row.created_at,
       };
     });
+
+    cachedPublicWtbs = { data: mapped, timestamp: Date.now() };
+    return mapped;
   } catch (err) {
     console.error('[GET PUBLIC WTB EXCEPTION]', err);
-    return [];
+    return cachedPublicWtbs?.data || [];
   }
 }
 
@@ -234,12 +255,19 @@ export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbReques
   try {
     if (!buyerEmail) return [];
     const admin = createAdminClient();
-    const { data, error } = await admin
+
+    const queryPromise = admin
       .from('wtb_requests')
       .select('*')
       .ilike('buyer_email', buyerEmail.trim().toLowerCase())
       .order('created_at', { ascending: false })
       .limit(60);
+
+    const timeoutPromise = new Promise<{ data: any[]; error: any }>((resolve) =>
+      setTimeout(() => resolve({ data: [], error: null }), 3000)
+    );
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (error || !data) {
       console.warn('[GET BUYER WTB ERROR]', error?.message);

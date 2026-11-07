@@ -52,10 +52,18 @@ export default function DashboardLayout({
     setIsMounted(true);
   }, []);
 
-  // If user is completely unauthenticated on dashboard, redirect to login cleanly
+  // If user is completely unauthenticated on dashboard, redirect to login cleanly after grace period
   useEffect(() => {
     if (!isLoading && !company && isMounted) {
-      router.push('/login');
+      // Check if there's cached company data in localStorage before forcing redirect
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('b2b_cached_company');
+        if (cached) return;
+      }
+      const timer = setTimeout(() => {
+        router.push('/login');
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, [isLoading, company, isMounted, router]);
 

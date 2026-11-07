@@ -39,15 +39,32 @@ export async function POST(request: NextRequest) {
     let confirmedUserId: string | null = null;
 
     try {
-      // Find user by email
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      const targetUser = usersData?.users?.find(
-        (u) => u.email?.toLowerCase() === rawEmail
-      );
+      // Find user: check companies first (takes ~15ms)
+      const { data: company } = await admin
+        .from('companies')
+        .select('user_id')
+        .eq('contact_email', rawEmail)
+        .maybeSingle();
 
-      if (targetUser) {
-        confirmedUserId = targetUser.id;
-        await admin.auth.admin.updateUserById(targetUser.id, {
+      if (company?.user_id) {
+        confirmedUserId = company.user_id;
+      } else {
+        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+          setTimeout(() => resolve({ data: null }), 2000)
+        );
+        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+        const raceResult = await Promise.race([listPromise, timeoutPromise]);
+        const usersData = (raceResult as any)?.data?.users || [];
+        const targetUser = usersData.find(
+          (u: any) => u.email?.toLowerCase() === rawEmail
+        );
+        if (targetUser) {
+          confirmedUserId = targetUser.id;
+        }
+      }
+
+      if (confirmedUserId) {
+        await admin.auth.admin.updateUserById(confirmedUserId, {
           email_confirm: true,
         });
 
@@ -58,7 +75,7 @@ export async function POST(request: NextRequest) {
             approval_status: 'pending',
             updated_at: new Date().toISOString(),
           })
-          .eq('user_id', targetUser.id)
+          .eq('user_id', confirmedUserId)
           .eq('approval_status', 'pending_verification');
       }
     } catch (adminErr) {

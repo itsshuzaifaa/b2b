@@ -14,21 +14,40 @@ export async function GET() {
   try {
     const admin = createAdminClient();
 
-    // 1. Parallel fetch from database to eliminate 50s+ roundtrip latency
-    const [companiesRes, productsRes, wtbsRes, usersRes] = await Promise.all([
-      admin.from('companies').select('*').order('created_at', { ascending: false }),
-      admin.from('products').select('company_id'),
-      admin.from('wtb_requests').select('buyer_company_id, buyer_user_id, buyer_email'),
-      admin.auth.admin.listUsers({ page: 1, perPage: 100 }).catch(() => ({ data: { users: [] }, error: null })),
-    ]);
+    // 1. Fetch companies directly (primary data source)
+    const companiesRes = await admin
+      .from('companies')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (companiesRes.error) {
-      console.error('Error in /api/admin/accounts:', companiesRes.error);
-      return NextResponse.json({ error: companiesRes.error.message }, { status: 500 });
+    if (companiesRes.error || !companiesRes.data) {
+      console.error('Error fetching companies in /api/admin/accounts:', companiesRes.error);
+      return NextResponse.json(
+        { error: companiesRes.error?.message || 'Failed to fetch companies' },
+        { status: 500 }
+      );
     }
 
-    const companies = [...(companiesRes.data || [])];
-    const authUsers = (usersRes as any)?.data?.users || [];
+    const companies = [...companiesRes.data];
+    const authUsers: any[] = [];
+
+    // 2. Fetch products & WTB requests in parallel for listing counts (with 1.2s timeout guard)
+    let productsData: any[] = [];
+    let wtbsData: any[] = [];
+    try {
+      const countsPromise = Promise.all([
+        admin.from('products').select('company_id'),
+        admin.from('wtb_requests').select('buyer_user_id, buyer_email'),
+      ]);
+      const timeoutPromise = new Promise<any[]>((resolve) =>
+        setTimeout(() => resolve([{ data: [] }, { data: [] }]), 1200)
+      );
+      const [pRes, wRes] = await Promise.race([countsPromise, timeoutPromise]);
+      productsData = pRes?.data || [];
+      wtbsData = wRes?.data || [];
+    } catch (countErr) {
+      console.warn('[ACCOUNTS LISTINGS COUNT NOTICE]', countErr);
+    }
 
     // Auto-sync any auth user missing from companies table
     const existingEmails = new Set(
@@ -91,23 +110,20 @@ export async function GET() {
       }
     }
 
-    // 2. Count listings (WTS from products, WTB from wtb_requests)
+    // 3. Count listings (WTS from products, WTB from wtb_requests)
     const wtsCounts: Record<string, number> = {};
     const wtbCounts: Record<string, number> = {};
-    if (Array.isArray(productsRes.data)) {
-      for (const p of productsRes.data) {
+    if (Array.isArray(productsData)) {
+      for (const p of productsData) {
         if (p.company_id) {
           wtsCounts[p.company_id] = (wtsCounts[p.company_id] || 0) + 1;
         }
       }
     }
 
-    if (Array.isArray(wtbsRes.data)) {
-      for (const w of wtbsRes.data) {
-        if (w.buyer_company_id) {
-          wtbCounts[w.buyer_company_id] = (wtbCounts[w.buyer_company_id] || 0) + 1;
-        }
-        if (w.buyer_user_id && w.buyer_user_id !== w.buyer_company_id) {
+    if (Array.isArray(wtbsData)) {
+      for (const w of wtbsData) {
+        if (w.buyer_user_id) {
           wtbCounts[w.buyer_user_id] = (wtbCounts[w.buyer_user_id] || 0) + 1;
         }
         if (w.buyer_email) {
@@ -181,6 +197,7 @@ export async function GET() {
         return {
           id: c.id,
           name: c.company_name || meta.company_name || c.contact_name || 'Enterprise Account',
+          company_name: c.company_name || meta.company_name || c.contact_name || 'Enterprise Account',
           contact_name: c.contact_name || meta.contact_name || c.company_name || 'Representative',
           email: c.contact_email || metaUser?.email || 'contact@client.eu',
           phone: c.phone || meta.phone || null,
@@ -283,21 +300,30 @@ export async function POST(req: Request) {
           });
         }
 
-        if (cleanEmail) {
-          const { data: usersData } = await admin.auth.admin.listUsers();
-          const targetAuthUser = usersData?.users?.find(
-            (u) => u.email?.toLowerCase() === cleanEmail || u.id === companyId
-          );
-          if (targetAuthUser) {
-            await admin.auth.admin.updateUserById(targetAuthUser.id, {
-              email_confirm: true,
-              user_metadata: { approval_status: 'approved' },
-            });
-            // Link company row with user_id
-            await admin
-              .from('companies')
-              .update({ user_id: targetAuthUser.id, approval_status: 'approved' })
-              .eq('contact_email', cleanEmail);
+        if (cleanEmail && !targetUserId) {
+          try {
+            const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+              setTimeout(() => resolve({ data: null }), 2000)
+            );
+            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+            const raceResult = await Promise.race([listPromise, timeoutPromise]);
+            const usersData = (raceResult as any)?.data?.users || [];
+            const targetAuthUser = usersData.find(
+              (u: any) => u.email?.toLowerCase() === cleanEmail || u.id === companyId
+            );
+            if (targetAuthUser) {
+              await admin.auth.admin.updateUserById(targetAuthUser.id, {
+                email_confirm: true,
+                user_metadata: { approval_status: 'approved' },
+              });
+              // Link company row with user_id
+              await admin
+                .from('companies')
+                .update({ user_id: targetAuthUser.id, approval_status: 'approved' })
+                .eq('contact_email', cleanEmail);
+            }
+          } catch {
+            // ignore
           }
         }
       } catch (dbErr) {
@@ -392,19 +418,28 @@ export async function POST(req: Request) {
         }
 
         const targetEmail = (inputEmail || comp?.contact_email)?.toLowerCase()?.trim();
-        if (targetEmail) {
-          const { data: usersList } = await admin.auth.admin.listUsers();
-          const targetUser = usersList?.users?.find(
-            (u) => u.email?.toLowerCase().trim() === targetEmail
-          );
-          if (targetUser && targetUser.id !== userId) {
-            await admin.auth.admin.updateUserById(targetUser.id, {
-              user_metadata: {
-                ...targetUser.user_metadata,
-                membership_tier: targetTier,
-                tier: targetTier,
-              },
-            });
+        if (targetEmail && !userId) {
+          try {
+            const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+              setTimeout(() => resolve({ data: null }), 2000)
+            );
+            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+            const raceResult = await Promise.race([listPromise, timeoutPromise]);
+            const usersList = (raceResult as any)?.data?.users || [];
+            const targetUser = usersList.find(
+              (u: any) => u.email?.toLowerCase().trim() === targetEmail
+            );
+            if (targetUser && targetUser.id !== userId) {
+              await admin.auth.admin.updateUserById(targetUser.id, {
+                user_metadata: {
+                  ...targetUser.user_metadata,
+                  membership_tier: targetTier,
+                  tier: targetTier,
+                },
+              });
+            }
+          } catch {
+            // ignore
           }
         }
       } catch (dbErr) {
@@ -522,11 +557,16 @@ export async function POST(req: Request) {
           console.warn('[ADMIN UPDATE AUTH USER WARNING]', authErr);
         }
       } else if (emailChanged && effectiveOldEmail) {
-        // Try finding user by old email
+        // Try finding user by old email with timeout
         try {
-          const { data: usersList } = await admin.auth.admin.listUsers();
-          const targetUser = usersList?.users?.find(
-            (u) => u.email?.toLowerCase().trim() === effectiveOldEmail
+          const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 2000)
+          );
+          const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+          const raceResult = await Promise.race([listPromise, timeoutPromise]);
+          const usersList = (raceResult as any)?.data?.users || [];
+          const targetUser = usersList.find(
+            (u: any) => u.email?.toLowerCase().trim() === effectiveOldEmail
           );
           if (targetUser) {
             await admin.auth.admin.updateUserById(targetUser.id, {

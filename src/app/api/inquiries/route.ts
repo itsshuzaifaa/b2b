@@ -663,8 +663,13 @@ export async function POST(req: NextRequest) {
 
       if (!sellerComp) {
         try {
-          const { data: usersData } = await supabase.auth.admin.listUsers();
-          const authUser = usersData?.users?.find(
+          const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 1500)
+          );
+          const listPromise = supabase.auth.admin.listUsers({ page: 1, perPage: 100 });
+          const raceResult = await Promise.race([listPromise, timeoutPromise]);
+          const usersData = (raceResult as any)?.data?.users || [];
+          const authUser = usersData.find(
             (u: any) =>
               u.id === sellerCompanyId ||
               (cleanTargetEmail && u.email?.toLowerCase() === cleanTargetEmail) ||
@@ -1164,8 +1169,13 @@ export async function POST(req: NextRequest) {
 
         // Also check auth users
         try {
-          const { data: usersData } = await supabase.auth.admin.listUsers();
-          for (const u of usersData?.users || []) {
+          const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 1500)
+          );
+          const listPromise = supabase.auth.admin.listUsers({ page: 1, perPage: 100 });
+          const raceResult = await Promise.race([listPromise, timeoutPromise]);
+          const usersData = (raceResult as any)?.data?.users || [];
+          for (const u of usersData) {
             const uEmail = (u.email || '').toLowerCase().trim();
             if (!uEmail || !uEmail.includes('@') || uEmail === 'admin@b2blink.eu') continue;
             const meta = u.user_metadata || {};

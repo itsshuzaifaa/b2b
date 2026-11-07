@@ -85,20 +85,19 @@ export async function GET() {
   try {
     const admin = createAdminClient();
 
-    // 1. Fetch companies to reconcile all active accounts
-    const { data: companiesRaw } = await admin
+    // 1. Fetch companies directly from Postgres
+    const { data: companiesData, error: compErr } = await admin
       .from('companies')
       .select('*')
       .order('created_at', { ascending: false });
 
-    const companies = companiesRaw || [];
+    if (compErr) {
+      console.error('Error fetching companies for payments:', compErr);
+      return NextResponse.json({ payments: [] });
+    }
 
-    // 2. Fetch auth users
-    let authUsers: any[] = [];
-    try {
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      authUsers = usersData?.users || [];
-    } catch {}
+    const companies = companiesData || [];
+    const authUsers: any[] = [];
 
     const payments: AdminPaymentRecord[] = [];
     const processedCompanyIds = new Set<string>();

@@ -41,8 +41,12 @@ export async function POST(request: NextRequest) {
     // 0. Clean up any previous unverified registration attempts with this email or username
     // Ensures usernames are NOT locked in unless email is verified!
     try {
-      const { data: usersList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const existingUsers = usersList?.users || [];
+      const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+        setTimeout(() => resolve({ data: null }), 1500)
+      );
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const raceResult = await Promise.race([listPromise, timeoutPromise]);
+      const existingUsers = (raceResult as any)?.data?.users || [];
       for (const u of existingUsers) {
         const uMetaUsername = (u.user_metadata?.username as string | undefined)?.toLowerCase();
         if (!u.email_confirmed_at && (u.email?.toLowerCase() === email || uMetaUsername === username)) {
