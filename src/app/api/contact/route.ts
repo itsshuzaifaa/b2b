@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const query = addServerCustomerQuery({
+    const { query, isDuplicate } = addServerCustomerQuery({
       name: name || 'Wholesale Member',
       company: company || 'Trading Enterprise',
       email: email.trim(),
@@ -35,6 +35,10 @@ export async function POST(request: NextRequest) {
       topic: topic || 'general',
       message: message.trim(),
     });
+
+    if (isDuplicate) {
+      return NextResponse.json({ success: true, query, isDuplicate: true });
+    }
 
     // Also send an automated acknowledgment email to customer & alert compliance desk
     try {

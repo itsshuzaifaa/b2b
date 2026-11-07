@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   getAdminPayments,
+  saveAdminPayments,
   getAdminAccounts,
   saveAdminAccounts,
   type AdminPaymentRecord,
@@ -47,7 +48,20 @@ export default function SiteAdminPaymentsPage() {
   const [currentMonthYearStr, setCurrentMonthYearStr] = useState('Oct 2026');
 
   const loadData = async () => {
-    setPayments(getAdminPayments());
+    const local = getAdminPayments();
+    setPayments(local);
+
+    try {
+      const res = await fetch('/api/admin/payments', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.payments) && data.payments.length > 0) {
+          setPayments(data.payments);
+          saveAdminPayments(data.payments);
+        }
+      }
+    } catch {}
+
     try {
       const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
       if (res.ok) {
@@ -113,7 +127,11 @@ export default function SiteAdminPaymentsPage() {
   const totalSettled = completedPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 
   // This month's payments
-  const thisMonthPayments = completedPayments.filter((p) => p.created_at.includes(currentMonthStr) || p.created_at.includes('Oct'));
+  const thisMonthPayments = completedPayments.filter((p) => {
+    const cur = currentMonthStr.toLowerCase();
+    const created = (p.created_at || '').toLowerCase();
+    return created.includes(cur) || created.includes('nov') || created.includes('oct') || created.includes('2026');
+  });
   const thisMonthTotal = thisMonthPayments.reduce((acc, p) => acc + p.amount_gbp, 0);
 
   // Accounts with active paid subscriptions

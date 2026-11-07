@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   getAdminPayments,
+  saveAdminPayments,
   markPaymentCompleted,
   recordManualPayment,
   deletePayment,
@@ -47,8 +48,20 @@ export default function AdminPaymentsPage() {
   const [newStatus, setNewStatus] = useState<PaymentStatus>('Completed');
   const [newNotes, setNewNotes] = useState('');
 
-  const loadData = () => {
-    setPayments(getAdminPayments());
+  const loadData = async () => {
+    const local = getAdminPayments();
+    setPayments(local);
+
+    try {
+      const res = await fetch('/api/admin/payments', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.payments) && data.payments.length > 0) {
+          setPayments(data.payments);
+          saveAdminPayments(data.payments);
+        }
+      }
+    } catch {}
   };
 
   useEffect(() => {
@@ -65,6 +78,13 @@ export default function AdminPaymentsPage() {
   const handleVerify = (id: string) => {
     markPaymentCompleted(id);
     showNotice('Payment verified and seller account activated.');
+    try {
+      fetch('/api/admin/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify', paymentId: id }),
+      }).catch(() => {});
+    } catch {}
     loadData();
   };
 
@@ -72,6 +92,9 @@ export default function AdminPaymentsPage() {
     if (confirm('Delete this payment transaction record?')) {
       deletePayment(id);
       showNotice('Payment record deleted.');
+      try {
+        fetch(`/api/admin/payments?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+      } catch {}
       loadData();
     }
   };
@@ -80,7 +103,7 @@ export default function AdminPaymentsPage() {
     e.preventDefault();
     if (!newCompany || !newAmount) return;
 
-    recordManualPayment({
+    const created = recordManualPayment({
       company_id: `comp-${Date.now()}`,
       company_name: newCompany.trim(),
       contact_email: newEmail.trim() || 'accounting@client.eu',
@@ -92,6 +115,14 @@ export default function AdminPaymentsPage() {
       status: newStatus,
       notes: newNotes,
     });
+
+    try {
+      fetch('/api/admin/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'record', payment: created }),
+      }).catch(() => {});
+    } catch {}
 
     setShowAddPaymentModal(false);
     showNotice(`Recorded payment for ${newCompany}`);

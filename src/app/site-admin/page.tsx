@@ -7,6 +7,7 @@ import {
   getAdminAccounts,
   saveAdminAccounts,
   getAdminPayments,
+  saveAdminPayments,
   getAdminListings,
   getCustomerQueries,
   updateAccountApproval,
@@ -68,6 +69,19 @@ export default function SiteAdminOverviewPage() {
     setPayments(getAdminPayments());
     setListingsCount(getAdminListings().length);
     setQueries(getCustomerQueries());
+
+    try {
+      const pRes = await fetch('/api/admin/payments', { cache: 'no-store' });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        if (Array.isArray(pData.payments) && pData.payments.length > 0) {
+          setPayments(pData.payments);
+          saveAdminPayments(pData.payments);
+        }
+      }
+    } catch {
+      // ignore
+    }
 
     try {
       const qRes = await fetch('/api/admin/queries', { cache: 'no-store' });

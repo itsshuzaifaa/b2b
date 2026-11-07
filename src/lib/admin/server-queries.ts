@@ -33,6 +33,40 @@ function getFilePath(): string {
 // In-memory cache fallback (starts empty for clean testing)
 let memoryQueries: CustomerQuery[] = [];
 
+function deduplicateQueries(list: CustomerQuery[]): CustomerQuery[] {
+  const result: CustomerQuery[] = [];
+  const seenIds = new Set<string>();
+
+  for (const q of list) {
+    if (!q || !q.id || seenIds.has(q.id)) continue;
+
+    const qEmail = (q.email || '').trim().toLowerCase();
+    const qMsg = (q.message || '').trim().toLowerCase();
+    const qParts = q.id.split('-');
+    const qTs = qParts.length >= 2 ? parseInt(qParts[1], 10) : NaN;
+
+    // Check if an existing query in result has the same email and message within a 10-minute window
+    const isDuplicate = result.some((existing) => {
+      if ((existing.email || '').trim().toLowerCase() !== qEmail) return false;
+      if ((existing.message || '').trim().toLowerCase() !== qMsg) return false;
+
+      const exParts = existing.id.split('-');
+      const exTs = exParts.length >= 2 ? parseInt(exParts[1], 10) : NaN;
+      if (!isNaN(qTs) && !isNaN(exTs)) {
+        return Math.abs(qTs - exTs) < 10 * 60 * 1000;
+      }
+      return true;
+    });
+
+    if (!isDuplicate) {
+      seenIds.add(q.id);
+      result.push(q);
+    }
+  }
+
+  return result;
+}
+
 export function getServerCustomerQueries(): CustomerQuery[] {
   try {
     const filePath = getFilePath();
@@ -40,8 +74,15 @@ export function getServerCustomerQueries(): CustomerQuery[] {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
-        memoryQueries = parsed;
-        return parsed;
+        const cleaned = deduplicateQueries(parsed);
+        // Persist deduplicated list if duplicates were pruned
+        if (cleaned.length !== parsed.length) {
+          try {
+            fs.writeFileSync(filePath, JSON.stringify(cleaned, null, 2), 'utf-8');
+          } catch {}
+        }
+        memoryQueries = cleaned;
+        return cleaned;
       }
     }
   } catch (err) {
@@ -51,13 +92,19 @@ export function getServerCustomerQueries(): CustomerQuery[] {
 }
 
 export function saveServerCustomerQueries(queries: CustomerQuery[]): void {
-  memoryQueries = queries;
+  const cleaned = deduplicateQueries(queries);
+  memoryQueries = cleaned;
   try {
     const filePath = getFilePath();
-    fs.writeFileSync(filePath, JSON.stringify(queries, null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(cleaned, null, 2), 'utf-8');
   } catch (err) {
     console.warn('[SERVER QUERIES WRITE WARNING]', err);
   }
+}
+
+export interface AddCustomerQueryResult {
+  query: CustomerQuery;
+  isDuplicate: boolean;
 }
 
 export function addServerCustomerQuery(data: {
@@ -67,8 +114,30 @@ export function addServerCustomerQuery(data: {
   phone?: string;
   topic?: string;
   message: string;
-}): CustomerQuery {
+}): AddCustomerQueryResult {
   const queries = getServerCustomerQueries();
+  const trimmedEmail = (data.email || '').trim().toLowerCase();
+  const trimmedMsg = (data.message || '').trim().toLowerCase();
+
+  // Deduplication guard: check if an identical query was submitted within the last 5 minutes
+  const existing = queries.find((q) => {
+    if ((q.email || '').trim().toLowerCase() !== trimmedEmail) return false;
+    if ((q.message || '').trim().toLowerCase() !== trimmedMsg) return false;
+
+    const parts = q.id.split('-');
+    if (parts.length >= 2) {
+      const ts = parseInt(parts[1], 10);
+      if (!isNaN(ts) && Date.now() - ts < 5 * 60 * 1000) {
+        return true;
+      }
+    }
+    return true;
+  });
+
+  if (existing) {
+    return { query: existing, isDuplicate: true };
+  }
+
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', {
     day: 'numeric',
@@ -92,7 +161,7 @@ export function addServerCustomerQuery(data: {
 
   queries.unshift(newQuery);
   saveServerCustomerQueries(queries);
-  return newQuery;
+  return { query: newQuery, isDuplicate: false };
 }
 
 export function replyServerCustomerQuery(id: string, replyText: string): CustomerQuery | null {
