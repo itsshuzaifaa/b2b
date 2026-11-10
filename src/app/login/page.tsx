@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, type DemoRoleType } from '@/lib/auth/auth-context';
 import { createClient } from '@/lib/supabase/client';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Mail, Eye, EyeOff, RefreshCw, Clock } from 'lucide-react';
 
 function LoginFormContent() {
@@ -46,7 +47,12 @@ function LoginFormContent() {
   // Check URL params or localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedPendingEmail = localStorage.getItem('b2b_pending_verification_email');
+      if (searchParams.get('deleted') === 'true' || searchParams.get('status') === 'deleted') {
+        setErrorMsg('Your account has been deleted or suspended. If you believe this is an error, you can appeal through email at support@b2blink.eu.');
+        return;
+      }
+
+      const storedPendingEmail = localStorage.getItem('b2b_pending_signup_email');
       const paramVerify = searchParams.get('verify');
       const paramEmail = searchParams.get('email');
 
@@ -98,22 +104,44 @@ function LoginFormContent() {
       const cleanIdentifier = identifier.trim();
       let resolvedEmail = cleanIdentifier;
 
+      // 0. Check if account was deleted or suspended
+      if (isAccountDeleted(null, cleanIdentifier)) {
+        setErrorMsg('Your account has been deleted or suspended. If you believe this is an error, you can appeal through email at support@b2blink.eu.');
+        setLoading(false);
+        return;
+      }
+
+      // Resolve shortcut username 'admin' to official administrator email
+      if (cleanIdentifier.toLowerCase() === 'admin') {
+        resolvedEmail = 'admin@b2blink.eu';
+      }
+
       // If user typed a username (no '@'), resolve it to their account email
       if (!cleanIdentifier.includes('@')) {
         const lookupRes = await fetch('/api/auth/lookup-username', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: cleanIdentifier }),
+          body: JSON.stringify({ identifier: cleanIdentifier, password }),
         });
 
         const lookupData = await lookupRes.json();
         if (!lookupRes.ok || !lookupData.email) {
-          setErrorMsg(lookupData.error || `No account found with username "${cleanIdentifier}".`);
+          if (isAccountDeleted(null, cleanIdentifier)) {
+            setErrorMsg('Your account has been deleted or suspended. If you believe this is an error, you can appeal through email at support@b2blink.eu.');
+          } else {
+            setErrorMsg('Invalid login credentials.');
+          }
           setLoading(false);
           return;
         }
 
         resolvedEmail = lookupData.email;
+      }
+
+      if (isAccountDeleted(null, resolvedEmail)) {
+        setErrorMsg('Your account has been deleted or suspended. If you believe this is an error, you can appeal through email at support@b2blink.eu.');
+        setLoading(false);
+        return;
       }
 
       const supabase = createClient();
@@ -123,6 +151,12 @@ function LoginFormContent() {
       });
 
       if (error) {
+        if (isAccountDeleted(null, resolvedEmail)) {
+          setErrorMsg('Your account has been deleted or suspended. If you believe this is an error, you can appeal through email at support@b2blink.eu.');
+          setLoading(false);
+          return;
+        }
+
         const errorMsgLower = (error.message || '').toLowerCase();
         const errorCode = (error as any).code || '';
 
@@ -151,14 +185,17 @@ function LoginFormContent() {
       } else {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('b2b_demo_role');
-          localStorage.removeItem('b2b_pending_verification_email');
+          localStorage.removeItem('b2b_pending_signup_email');
           sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
           sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
         }
         if (authData?.user) {
           setAuthenticatedUser(authData.user);
         }
-        router.push(redirectUrl || '/dashboard');
+        const appMeta = authData?.user?.app_metadata || {};
+        const isAppAdmin = appMeta.role === 'admin' || appMeta.is_admin === true || authData?.user?.email?.toLowerCase() === 'admin@b2blink.eu';
+        const targetUrl = redirectUrl || (isAppAdmin ? '/site-admin' : '/dashboard');
+        router.push(targetUrl);
         router.refresh();
         return;
       }
@@ -232,7 +269,7 @@ function LoginFormContent() {
       // Success! Clear any local demo role and pending markers
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_demo_role');
-        localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_pending_signup_email');
         sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
         sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
       }

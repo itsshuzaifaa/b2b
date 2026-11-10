@@ -11,7 +11,6 @@ import {
   saveAdminPayments,
   getAdminListings,
   getCustomerQueries,
-  updateAccountApproval,
   broadcastMessageToAllSellers,
   isAccountDeleted,
   type AdminClientAccount,
@@ -39,6 +38,7 @@ import {
 
 export default function SiteAdminOverviewPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
   const [queries, setQueries] = useState<CustomerQuery[]>([]);
@@ -49,6 +49,7 @@ export default function SiteAdminOverviewPage() {
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
   const loadData = async () => {
@@ -58,38 +59,47 @@ export default function SiteAdminOverviewPage() {
     try {
       // Parallel fetch to avoid connection waterfall
       const [accRes, payRes, qRes] = await Promise.allSettled([
-        fetch('/api/admin/accounts', { cache: 'no-store' }),
-        fetch('/api/admin/payments', { cache: 'no-store' }),
-        fetch('/api/admin/queries', { cache: 'no-store' }),
+        fetch('/api/admin/accounts', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        fetch('/api/admin/payments', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        fetch('/api/admin/queries', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
       ]);
+
+      let hasError = false;
 
       if (accRes.status === 'fulfilled' && accRes.value.ok) {
         try {
           const data = await accRes.value.json();
-          if (Array.isArray(data.accounts) && data.accounts.length > 0) {
-            setAccounts(data.accounts);
-            saveAdminAccounts(data.accounts);
+          if (Array.isArray(data.accounts)) {
+            const clean = data.accounts.filter(
+              (a: AdminClientAccount) =>
+                !isAccountDeleted(a.id, a.email) &&
+                a.role !== 'admin' &&
+                a.email?.toLowerCase() !== 'admin@b2blink.eu'
+            );
+            setAccounts(clean);
+            saveAdminAccounts(clean);
           }
         } catch {
-          setAccounts(getAdminAccounts());
+          hasError = true;
         }
       } else {
-        setAccounts(getAdminAccounts());
+        hasError = true;
       }
 
-      setPayments(getAdminPayments());
       setListingsCount(getAdminListings().length);
 
       if (payRes.status === 'fulfilled' && payRes.value.ok) {
         try {
           const pData = await payRes.value.json();
-          if (Array.isArray(pData.payments) && pData.payments.length > 0) {
+          if (Array.isArray(pData.payments)) {
             setPayments(pData.payments);
             saveAdminPayments(pData.payments);
           }
         } catch {
-          // ignore
+          hasError = true;
         }
+      } else {
+        hasError = true;
       }
 
       if (qRes.status === 'fulfilled' && qRes.value.ok) {
@@ -104,20 +114,26 @@ export default function SiteAdminOverviewPage() {
             }
           }
         } catch {
-          // Keep existing queries state on network failure
+          hasError = true;
         }
+      } else {
+        hasError = true;
       }
+
+      if (hasError) {
+        setLoadError('Some administrative data could not be synchronized from the server.');
+      } else {
+        setLoadError(null);
+      }
+    } catch {
+      setLoadError('Network connection error while synchronizing platform data.');
     } finally {
       inFlightRef.current = false;
     }
   };
 
   useEffect(() => {
-    // Immediate initial hydration from local cache
-    const initialQueries = getCustomerQueries();
-    if (initialQueries.length > 0) {
-      setQueries(initialQueries);
-    }
+    setMounted(true);
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
@@ -129,7 +145,7 @@ export default function SiteAdminOverviewPage() {
     };
   }, []);
 
-  const showNotice = (msg: string) => {
+  const showNotice = (msg: string, _type?: string) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3500);
   };
@@ -139,21 +155,7 @@ export default function SiteAdminOverviewPage() {
     setAccounts((prev) =>
       prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
     );
-    updateAccountApproval(acc.id, 'approved');
-    if (typeof window !== 'undefined') {
-      if (acc.id) {
-        localStorage.setItem(`b2b_account_verified_${acc.id}`, 'true');
-        localStorage.removeItem(`b2b_onboarding_completed_${acc.id}`);
-      }
-      if (acc.email) {
-        const cleanEmail = acc.email.toLowerCase().trim();
-        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
-        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
-      }
-      sessionStorage.setItem('b2b_just_verified', 'true');
-      sessionStorage.setItem('b2b_show_onboarding', 'true');
-    }
-    showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`);
+    showNotice(`Account "${acc.name}" verified & activated! Compliance notice sent to ${acc.email}.`, 'success');
 
     try {
       await fetch('/api/admin/accounts', {
@@ -178,7 +180,7 @@ export default function SiteAdminOverviewPage() {
   const totalCompletedGbp = completedPayments.reduce((sum, p) => sum + p.amount_gbp, 0);
 
   const pendingAccounts = accounts.filter(
-    (a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification'
+    (a) => a.approval_status === 'pending'
   );
   const uniqueQueries: CustomerQuery[] = useMemo(() => {
     const seen = new Set<string>();
@@ -249,13 +251,35 @@ export default function SiteAdminOverviewPage() {
         </div>
       )}
 
+      {loadError && (
+        <div className="mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[13px] flex items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-900">Failed to load platform data</p>
+              <p className="text-[12px] text-rose-700">{loadError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              void loadData();
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] transition shrink-0 cursor-pointer shadow-xs"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Requirement 02: 4 Metric Cards Grid in specified order:
           1. Settled Platform Volume (Amount box)
           2. Active Users / Registered Accounts
           3. Marketplace Listings
           4. Customer Queries (with direct link)
       */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-6" suppressHydrationWarning>
         {/* Card 1: Amount Box (Settled Platform Volume) */}
         <div className="p-5 rounded-[24px] bg-[#F8FAFC] border border-[#EAEFF6] flex flex-col justify-between shadow-xs">
           <div className="flex items-center justify-between text-[#8A9BB0] mb-3">

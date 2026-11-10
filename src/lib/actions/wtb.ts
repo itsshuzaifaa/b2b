@@ -1,6 +1,7 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireApprovedUser, requireAdmin, requireUser, AuthError } from '@/lib/auth/guards';
 import { processWtbNotificationQueue } from '@/lib/email/dispatcher';
 import { processMatchesForNewWtb } from '@/lib/matching/match-service';
 import type { WtbRequest } from '@/types/database';
@@ -28,6 +29,24 @@ export interface WtbActionResult {
   wtbRequestId?: string;
   queueProcessed?: number;
   error?: string;
+  code?: string;
+}
+
+let cachedCategories: { data: { id: string; slug: string; name: string }[]; expiresAt: number } | null = null;
+
+async function getCategoriesCached(admin: any): Promise<{ id: string; slug: string; name: string }[]> {
+  const now = Date.now();
+  if (cachedCategories && cachedCategories.expiresAt > now) {
+    return cachedCategories.data;
+  }
+  const { data: dbCategories } = await admin
+    .from('categories')
+    .select('id, slug, name');
+  if (dbCategories && dbCategories.length > 0) {
+    cachedCategories = { data: dbCategories, expiresAt: now + 5 * 60 * 1000 };
+    return dbCategories;
+  }
+  return cachedCategories?.data || [];
 }
 
 /**
@@ -36,14 +55,26 @@ export interface WtbActionResult {
  * triggers immediate processing of the notification queue to dispatch alerts to vetted sellers.
  */
 export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const status = auth.errorResponse?.status || 401;
+    let code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    let errorMsg = status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.';
+    try {
+      const cloned = auth.errorResponse?.clone();
+      const errJson = await cloned?.json();
+      if (errJson?.code) code = errJson.code;
+      if (errJson?.error) errorMsg = errJson.error;
+    } catch {}
+    return {
+      success: false,
+      error: errorMsg,
+      code,
+    };
+  }
+
   try {
     // 1. Validate inputs
-    if (!data.buyerName?.trim()) {
-      return { success: false, error: 'Buyer name is required.' };
-    }
-    if (!data.buyerEmail?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.buyerEmail)) {
-      return { success: false, error: 'Valid buyer email is required.' };
-    }
     if (!data.productName?.trim()) {
       return { success: false, error: 'Requested product name is required.' };
     }
@@ -55,14 +86,23 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       return { success: false, error: 'Target price must be greater than zero.' };
     }
 
+    // Strictly enforce session identity for company and buyer contact
+    const effectiveBuyerUserId = auth.user.id;
+    const effectiveBuyerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+    const effectiveBuyerCompany = auth.company?.company_name || auth.company?.name || 'Wholesale Member';
+    const effectiveBuyerName = auth.company?.contact_name || data.buyerName?.trim() || 'Wholesale Buyer';
+    const effectiveBuyerPhone = auth.company?.phone || data.buyerPhone?.trim() || null;
+
+    if (!effectiveBuyerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveBuyerEmail)) {
+      return { success: false, error: 'Valid buyer email is required from active session.' };
+    }
+
     const admin = createAdminClient();
 
     // 2. Resolve category_id safely
     let resolvedCategoryId = data.categoryId;
 
-    const { data: dbCategories } = await admin
-      .from('categories')
-      .select('id, slug, name');
+    const dbCategories = await getCategoriesCached(admin);
 
     if (dbCategories && dbCategories.length > 0) {
       if (resolvedCategoryId) {
@@ -113,11 +153,11 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
     const { data: insertedWtb, error: insertError } = await admin
       .from('wtb_requests')
       .insert({
-        buyer_user_id: buyerUserId,
-        buyer_name: data.buyerName.trim(),
-        buyer_email: data.buyerEmail.trim().toLowerCase(),
-        buyer_phone: data.buyerPhone?.trim() || null,
-        buyer_company: data.buyerCompany?.trim() || null,
+        buyer_user_id: effectiveBuyerUserId,
+        buyer_name: effectiveBuyerName,
+        buyer_email: effectiveBuyerEmail,
+        buyer_phone: effectiveBuyerPhone,
+        buyer_company: effectiveBuyerCompany,
         category_id: resolvedCategoryId,
         product_name: data.productName.trim(),
         barcode_or_sku: data.barcodeOrSku?.trim() || null,
@@ -138,14 +178,10 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
       };
     }
 
-    // 4. Trigger processing of the wtb_notifications_queue
-    let processedCount = 0;
-    try {
-      const queueResult = await processWtbNotificationQueue();
-      processedCount = queueResult.totalProcessed;
-    } catch (qErr) {
+    // 4. Trigger processing of the wtb_notifications_queue asynchronously (non-blocking for ultra-fast response)
+    void processWtbNotificationQueue().catch((qErr) => {
       console.warn('[WTB QUEUE TRIGGER NOTICE]', qErr);
-    }
+    });
 
     // 5. Trigger automatic matching with active WTS inventory & send immediate emails
     try {
@@ -172,7 +208,7 @@ export async function createWtbRequest(data: WtbInput): Promise<WtbActionResult>
     return {
       success: true,
       wtbRequestId: insertedWtb.id,
-      queueProcessed: processedCount,
+      queueProcessed: 0,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error submitting WTB request.';
@@ -186,6 +222,8 @@ const WTB_CACHE_TTL_MS = 60000; // 60 seconds
 
 /**
  * Fetches all active Want-To-Buy requests from the database for the public board.
+ * SECURITY MANDATE: Returns public columns ONLY.
+ * Never leaks buyer email, buyer phone, or internal account identifiers.
  */
 export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
   if (cachedPublicWtbs && Date.now() - cachedPublicWtbs.timestamp < WTB_CACHE_TTL_MS) {
@@ -198,7 +236,7 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
     // Enforce 3-second timeout guard to prevent landing page hangs
     const queryPromise = admin
       .from('wtb_requests')
-      .select('*')
+      .select('id, product_name, category_id, target_quantity, target_price, barcode_or_sku, notes, status, created_at')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(60);
@@ -221,22 +259,22 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
         noteStr.includes('Pricing: POA') || noteStr.includes('POA') ? 'poa' : 'fixed';
 
       return {
-        id: row.id,
-        buyer_company_id: row.buyer_user_id || null,
-        buyer_company: row.buyer_company || null,
-        buyer_name: row.buyer_name,
-        buyer_email: row.buyer_email,
-        buyer_phone: row.buyer_phone,
-        product_name: row.product_name,
-        category_id: row.category_id,
+        id: String(row.id),
+        product_name: String(row.product_name || 'Procurement Lot'),
+        buyer_name: 'Verified Buyer',
+        buyer_email: '',
+        buyer_phone: null,
+        buyer_user_id: null,
+        buyer_company_id: null,
+        category_id: row.category_id || null,
         category_slug: 'consumer-electronics',
-        target_quantity: Number(row.target_quantity),
-        target_price: Number(row.target_price),
+        target_quantity: Number(row.target_quantity) || 1,
+        target_price: Number(row.target_price) || 0,
         pricing_type: detectedPricingType,
-        barcode_or_sku: row.barcode_or_sku,
-        notes: row.notes,
+        barcode_or_sku: row.barcode_or_sku || null,
+        notes: row.notes || null,
         status: (row.status || 'open') as any,
-        created_at: row.created_at,
+        created_at: row.created_at || new Date().toISOString(),
       };
     });
 
@@ -249,17 +287,71 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
 }
 
 /**
- * Fetches WTB requests submitted by a specific buyer email.
+ * Deletes / cancels a Want-To-Buy request.
+ * SECURITY MANDATE:
+ * Requires approved user session.
+ * Caller MUST be the verified owner of the WTB request, or an administrator.
  */
-export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbRequest[]> {
+export async function deleteWtbRequest(wtbId: string): Promise<{ success: boolean; error?: string }> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const status = auth.errorResponse?.status === 401 ? 401 : 403;
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+  }
+
+  const admin = createAdminClient();
+  const { data: wtb, error: fetchErr } = await admin
+    .from('wtb_requests')
+    .select('id, buyer_email, buyer_user_id')
+    .eq('id', wtbId)
+    .single();
+
+  if (fetchErr || !wtb) {
+    throw new AuthError(403, 'Forbidden: WTB request not found or not owned.');
+  }
+
+  const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+
+  const isOwner =
+    auth.isAdmin ||
+    (wtb.buyer_user_id && wtb.buyer_user_id === auth.user.id) ||
+    (wtb.buyer_email && wtb.buyer_email.toLowerCase().trim() === callerEmail);
+
+  if (!isOwner) {
+    throw new AuthError(403, 'Forbidden: You do not own this WTB request.');
+  }
+
+  const { error: deleteErr } = await admin
+    .from('wtb_requests')
+    .delete()
+    .eq('id', wtbId);
+
+  if (deleteErr) {
+    return { success: false, error: deleteErr.message };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Fetches WTB requests submitted by the caller.
+ * SECURITY MANDATE: Derives buyer email strictly from authenticated session.
+ */
+export async function getBuyerWtbRequests(buyerEmail?: string): Promise<WtbRequest[]> {
   try {
-    if (!buyerEmail) return [];
+    const auth = await requireUser();
+    if (auth.errorResponse || !auth.user) {
+      return [];
+    }
+
+    const effectiveEmail = auth.isAdmin && buyerEmail ? buyerEmail.trim().toLowerCase() : auth.user.email?.toLowerCase();
+    if (!effectiveEmail) return [];
     const admin = createAdminClient();
 
     const queryPromise = admin
       .from('wtb_requests')
       .select('*')
-      .ilike('buyer_email', buyerEmail.trim().toLowerCase())
+      .ilike('buyer_email', effectiveEmail)
       .order('created_at', { ascending: false })
       .limit(60);
 
@@ -306,7 +398,9 @@ export async function getBuyerWtbRequests(buyerEmail: string): Promise<WtbReques
 }
 
 /**
- * Standalone worker invocation for cron jobs or background schedules.
+ * Standalone worker invocation for maintenance cron jobs or platform administrators.
+ * SECURITY MANDATE: Non-callable by unauthenticated or non-admin browser clients.
+ * Enforces verified administrator privileges via requireAdmin().
  */
 export async function triggerQueueProcessing(): Promise<{
   success: boolean;
@@ -314,5 +408,14 @@ export async function triggerQueueProcessing(): Promise<{
   sentCount: number;
   failedCount: number;
 }> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.isAdmin) {
+    throw new AuthError(403, 'Forbidden: Administrator privileges required to process WTB queue.');
+  }
   return processWtbNotificationQueue();
 }
+
+/**
+ * Explicit alias to guarantee reprocessWtbQueueAction is non-callable from non-admin browser context.
+ */
+export const reprocessWtbQueueAction = triggerQueueProcessing;

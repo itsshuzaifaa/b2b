@@ -4,15 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  getAdminAccounts,
-  saveAdminAccounts,
-  suspendAccount,
-  unsuspendAccount,
-  deleteAccount,
   updateAccountTier,
-  updateAccountApproval,
   updateAccountBasicInfo,
-  isAccountDeleted,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
@@ -47,10 +40,14 @@ import {
   Globe,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
+import { InactiveBadge } from '@/components/admin/InactiveBadge';
 
 export default function SiteAdminUsersPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer' | 'suspended' | 'pending'>('all');
 
@@ -76,45 +73,99 @@ export default function SiteAdminUsersPage() {
   const [bulkCsvAccount, setBulkCsvAccount] = useState<AdminClientAccount | null>(null);
   const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [activeMenuAccount, setActiveMenuAccount] = useState<AdminClientAccount | null>(null);
+  const [menuCoords, setMenuCoords] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackType, setFeedbackType] = useState<'success' | 'delete'>('success');
+
+  // Auto-close floating dropdown on scroll or window resize
+  useEffect(() => {
+    if (!activeMenuAccount) return;
+    const closeMenu = () => {
+      setActiveMenuAccount(null);
+      setMenuCoords(null);
+      setOpenMenuId(null);
+    };
+    window.addEventListener('scroll', closeMenu, { passive: true });
+    window.addEventListener('resize', closeMenu, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', closeMenu);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [activeMenuAccount]);
+
+  const handleOpenMenu = (e: React.MouseEvent<HTMLButtonElement>, acc: AdminClientAccount) => {
+    e.stopPropagation();
+    if (activeMenuAccount?.id === acc.id) {
+      setActiveMenuAccount(null);
+      setMenuCoords(null);
+      setOpenMenuId(null);
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropdownHeight = 290;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const right = Math.max(16, window.innerWidth - rect.right);
+
+    // Only position upward if space below is insufficient AND there is enough room above
+    if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
+      setMenuCoords({
+        bottom: window.innerHeight - rect.top + 6,
+        right,
+      });
+    } else {
+      setMenuCoords({
+        top: rect.bottom + 6,
+        right,
+      });
+    }
+
+    setActiveMenuAccount(acc);
+    setOpenMenuId(acc.id);
+  };
 
   const loadData = async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
+      const res = await fetch('/api/admin/accounts', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+        if (Array.isArray(data.accounts)) {
           const cleanAccounts = data.accounts.filter(
             (a: AdminClientAccount) =>
-              !isAccountDeleted(a.id, a.email) &&
               a.role !== 'admin' &&
               a.email?.toLowerCase() !== 'admin@b2blink.eu'
           );
-          if (cleanAccounts.length > 0) {
-            setAccounts(cleanAccounts);
-            saveAdminAccounts(cleanAccounts);
-            return;
-          }
+          setAccounts(cleanAccounts);
+          setLoadError(null);
+          setLoading(false);
+          return;
         }
       }
-    } catch {
-      // fallback
+      const errData = await res.json().catch(() => ({}));
+      setLoadError(errData?.error || 'Database connection error loading verified client accounts.');
+      setAccounts([]);
+      setLoading(false);
+    } catch (err: any) {
+      setLoadError(err?.message || 'Database connection error loading verified client accounts.');
+      setAccounts([]);
+      setLoading(false);
     }
-    const cleanLocal = getAdminAccounts().filter(
-      (a) => a.role !== 'admin' && a.email?.toLowerCase() !== 'admin@b2blink.eu'
-    );
-    setAccounts(cleanLocal);
   };
 
   useEffect(() => {
+    setMounted(true);
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     return () => window.removeEventListener('b2b_admin_update', loadData);
   }, []);
 
-  const showNotice = (msg: string) => {
+  const showNotice = (msg: string, type: 'success' | 'delete' = 'success') => {
     setFeedback(msg);
-    setTimeout(() => setFeedback(null), 3000);
+    setFeedbackType(type);
+    setTimeout(() => setFeedback(null), 3500);
   };
 
   const handleBulkCsvSuccess = (count: number) => {
@@ -144,25 +195,15 @@ export default function SiteAdminUsersPage() {
   const handleVerifyAccount = async (acc: AdminClientAccount) => {
     // Optimistic AJAX state update
     setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, approval_status: 'approved', account_status: 'active' } : a))
+      prev.map((a) =>
+        a.id === acc.id || (acc.email && a.email?.toLowerCase() === acc.email.toLowerCase())
+          ? { ...a, approval_status: 'approved', account_status: 'active' }
+          : a
+      )
     );
-    updateAccountApproval(acc.id, 'approved');
-    if (typeof window !== 'undefined') {
-      if (acc.id) {
-        localStorage.setItem(`b2b_account_verified_${acc.id}`, 'true');
-        localStorage.removeItem(`b2b_onboarding_completed_${acc.id}`);
-      }
-      if (acc.email) {
-        const cleanEmail = acc.email.toLowerCase().trim();
-        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
-        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
-      }
-      sessionStorage.setItem('b2b_just_verified', 'true');
-      sessionStorage.setItem('b2b_show_onboarding', 'true');
-    }
-    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`);
+    showNotice(`Account "${acc.name}" verified & activated! Approval email dispatched to ${acc.email}.`, 'success');
 
-    // Await database persistence before reloading data so backend status is guaranteed synced
+    // Await database persistence through /api/admin/accounts (companies.approval_status single source of truth)
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
@@ -182,10 +223,41 @@ export default function SiteAdminUsersPage() {
     await loadData();
   };
 
+  const handleRejectAccount = async (acc: AdminClientAccount, reason?: string) => {
+    const rejectionReason = reason || 'Application did not meet business verification criteria.';
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === acc.id || (acc.email && a.email?.toLowerCase() === acc.email.toLowerCase())
+          ? { ...a, approval_status: 'rejected', account_status: 'suspended', rejection_reason: rejectionReason }
+          : a
+      )
+    );
+    showNotice(`Account "${acc.name}" declined. Notice sent to ${acc.email}.`);
+
+    try {
+      await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reject',
+          companyId: acc.id,
+          email: acc.email,
+          contactName: acc.contact_name,
+          companyName: acc.name,
+          reason: rejectionReason,
+        }),
+      });
+    } catch (err) {
+      console.warn('Reject fetch error:', err);
+    }
+
+    await loadData();
+  };
+
   const handleToggleSuspend = async (acc: AdminClientAccount) => {
     const isCurrentlySuspended = acc.account_status === 'suspended';
     const newStatus = isCurrentlySuspended ? 'active' : 'suspended';
-    const newApproval = isCurrentlySuspended ? 'approved' : 'rejected';
+    const newApproval = isCurrentlySuspended ? 'approved' : 'suspended';
 
     // Optimistic AJAX state update
     setAccounts((prev) =>
@@ -197,7 +269,6 @@ export default function SiteAdminUsersPage() {
     );
 
     if (isCurrentlySuspended) {
-      unsuspendAccount(acc.id);
       showNotice(`Account "${acc.name}" reactivated. Welcome notice dispatched.`);
       try {
         await fetch('/api/admin/accounts', {
@@ -213,7 +284,6 @@ export default function SiteAdminUsersPage() {
         });
       } catch {}
     } else {
-      suspendAccount(acc.id);
       showNotice(`Account "${acc.name}" suspended. Suspension notice dispatched to ${acc.email}.`);
       try {
         await fetch('/api/admin/accounts', {
@@ -242,10 +312,9 @@ export default function SiteAdminUsersPage() {
     // 1. Optimistic AJAX UI update immediately - NO hard reload
     setAccounts((prev) => prev.filter((a) => a.id !== acc.id && a.email !== acc.email));
     setDeleteConfirmAccount(null);
-    deleteAccount(acc.id, acc.email);
-    showNotice(`Account "${acc.name}" permanently deleted.`);
+    showNotice(`Account "${acc.name}" permanently deleted.`, 'delete');
 
-    // 2. AJAX call to API to delete from database
+    // 2. AJAX call to API to delete from database and Supabase Auth
     try {
       await fetch('/api/admin/accounts', {
         method: 'POST',
@@ -260,8 +329,8 @@ export default function SiteAdminUsersPage() {
       console.warn('AJAX delete error:', err);
     }
 
-    // 3. Re-sync via AJAX in background
-    loadData();
+    // 3. Re-sync via AJAX in background from database
+    await loadData();
   };
 
   const handleClearCatalogLots = async (acc: AdminClientAccount) => {
@@ -470,7 +539,7 @@ export default function SiteAdminUsersPage() {
       if (roleFilter === 'seller') return acc.role === 'seller';
       if (roleFilter === 'buyer') return acc.role === 'buyer';
       if (roleFilter === 'suspended') return acc.account_status === 'suspended';
-      if (roleFilter === 'pending') return acc.approval_status === 'pending' || acc.approval_status === 'pending_verification';
+      if (roleFilter === 'pending') return acc.approval_status === 'pending';
 
       return true;
     });
@@ -482,7 +551,7 @@ export default function SiteAdminUsersPage() {
   const sellerCount = clientAccounts.filter((a) => a.role === 'seller').length;
   const buyerCount = clientAccounts.filter((a) => a.role === 'buyer').length;
   const suspendedCount = clientAccounts.filter((a) => a.account_status === 'suspended').length;
-  const pendingCount = clientAccounts.filter((a) => a.approval_status === 'pending' || a.approval_status === 'pending_verification').length;
+  const pendingCount = clientAccounts.filter((a) => a.approval_status === 'pending').length;
 
   return (
     <>
@@ -499,14 +568,24 @@ export default function SiteAdminUsersPage() {
 
         <div className="flex items-center gap-3">
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
-            {clientAccounts.length} active clients
+            {loading ? '...' : `${clientAccounts.length} active clients`}
           </div>
         </div>
       </div>
 
       {feedback && (
-        <div className="mt-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div
+          className={`mt-4 p-4 rounded-2xl border text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200 ${
+            feedbackType === 'delete'
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          }`}
+        >
+          {feedbackType === 'delete' ? (
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          )}
           <span>{feedback}</span>
         </div>
       )}
@@ -524,7 +603,7 @@ export default function SiteAdminUsersPage() {
                 : 'bg-white text-[#41536D] border border-[#EAEFF6] hover:bg-[#F3F6FB]'
             }`}
           >
-            All ({accounts.length})
+            All ({loading ? '...' : accounts.length})
           </button>
           <button
             type="button"
@@ -535,7 +614,7 @@ export default function SiteAdminUsersPage() {
                 : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50'
             }`}
           >
-            <span>Pending ({pendingCount})</span>
+            <span>Pending ({loading ? '...' : pendingCount})</span>
           </button>
           <button
             type="button"
@@ -547,7 +626,7 @@ export default function SiteAdminUsersPage() {
             }`}
           >
             <Ban className="w-3.5 h-3.5" />
-            <span>Suspended ({suspendedCount})</span>
+            <span>Suspended ({loading ? '...' : suspendedCount})</span>
           </button>
         </div>
 
@@ -579,12 +658,61 @@ export default function SiteAdminUsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F8FAFC] text-[14px]">
-              {filteredAccounts.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="py-4 px-6">
+                      <div className="h-4 bg-slate-200 rounded-md w-36 mb-2" />
+                      <div className="h-3 bg-slate-100 rounded-md w-24" />
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="h-4 bg-slate-200 rounded-full w-20 mb-1" />
+                      <div className="h-3 bg-slate-100 rounded-md w-14" />
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="h-4 bg-slate-200 rounded-md w-28 mb-1" />
+                      <div className="h-3 bg-slate-100 rounded-md w-40" />
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="h-6 bg-slate-200 rounded-full w-20" />
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="h-4 bg-slate-200 rounded-md w-12" />
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <div className="h-8 bg-slate-100 rounded-full w-24 ml-auto" />
+                    </td>
+                  </tr>
+                ))
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-red-600">
+                    <AlertCircle className="w-10 h-10 mx-auto mb-2 text-red-500" />
+                    <p className="font-bold text-[15px] text-red-900">Database Connection Error</p>
+                    <p className="text-[12px] mt-1 text-red-600 max-w-md mx-auto">{loadError}</p>
+                    <button
+                      type="button"
+                      onClick={() => loadData()}
+                      className="mt-3 px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 rounded-full font-bold text-xs transition cursor-pointer"
+                    >
+                      Retry Connection
+                    </button>
+                  </td>
+                </tr>
+              ) : accounts.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-[#5B6B82]">
                     <Users className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                    <p className="font-bold text-[15px] text-[#0B1F3A]">No client accounts found</p>
-                    <p className="text-[12px] mt-1">Try clearing filters or search terms.</p>
+                    <p className="font-bold text-[15px] text-[#0B1F3A]">No registered client accounts found</p>
+                    <p className="text-[12px] mt-1">The database returned zero client accounts.</p>
+                  </td>
+                </tr>
+              ) : filteredAccounts.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-[#5B6B82]">
+                    <Search className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                    <p className="font-bold text-[15px] text-[#0B1F3A]">No matching accounts</p>
+                    <p className="text-[12px] mt-1">No accounts match your search or filter criteria. Try clearing filters.</p>
                   </td>
                 </tr>
               ) : (
@@ -648,11 +776,7 @@ export default function SiteAdminUsersPage() {
                         <div className="text-[12px] text-[#0A6CFF]">{acc.email}</div>
                         <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
                           <span>Active: {acc.last_active || 'Recently'}</span>
-                          {(acc.last_active?.includes('mo ago') || (acc.last_active_at && (Date.now() - new Date(acc.last_active_at).getTime()) >= 30 * 24 * 60 * 60 * 1000)) && (
-                            <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded uppercase">
-                              30d+ Inactive
-                            </span>
-                          )}
+                          <InactiveBadge lastActiveAt={acc.last_active_at} lastActive={acc.last_active} />
                         </div>
                       </td>
 
@@ -663,10 +787,15 @@ export default function SiteAdminUsersPage() {
                             <Ban className="w-3 h-3" />
                             <span>Suspended</span>
                           </span>
-                        ) : acc.approval_status === 'pending' || acc.approval_status === 'pending_verification' ? (
+                        ) : acc.approval_status === 'pending' ? (
                           <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                             <span>Pending KYC</span>
+                          </span>
+                        ) : acc.approval_status === 'rejected' ? (
+                          <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-rose-200">
+                            <X className="w-3 h-3 text-rose-600" />
+                            <span>Declined</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-emerald-200">
@@ -699,16 +828,44 @@ export default function SiteAdminUsersPage() {
                       {/* Actions */}
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Verify Button for Pending Accounts */}
-                          {(acc.approval_status === 'pending' || acc.approval_status === 'pending_verification') && (
+                          {/* Verify & Decline Buttons for Pending Accounts */}
+                          {acc.approval_status === 'pending' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyAccount(acc)}
+                                title="Verify wholesale documents & activate account"
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition shadow-xs cursor-pointer mr-1"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Verify</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const reason = window.prompt(`Enter rejection reason for ${acc.name}:`, 'Application did not meet business verification criteria.');
+                                  if (reason !== null) {
+                                    handleRejectAccount(acc, reason);
+                                  }
+                                }}
+                                title="Decline business application"
+                                className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] flex items-center gap-1 transition shadow-2xs cursor-pointer mr-1"
+                              >
+                                <X className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Decline</span>
+                              </button>
+                            </>
+                          )}
+
+                          {acc.approval_status === 'rejected' && (
                             <button
                               type="button"
                               onClick={() => handleVerifyAccount(acc)}
-                              title="Verify wholesale documents & activate account"
-                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition shadow-xs cursor-pointer mr-1"
+                              title="Re-approve wholesale account"
+                              className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[11px] flex items-center gap-1 transition shadow-2xs cursor-pointer mr-1"
                             >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Verify</span>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Re-Approve</span>
                             </button>
                           )}
 
@@ -760,131 +917,19 @@ export default function SiteAdminUsersPage() {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          {/* More Options Dropdown */}
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const nextState = openMenuId === acc.id ? null : acc.id;
-                                setOpenMenuId(nextState);
-                                if (nextState) {
-                                  const btn = e.currentTarget;
-                                  setTimeout(() => {
-                                    const rect = btn.getBoundingClientRect();
-                                    const spaceBelow = window.innerHeight - rect.bottom;
-                                    if (spaceBelow < 250) {
-                                      window.scrollBy({ top: 250 - spaceBelow + 20, behavior: 'smooth' });
-                                    }
-                                  }, 50);
-                                }
-                              }}
-                              title="More options"
-                              className="p-2 rounded-xl text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100 transition cursor-pointer"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-
-                            {openMenuId === acc.id && (
-                              <div
-                                className={`absolute right-0 ${
-                                  idx >= Math.max(0, filteredAccounts.length - 3)
-                                    ? 'bottom-full mb-1.5'
-                                    : 'top-full mt-1.5'
-                                } w-52 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-1.5 z-50 animate-in fade-in zoom-in-95 text-left`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setBulkCsvMode('WTS');
-                                    setBulkCsvAccount(acc);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
-                                  <span>Upload WTS</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setBulkCsvMode('WTB');
-                                    setBulkCsvAccount(acc);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
-                                  <span>Upload WTB</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setEditingTierAccount(acc);
-                                    setSelectedTier(acc.membership_tier);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <Edit className="w-4 h-4 text-[#5B6B82]" />
-                                  <span>Change Membership Tier</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditInfo(acc)}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <UserCog className="w-4 h-4 text-[#0A6CFF]" />
-                                  <span>Edit Member Information</span>
-                                </button>
-
-                                {acc.listings_count > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOpenMenuId(null);
-                                      setClearLotsConfirmAccount(acc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 transition cursor-pointer"
-                                  >
-                                    <Package className="w-4 h-4 text-indigo-500" />
-                                    <span>Clear All Lots ({acc.listings_count})</span>
-                                  </button>
-                                )}
-
-                                <div className="my-1 border-t border-slate-100" />
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    handleToggleSuspend(acc);
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-[12px] font-bold flex items-center gap-2 transition cursor-pointer ${
-                                    isSuspended ? 'text-emerald-700 hover:bg-emerald-50' : 'text-amber-700 hover:bg-amber-50'
-                                  }`}
-                                >
-                                  <Ban className="w-4 h-4" />
-                                  <span>{isSuspended ? 'Reactivate Account' : 'Suspend Account'}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setDeleteConfirmAccount(acc);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-[12px] font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                  <span>Delete Account</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          {/* More Options Trigger */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleOpenMenu(e, acc)}
+                            title="More options"
+                            className={`p-2 rounded-xl transition cursor-pointer ${
+                              activeMenuAccount?.id === acc.id
+                                ? 'bg-blue-50 text-[#0A6CFF]'
+                                : 'text-slate-400 hover:text-[#0B1F3A] hover:bg-slate-100'
+                            }`}
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -896,10 +941,151 @@ export default function SiteAdminUsersPage() {
         </div>
       </div>
 
+      {/* FLOATING ACTION DROPDOWN MENU (IMMUNE TO TABLE OVERFLOW CLIPPING) */}
+      {activeMenuAccount && menuCoords && (
+        <>
+          <div
+            className="fixed inset-0 z-[9990] bg-transparent cursor-default"
+            onClick={() => {
+              setActiveMenuAccount(null);
+              setMenuCoords(null);
+              setOpenMenuId(null);
+            }}
+          />
+          <div
+            className="fixed z-[9999] w-56 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-1.5 animate-in fade-in zoom-in-95 text-left pointer-events-auto"
+            style={{
+              top: menuCoords.top !== undefined ? `${menuCoords.top}px` : undefined,
+              bottom: menuCoords.bottom !== undefined ? `${menuCoords.bottom}px` : undefined,
+              right: `${menuCoords.right}px`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                setBulkCsvMode('WTS');
+                setBulkCsvAccount(acc);
+              }}
+              className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0A6CFF] hover:bg-blue-50 flex items-center gap-2 transition cursor-pointer"
+            >
+              <ArrowUpRight className="w-4 h-4 text-[#0A6CFF]" />
+              <span>Upload WTS</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                setBulkCsvMode('WTB');
+                setBulkCsvAccount(acc);
+              }}
+              className="w-full px-3.5 py-2 text-[12px] font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 transition cursor-pointer"
+            >
+              <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+              <span>Upload WTB</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                setEditingTierAccount(acc);
+                setSelectedTier(acc.membership_tier);
+              }}
+              className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+            >
+              <Edit className="w-4 h-4 text-[#5B6B82]" />
+              <span>Change Membership Tier</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                handleOpenEditInfo(acc);
+              }}
+              className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+            >
+              <UserCog className="w-4 h-4 text-[#0A6CFF]" />
+              <span>Edit Member Information</span>
+            </button>
+
+            {activeMenuAccount.listings_count > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const acc = activeMenuAccount;
+                  setActiveMenuAccount(null);
+                  setMenuCoords(null);
+                  setOpenMenuId(null);
+                  setClearLotsConfirmAccount(acc);
+                }}
+                className="w-full px-3.5 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 transition cursor-pointer"
+              >
+                <Package className="w-4 h-4 text-indigo-500" />
+                <span>Clear All Lots ({activeMenuAccount.listings_count})</span>
+              </button>
+            )}
+
+            <div className="my-1 border-t border-slate-100" />
+
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                handleToggleSuspend(acc);
+              }}
+              className={`w-full px-3.5 py-2 text-[12px] font-bold flex items-center gap-2 transition cursor-pointer ${
+                activeMenuAccount.approval_status === 'suspended'
+                  ? 'text-emerald-700 hover:bg-emerald-50'
+                  : 'text-amber-700 hover:bg-amber-50'
+              }`}
+            >
+              <Ban className="w-4 h-4" />
+              <span>
+                {activeMenuAccount.approval_status === 'suspended' ? 'Reactivate Account' : 'Suspend Account'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const acc = activeMenuAccount;
+                setActiveMenuAccount(null);
+                setMenuCoords(null);
+                setOpenMenuId(null);
+                setDeleteConfirmAccount(acc);
+              }}
+              className="w-full px-3.5 py-2 text-[12px] font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Account</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {/* DOSSIER MODAL */}
       {selectedDossier && (
         <div
-          className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-[#0B1F3A]/70 flex items-center justify-center p-4 overflow-y-auto"
           onClick={() => setSelectedDossier(null)}
         >
           <div

@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { Manrope } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth/auth-context';
+import { QueryProvider } from '@/components/providers/QueryProvider';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { LiveMessageToast } from '@/components/messaging/LiveMessageToast';
@@ -34,24 +35,26 @@ export default function RootLayout({
       className={`h-full antialiased scroll-smooth ${manrope.variable}`}
     >
       <body className="min-h-full flex flex-col bg-[#F3F6FB] text-[#41536D] font-sans">
-        <AuthProvider>
-          <Suspense fallback={<div className="h-20 bg-white border-b border-slate-200" />}>
-            <Navbar />
-          </Suspense>
-          <main className="flex-1 flex flex-col">{children}</main>
-          <Suspense fallback={null}>
-            <Footer />
-          </Suspense>
-          <Suspense fallback={null}>
-            <LiveMessageToast />
-          </Suspense>
-          <Suspense fallback={null}>
-            <LiveMessageNotifier />
-          </Suspense>
-          <Suspense fallback={null}>
-            <CookieConsentBanner />
-          </Suspense>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <Suspense fallback={<div className="h-20 bg-white border-b border-slate-200" />}>
+              <Navbar />
+            </Suspense>
+            <main className="flex-1 flex flex-col">{children}</main>
+            <Suspense fallback={null}>
+              <Footer />
+            </Suspense>
+            <Suspense fallback={null}>
+              <LiveMessageToast />
+            </Suspense>
+            <Suspense fallback={null}>
+              <LiveMessageNotifier />
+            </Suspense>
+            <Suspense fallback={null}>
+              <CookieConsentBanner />
+            </Suspense>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

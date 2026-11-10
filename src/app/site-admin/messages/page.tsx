@@ -16,6 +16,7 @@ import {
   type ChatMessage,
 } from '@/lib/messaging/messaging-store';
 import { isAccountDeleted, markAccountAsDeleted } from '@/lib/admin/admin-store';
+import { MessageTime } from '@/components/admin/MessageTime';
 import {
   MessageSquare,
   Radio,
@@ -53,6 +54,7 @@ function SiteAdminMessagesContent() {
   const [subFilter, setSubFilter] = useState<'all' | 'direct' | 'broadcast'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [replyText, setReplyText] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Broadcast modal state
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
@@ -108,13 +110,23 @@ function SiteAdminMessagesContent() {
     }
   };
 
+  const doSync = async () => {
+    try {
+      await syncWithSupabase('admin');
+      loadData();
+      setLoadError(null);
+    } catch {
+      setLoadError('Failed to synchronize conversations with the server.');
+    }
+  };
+
   useEffect(() => {
     loadData();
-    void syncWithSupabase('admin').then(() => loadData());
+    void doSync();
 
     // Active polling interval (2.5s) to receive seller replies instantly without manual page refresh
     const pollInterval = setInterval(() => {
-      void syncWithSupabase('admin').then(() => loadData());
+      void doSync();
     }, 2500);
 
     const handleUpdate = () => loadData();
@@ -355,6 +367,28 @@ function SiteAdminMessagesContent() {
         <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900 font-bold">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{broadcastNotice}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[13px] flex items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-900">Failed to sync conversations</p>
+              <p className="text-[12px] text-rose-700">{loadError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              void doSync();
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] transition shrink-0 cursor-pointer shadow-xs"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -621,12 +655,7 @@ function SiteAdminMessagesContent() {
                         >
                           {m.senderRole}
                         </span>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(m.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                        <MessageTime timestamp={m.timestamp} />
                       </div>
 
                       <div

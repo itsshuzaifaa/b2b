@@ -44,23 +44,27 @@ export default function SiteAdminPaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentRecord | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentMonthStr, setCurrentMonthStr] = useState('Oct');
   const [currentMonthYearStr, setCurrentMonthYearStr] = useState('Oct 2026');
 
   const loadData = async () => {
-    const local = getAdminPayments();
-    setPayments(local);
+    let hasError = false;
 
     try {
       const res = await fetch('/api/admin/payments', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.payments) && data.payments.length > 0) {
+        if (Array.isArray(data.payments)) {
           setPayments(data.payments);
           saveAdminPayments(data.payments);
         }
+      } else {
+        hasError = true;
       }
-    } catch {}
+    } catch {
+      hasError = true;
+    }
 
     try {
       const res = await fetch('/api/admin/accounts', { cache: 'no-store' });
@@ -69,11 +73,19 @@ export default function SiteAdminPaymentsPage() {
         if (Array.isArray(data.accounts)) {
           setAccounts(data.accounts);
           saveAdminAccounts(data.accounts);
-          return;
         }
+      } else {
+        hasError = true;
       }
-    } catch {}
-    setAccounts(getAdminAccounts());
+    } catch {
+      hasError = true;
+    }
+
+    if (hasError) {
+      setLoadError('Failed to synchronize payment records from the server.');
+    } else {
+      setLoadError(null);
+    }
   };
 
   useEffect(() => {
@@ -145,6 +157,17 @@ export default function SiteAdminPaymentsPage() {
 
   return (
     <div className="relative min-h-full space-y-6 max-w-full">
+      {/* Demo / Test Mode Banner */}
+      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-xs">
+        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="text-xs leading-relaxed">
+          <span className="font-bold uppercase tracking-wider text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded text-[10px] mr-2">
+            Demo / Test Mode
+          </span>
+          <strong>Manual Tracking Only:</strong> Real automated payment gateway integration (Stripe / Wise API) is not active in this environment. Transaction rows displayed below are for demonstration and internal manual ledger reconciliation.
+        </div>
+      </div>
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#EAEFF6]">
         <div>
@@ -181,6 +204,28 @@ export default function SiteAdminPaymentsPage() {
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[13px] flex items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-900">Failed to load payment ledger</p>
+              <p className="text-[12px] text-rose-700">{loadError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              void loadData();
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] transition shrink-0 cursor-pointer shadow-xs"
+          >
+            Retry
+          </button>
         </div>
       )}
 

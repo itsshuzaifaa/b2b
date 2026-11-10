@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processInactivityReminders } from '@/lib/email/dispatcher';
-import { createClient } from '@/lib/supabase/server';
+import { verifyCronOrAdmin } from '@/lib/auth/guards';
 
 
 
@@ -21,36 +21,7 @@ export async function POST(request: NextRequest) {
 
 async function handleInactivityCheck(request: NextRequest) {
   try {
-    const cronSecret = process.env.CRON_SECRET;
-    const authHeader = request.headers.get('authorization');
-    const { searchParams } = new URL(request.url);
-    const querySecret = searchParams.get('secret');
-
-    // 1. Verify Authorization
-    let isAuthorized = false;
-
-    // Check bearer or query secret if configured
-    if (cronSecret) {
-      if (authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret) {
-        isAuthorized = true;
-      }
-    } else {
-      // In dev environment or without CRON_SECRET configured
-      isAuthorized = true;
-    }
-
-    // Check admin session if not already authorized by secret
-    if (!isAuthorized) {
-      try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && (user.user_metadata?.role === 'admin' || user.email === 'admin@b2blink.eu')) {
-          isAuthorized = true;
-        }
-      } catch {
-        // session check failed
-      }
-    }
+    const isAuthorized = await verifyCronOrAdmin(request);
 
     if (!isAuthorized) {
       return NextResponse.json(
@@ -58,6 +29,8 @@ async function handleInactivityCheck(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    const { searchParams } = new URL(request.url);
 
     // 2. Parse Execution Parameters
     let daysThreshold = 30;

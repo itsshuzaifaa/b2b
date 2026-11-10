@@ -46,6 +46,7 @@ export default function SiteAdminListingsPage() {
   const [suspendReason, setSuspendReason] = useState('Suspended pending EAN authenticity check and commercial invoice audit.');
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState<AdminModeratedListing | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Multi-Select & Bulk Operations
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -55,12 +56,17 @@ export default function SiteAdminListingsPage() {
 
   const loadData = async () => {
     const local = getAdminListings();
+    let dbItems: AdminModeratedListing[] = [];
+    let wtbItems: AdminModeratedListing[] = [];
+    let hasError = false;
+
+    // 1. Fetch live products (WTS)
     try {
       const res = await fetch('/api/products?all=true', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.products)) {
-          const dbItems: AdminModeratedListing[] = data.products.map((p: any) => ({
+          dbItems = data.products.map((p: any) => ({
             id: p.id,
             type: 'SELL' as const,
             company_id: p.company_id || p.company?.id || '',
@@ -86,21 +92,104 @@ export default function SiteAdminListingsPage() {
             images: p.images || [],
             created_at: p.created_at || new Date().toISOString(),
           }));
+        }
+      } else {
+        hasError = true;
+      }
+    } catch {
+      hasError = true;
+    }
 
-          const map = new Map<string, AdminModeratedListing>();
-          local.forEach((l) => map.set(l.id, l));
-          dbItems.forEach((d) => map.set(d.id, d));
-          const merged = Array.from(map.values()).filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
-          setListings(merged);
-          setSelectedIds((prev) => prev.filter((id) => map.has(id)));
-          return;
+    // 2. Fetch live WTB requests (BUY)
+    try {
+      const { getPublicWtbRequests } = await import('@/lib/actions/wtb');
+      const liveWtbs = await getPublicWtbRequests();
+      if (Array.isArray(liveWtbs)) {
+        wtbItems = liveWtbs.map((w: any) => ({
+          id: w.id,
+          type: 'BUY' as const,
+          company_id: w.buyer_user_id || w.buyer_company_id || '',
+          company_name: w.buyer_company || w.buyer_name || 'Verified Buyer',
+          seller_email: w.buyer_email || '',
+          contact_name: w.buyer_name || 'Procurement Officer',
+          contact_phone: w.buyer_phone || '',
+          title: w.product_name || 'Procurement Lot',
+          brand: w.brand || (w.product_name ? w.product_name.split(' ')[0] : 'Procurement'),
+          item_code: w.barcode_or_sku ? w.barcode_or_sku.slice(0, 8) : `REQ-${w.id.slice(0, 6).toUpperCase()}`,
+          category_slug: w.category_slug || 'general',
+          category_name: w.category_slug ? w.category_slug.replace(/-/g, ' ') : 'General Wholesale',
+          ean: w.barcode_or_sku || 'n/a',
+          condition: (w.notes?.match(/Condition:\s*([^.|]+)/i)?.[1]?.trim()) || 'New',
+          unit_price: Number(w.target_price) || 0,
+          currency: '€',
+          location: 'EU',
+          quantity_available: Number(w.target_quantity) || 50,
+          moq: 1,
+          barcode_or_sku: w.barcode_or_sku,
+          is_hot: false,
+          moderation_status: w.status === 'suspended' ? ('suspended' as const) : ('active' as const),
+          images: [],
+          created_at: w.created_at || new Date().toISOString(),
+        }));
+      }
+    } catch {
+      hasError = true;
+    }
+
+    if (hasError) {
+      setLoadError('Failed to synchronize all marketplace listings from the server.');
+    } else {
+      setLoadError(null);
+    }
+
+    // 3. User local WTB requests
+    try {
+      const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
+      if (rawUserWtbs) {
+        const parsed = JSON.parse(rawUserWtbs);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((w: any) => {
+            if (!wtbItems.some((item) => item.id === w.id)) {
+              wtbItems.push({
+                id: w.id,
+                type: 'BUY' as const,
+                company_id: w.companyId || w.company_id || '',
+                company_name: w.companyName || 'Verified Procurement Partner',
+                seller_email: w.contactEmail || '',
+                contact_name: w.contactName || 'Buyer',
+                contact_phone: w.contactPhone || '',
+                title: w.description || w.product_name || 'Procurement Request',
+                brand: w.brand || 'Procurement',
+                item_code: w.itemCode || 'WTB-REQ',
+                category_slug: w.category ? w.category.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'general',
+                category_name: w.category || 'General Wholesale',
+                ean: w.ean || 'n/a',
+                condition: w.condition || 'New',
+                unit_price: Number(w.price || w.target_price) || 0,
+                currency: '€',
+                location: w.location || 'EU',
+                quantity_available: Number(w.qty || w.target_quantity) || 50,
+                moq: 1,
+                barcode_or_sku: w.ean,
+                is_hot: false,
+                moderation_status: 'active',
+                images: [],
+                created_at: new Date().toISOString(),
+              });
+            }
+          });
         }
       }
     } catch {}
 
-    const cleanLocal = local.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
-    setListings(cleanLocal);
-    setSelectedIds((prev) => prev.filter((id) => cleanLocal.some((item) => item.id === id)));
+    const map = new Map<string, AdminModeratedListing>();
+    local.forEach((l) => map.set(l.id, l));
+    dbItems.forEach((d) => map.set(d.id, d));
+    wtbItems.forEach((w) => map.set(w.id, w));
+
+    const merged = Array.from(map.values()).filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+    setListings(merged);
+    setSelectedIds((prev) => prev.filter((id) => map.has(id)));
   };
 
   useEffect(() => {
@@ -269,6 +358,28 @@ export default function SiteAdminListingsPage() {
         <div className="mt-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[13px] flex items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-900">Failed to load marketplace listings</p>
+              <p className="text-[12px] text-rose-700">{loadError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              void loadData();
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] transition shrink-0 cursor-pointer shadow-xs"
+          >
+            Retry
+          </button>
         </div>
       )}
 

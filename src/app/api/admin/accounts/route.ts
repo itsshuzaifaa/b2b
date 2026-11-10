@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/auth/guards';
 import {
   sendAccountApprovalEmail,
   sendAccountSuspensionEmail,
@@ -11,6 +12,9 @@ import {
 const approvalEmailDedupeCache = new Map<string, number>();
 
 export async function GET() {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const admin = createAdminClient();
 
@@ -235,6 +239,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const body = await req.json();
     const { action, companyId, email, contactName, companyName, reason } = body;
@@ -258,6 +265,7 @@ export async function POST(req: Request) {
             .from('companies')
             .update({
               approval_status: 'approved',
+              rejection_reason: null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', companyId)
@@ -270,6 +278,7 @@ export async function POST(req: Request) {
             .from('companies')
             .update({
               approval_status: 'approved',
+              rejection_reason: null,
               updated_at: new Date().toISOString(),
             })
             .eq('user_id', companyId)
@@ -284,6 +293,7 @@ export async function POST(req: Request) {
             .from('companies')
             .update({
               approval_status: 'approved',
+              rejection_reason: null,
               updated_at: new Date().toISOString(),
             })
             .eq('contact_email', cleanEmail)
@@ -319,7 +329,7 @@ export async function POST(req: Request) {
               // Link company row with user_id
               await admin
                 .from('companies')
-                .update({ user_id: targetAuthUser.id, approval_status: 'approved' })
+                .update({ user_id: targetAuthUser.id, approval_status: 'approved', rejection_reason: null })
                 .eq('contact_email', cleanEmail);
             }
           } catch {
@@ -351,13 +361,56 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, status: 'approved' });
     }
 
-    if (action === 'suspend' || action === 'reject') {
+    if (action === 'reject') {
+      const trimmedReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+      const rejectionReason = trimmedReason || 'Application did not meet business verification criteria.';
+      try {
+        const admin = createAdminClient();
+        const { data: comp } = await admin
+          .from('companies')
+          .update({
+            approval_status: 'rejected',
+            rejection_reason: rejectionReason,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', companyId)
+          .select('user_id')
+          .maybeSingle();
+
+        if (comp?.user_id) {
+          await admin.auth.admin.updateUserById(comp.user_id, {
+            user_metadata: { approval_status: 'rejected' },
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[ADMIN REJECT DB WARNING]', dbErr);
+      }
+
+      if (email) {
+        try {
+          await sendAccountSuspensionEmail(email, {
+            companyName: companyName || 'Wholesale Partner',
+            contactName: contactName || 'Valued Member',
+            reason: rejectionReason,
+          });
+        } catch (mailErr) {
+          console.warn('[ADMIN REJECT EMAIL WARNING]', mailErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, status: 'rejected' });
+    }
+
+    if (action === 'suspend') {
+      const trimmedReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+      const suspensionReason = trimmedReason || 'Account suspended by compliance officer.';
       try {
         const admin = createAdminClient();
         const { data: comp } = await admin
           .from('companies')
           .update({
             approval_status: 'suspended',
+            rejection_reason: suspensionReason,
             updated_at: new Date().toISOString(),
           })
           .eq('id', companyId)
@@ -378,7 +431,7 @@ export async function POST(req: Request) {
           await sendAccountSuspensionEmail(email, {
             companyName: companyName || 'Wholesale Partner',
             contactName: contactName || 'Valued Member',
-            reason: reason || 'Account suspended by compliance officer.',
+            reason: suspensionReason,
           });
         } catch (mailErr) {
           console.warn('[ADMIN SUSPENSION EMAIL WARNING]', mailErr);
@@ -742,6 +795,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get('id') || searchParams.get('companyId');

@@ -3,8 +3,11 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 import { saveVerificationCode } from '@/lib/auth/verification-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'register');
+  if (rateLimitRes) return rateLimitRes;
   try {
     const body = await request.json();
     const email = (body.email || '').trim().toLowerCase();
@@ -127,7 +130,7 @@ export async function POST(request: NextRequest) {
       role: 'seller',
       approval_status: approvalStatus,
       tier: effectiveTier,
-      niches: selectedNiches,
+      niches: validCategoryUuids.length > 0 ? validCategoryUuids : undefined,
     }).select('id').single();
 
     if (compInsertError) {

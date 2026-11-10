@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCampaignLeadsFromDatabase, recordNewCampaignLead } from '@/lib/campaigns/campaign-store';
+import { requireAdmin } from '@/lib/auth/guards';
 
 export async function GET(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const leads = await getCampaignLeadsFromDatabase();
 
@@ -40,6 +44,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const body = await request.json();
     const { email, whatsapp, contactName, companyName, role, tier, country } = body;

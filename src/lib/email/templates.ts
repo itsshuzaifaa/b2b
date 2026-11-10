@@ -1197,42 +1197,46 @@ export interface NewInAppMessageEmailProps {
   senderName: string;
   senderCompany?: string;
   senderRole?: 'buyer' | 'seller' | 'admin' | string;
-  messageText: string;
+  messageText?: string;
+  messageCount?: number;
   subjectOrProduct?: string;
   actionUrl: string;
 }
 
 /**
  * 13. In-App Message Notification
- * Trigger Event: Sent when a user receives a message on their in-app messaging
+ * Trigger Event: Sent when an inactive user receives messages in their in-app messaging center.
  * Recipient: The user (buyer, seller, or admin) receiving the message
- * Subject: You have a new message from [Sender Name]
+ * Privacy Rule: Does NOT expose message content; displays sender name/company only.
+ * Bundling Rule: Consolidates multiple messages into a single alert.
  */
 export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
   subject: string;
   html: string;
 } {
-  const subject = `You have a new message from ${props.senderName || 'B2B LINK Member'}`;
-  const nameGreeting = props.recipientName ? `Hello ${props.recipientName},` : 'Hello,';
+  const senderDisplay = props.senderCompany
+    ? props.senderName
+      ? `${props.senderName} (${props.senderCompany})`
+      : props.senderCompany
+    : props.senderName || 'Trade Partner';
 
-  // Format message text with line breaks preserved and safe HTML escaping
-  const formattedMessage = (props.messageText || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-    .replace(/\n/g, '<br />');
+  const count = props.messageCount && props.messageCount > 1 ? props.messageCount : 1;
+  const subject =
+    count > 1
+      ? `You have ${count} new messages waiting from ${senderDisplay}`
+      : `You have a new message waiting from ${senderDisplay}`;
+
+  const nameGreeting = props.recipientName ? `Hello ${props.recipientName},` : 'Hello,';
 
   const content = `
     <h1 style="font-size: 24px; font-weight: 800; color: #0B1F3A; margin: 0 0 12px 0;">
-      You have a new message
+      ${count > 1 ? 'New Messages Waiting' : 'New Message Waiting'}
     </h1>
     <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
       ${nameGreeting}
     </p>
     <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 20px 0;">
-      You have received a new message in your B2B LINK in-app messaging center from <strong>${props.senderName}</strong>${props.senderCompany ? ` (<em>${props.senderCompany}</em>)` : ''}.
+      You have ${count > 1 ? `<strong>${count} new messages</strong>` : 'a new message'} waiting for you in your B2B LINK messaging center from <strong>${senderDisplay}</strong>.
     </p>
 
     ${
@@ -1250,18 +1254,14 @@ export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
         : ''
     }
 
-    <!-- Message Bubble -->
-    <div style="margin-bottom: 24px;">
-      <div style="font-size: 12px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
-        Message content:
-      </div>
-      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 18px 20px; font-size: 14px; line-height: 1.7; color: #1E293B;">
-        ${formattedMessage}
-      </div>
+    <div style="background-color: #F0F7FF; border: 1px solid #D0E2FF; border-left: 4px solid #0A6CFF; border-radius: 12px; padding: 16px 18px; margin-bottom: 24px;">
+      <p style="font-size: 13.5px; line-height: 1.6; color: #1E3A8A; margin: 0;">
+        🔒 <strong>Commercial Privacy Protected:</strong> Message contents and commercial negotiations are securely stored inside your verified B2B LINK trading desk.
+      </p>
     </div>
 
     <p style="font-size: 13.5px; color: #5B6B82; line-height: 1.6; margin: 0 0 16px 0;">
-      Please reply directly through your B2B LINK in-app messaging desk to keep your chat history synchronized, secure, and accessible on both desktop and mobile.
+      Please log in to your B2B LINK trading desk to review and reply directly to ${senderDisplay}.
     </p>
 
     <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
@@ -1273,11 +1273,11 @@ export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
   return {
     subject,
     html: emailWrapper(
-      'You have a new message',
+      count > 1 ? 'New messages waiting for you' : 'New message waiting for you',
       'IN-APP MESSAGE',
       content,
       props.actionUrl,
-      'View & Reply to Message'
+      'Open Messages & Reply'
     ),
   };
 }

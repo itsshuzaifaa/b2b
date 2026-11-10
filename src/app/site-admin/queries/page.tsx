@@ -33,6 +33,7 @@ export default function SiteAdminCustomerQueriesPage() {
   const [replyText, setReplyText] = useState('');
   const [replySubject, setReplySubject] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSendingReply, setIsSendingReply] = useState(false);
 
   const loadData = async () => {
@@ -43,25 +44,23 @@ export default function SiteAdminCustomerQueriesPage() {
         const data = await res.json();
         if (Array.isArray(data.queries)) {
           setQueries(data.queries);
+          setLoadError(null);
           // Sync into local storage for offline resilience
           try {
             localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(data.queries));
           } catch {
             // ignore
           }
+          return;
         }
       }
-    } catch (err) {
-      console.warn('Could not fetch server queries, using local', err);
+      setLoadError('Failed to fetch customer queries from server.');
+    } catch {
+      setLoadError('Network error while fetching customer queries.');
     }
   };
 
   useEffect(() => {
-    // Initial immediate load from local cache
-    const local = getCustomerQueries();
-    if (local.length > 0) {
-      setQueries(local);
-    }
     loadData();
     window.addEventListener('b2b_admin_update', loadData);
     window.addEventListener('b2b_queries_update', loadData);
@@ -203,6 +202,28 @@ export default function SiteAdminCustomerQueriesPage() {
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold flex items-center gap-2 animate-in fade-in duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[13px] flex items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-900">Failed to load customer queries</p>
+              <p className="text-[12px] text-rose-700">{loadError}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              void loadData();
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] transition shrink-0 cursor-pointer shadow-xs"
+          >
+            Retry
+          </button>
         </div>
       )}
 

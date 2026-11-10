@@ -21,12 +21,10 @@ envContent.split('\n').forEach((line) => {
 const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function inspectSchema() {
-  // Try querying pg columns if possible or insert dummy and catch error with column names
-  const { data: inqErr, error: err1 } = await supabase.from('product_inquiries').insert({}).select();
-  console.log('product_inquiries insert error (shows constraints/not-null):', err1);
-
-  const { data: prodErr, error: err2 } = await supabase.from('products').insert({}).select();
-  console.log('products insert error:', err2);
+  const { data, error } = await supabase.from('quotations').select('*').limit(1);
+  console.log('quotations select:', { data, error });
+  const { error: insErr } = await supabase.from('quotations').insert({});
+  console.log('quotations insert error:', insErr);
 }
 
 inspectSchema().catch(console.error);

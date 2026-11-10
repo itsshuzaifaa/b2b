@@ -4,8 +4,13 @@ import {
   addServerCustomerQuery,
 } from '@/lib/admin/server-queries';
 import { sendEmail } from '@/lib/email/dispatcher';
+import { requireAdmin } from '@/lib/auth/guards';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function GET() {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const queries = getServerCustomerQueries();
     return NextResponse.json({ success: true, queries });
@@ -16,6 +21,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'contact');
+  if (rateLimitRes) return rateLimitRes;
+
   try {
     const body = await request.json();
     const { name, company, email, phone, topic, message } = body;

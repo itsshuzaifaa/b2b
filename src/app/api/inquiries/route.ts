@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireAdmin, requireApprovedUser } from '@/lib/auth/guards';
 import type { ChatMessage, InquiryConversation } from '@/lib/messaging/messaging-store';
 import { sendNewInAppMessageEmail } from '@/lib/email/dispatcher';
+import { enqueueMessageNotification } from '@/lib/presence/presence-tracker';
 
 interface RawInquiryRow {
   id: string;
@@ -122,7 +124,7 @@ function rowToConversation(
   const matchedBuyerComp = cleanBuyerEmail ? companyLookup?.byEmail?.get(cleanBuyerEmail) : undefined;
   const resolvedBuyerCompanyId = matchedBuyerComp?.id || (row as any).buyer_company_id || undefined;
 
-  let sellerCompId = row.seller_company_id;
+  const sellerCompId = row.seller_company_id;
   let sellerCompName = row.seller_company?.company_name || 'Verified Supplier';
   let sellerContName = row.seller_company?.contact_name || 'Trade Desk';
   let sellerContEmail = row.seller_company?.contact_email || (row.seller_company as any)?.email;
@@ -287,6 +289,9 @@ export async function GET(req: NextRequest) {
 
     // Filter strictly to preserve commercial confidentiality:
     if (role === 'admin') {
+      const auth = await requireAdmin();
+      if (auth.errorResponse) return auth.errorResponse;
+
       // Admin only sees:
       // 1) Messages sent to or by admin (seller_admin desk)
       // 2) Platform broadcasts sent by admin
@@ -294,27 +299,18 @@ export async function GET(req: NextRequest) {
         (c) => c.type === 'seller_admin' || c.type === 'broadcast'
       );
     } else {
-      const cleanEmail = email?.trim().toLowerCase();
-      // If no identity provided for non-admin, never return private threads
-      if (!cleanEmail && !companyId) {
-        return NextResponse.json({
-          success: true,
-          conversations: [],
-        });
-      }
+      // SECURITY MANDATE: Require approved authenticated session.
+      // NEVER allow unauthenticated or pending access, and NEVER trust ?email= from query parameters.
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
+      const sessionEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+      const sessionCompanyId = auth.company?.id;
+      const sessionTier = ((auth.company?.tier || (auth.company as any)?.membership_tier || 'bronze') as string).toLowerCase();
 
       // Determine user account registration time to prevent showing past broadcasts
-      const companyCreatedAtParam = searchParams.get('companyCreatedAt');
-      let accountCreatedTime = companyCreatedAtParam ? new Date(companyCreatedAtParam).getTime() : 0;
-
-      if (!accountCreatedTime && companyId) {
-        try {
-          const { data: comp } = await supabase.from('companies').select('created_at').eq('id', companyId).maybeSingle();
-          if (comp?.created_at) {
-            accountCreatedTime = new Date(comp.created_at).getTime();
-          }
-        } catch {}
-      }
+      const companyCreatedAt = auth.company?.created_at;
+      let accountCreatedTime = companyCreatedAt ? new Date(companyCreatedAt).getTime() : 0;
 
       conversations = conversations.filter((c) => {
         // 1. Broadcasts - strictly respect member package tiers and account creation date
@@ -333,27 +329,23 @@ export async function GET(req: NextRequest) {
           if (!aud || aud === 'all') return true;
           if (aud === 'seller' && role === 'seller') return true;
           if (aud === 'buyer' && role === 'buyer') return true;
-          const userTier = searchParams.get('tier')?.toLowerCase();
-          if (userTier) {
-            if ((aud === 'free' || aud === 'bronze') && (userTier === 'free' || userTier === 'bronze')) return true;
-            if (aud === 'silver' && userTier === 'silver') return true;
-            if (aud === 'gold' && userTier === 'gold') return true;
-          }
+          if ((aud === 'free' || aud === 'bronze') && (sessionTier === 'free' || sessionTier === 'bronze')) return true;
+          if (aud === 'silver' && sessionTier === 'silver') return true;
+          if (aud === 'gold' && sessionTier === 'gold') return true;
           return aud === 'free' || aud === 'silver' || aud === 'gold';
         }
 
         // 2. Admin desk threads (e.g. personal direct messages or support from Jeff)
-        // Check buyer email, seller email, and company ID
         if (c.type === 'seller_admin' || c.status === 'admin_desk') {
           const isMyDeskThread = Boolean(
-            (cleanEmail && (
-              c.buyerEmail?.toLowerCase().trim() === cleanEmail ||
-              c.buyerContactEmail?.toLowerCase().trim() === cleanEmail ||
-              c.sellerContactEmail?.toLowerCase().trim() === cleanEmail
+            (sessionEmail && (
+              c.buyerEmail?.toLowerCase().trim() === sessionEmail ||
+              c.buyerContactEmail?.toLowerCase().trim() === sessionEmail ||
+              c.sellerContactEmail?.toLowerCase().trim() === sessionEmail
             )) ||
-            (companyId && (
-              c.buyerCompanyId === companyId ||
-              c.sellerCompanyId === companyId
+            (sessionCompanyId && (
+              c.buyerCompanyId === sessionCompanyId ||
+              c.sellerCompanyId === sessionCompanyId
             ))
           );
           return isMyDeskThread;
@@ -361,10 +353,10 @@ export async function GET(req: NextRequest) {
 
         // 3. Trade Inquiries (Buyer <-> Seller)
         // Must strictly involve this company as either the seller or the buyer
-        const isMySellerInquiry = Boolean(companyId && c.sellerCompanyId === companyId);
+        const isMySellerInquiry = Boolean(sessionCompanyId && c.sellerCompanyId === sessionCompanyId);
         const isMyBuyerInquiry = Boolean(
-          (companyId && c.buyerCompanyId === companyId) ||
-          (cleanEmail && c.buyerEmail?.toLowerCase().trim() === cleanEmail)
+          (sessionCompanyId && c.buyerCompanyId === sessionCompanyId) ||
+          (sessionEmail && c.buyerEmail?.toLowerCase().trim() === sessionEmail)
         );
 
         return isMySellerInquiry || isMyBuyerInquiry;
@@ -554,18 +546,22 @@ async function notifyInAppMessageRecipient({
       // Ensure sender is not receiving their own email notification and don't email admin when admin is sender
       const isSendingToAdmin = cleanTarget === 'admin@b2blink.eu';
       if (cleanTarget !== cleanSenderId && !(isSenderAdmin && isSendingToAdmin)) {
-        await sendNewInAppMessageEmail({
-          toEmail: targetEmail.trim(),
+        // Enqueue bundled notification:
+        // - Checks if recipient is online -> suppresses email if active
+        // - If inactive, bundles rapid messages (3-4 messages into 1 email)
+        // - Cooldown prevents email spamming
+        // - Never sends message body context
+        enqueueMessageNotification({
+          recipientEmail: cleanTarget,
           recipientName: targetName,
+          recipientUserId: threadRow.seller_company_id || threadRow.buyer_company_id || null,
           senderName,
           senderCompany,
           senderRole: message.senderRole,
-          messageText: message.text,
           subjectOrProduct,
           conversationId,
           isAdmin: targetIsAdmin,
         });
-        console.log(`[IN-APP MESSAGE EMAIL NOTIFICATION SENT] To: ${targetEmail} | From: ${senderName} | Thread: ${conversationId}`);
       }
     }
   } catch (err) {
@@ -581,6 +577,9 @@ export async function POST(req: NextRequest) {
 
     // 1. Return list of members for Admin direct messaging (all non-suspended members)
     if (action === 'get_sellers') {
+      const auth = await requireAdmin();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const { data: sellers, error: sErr } = await supabase
         .from('companies')
         .select('id, user_id, company_name, contact_name, contact_email, phone, approval_status, role, tier')
@@ -598,34 +597,65 @@ export async function POST(req: NextRequest) {
 
     // Mark all messages in a conversation as read
     if (action === 'mark_read') {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const { conversationId, role } = body;
       if (conversationId) {
         try {
           const { data: row } = await supabase
             .from('product_inquiries')
-            .select('id, message, status, created_at')
+            .select(`
+              id,
+              seller_company_id,
+              buyer_email,
+              buyer_company,
+              message,
+              status,
+              created_at,
+              seller_company:companies!seller_company_id(id, contact_email)
+            `)
             .eq('id', conversationId)
             .maybeSingle();
 
-          if (row && row.message) {
-            const msgs = parseMessagesFromRow(row.message, row as unknown as RawInquiryRow);
-            let hasUnread = false;
-            const updatedMsgs = msgs.map((m) => {
-              const isIncoming = role === 'admin' ? m.senderRole !== 'admin' :
-                                 role === 'seller' ? m.senderRole !== 'seller' :
-                                 m.senderRole !== 'buyer';
-              if (!m.isRead && isIncoming) {
-                hasUnread = true;
-                return { ...m, isRead: true };
-              }
-              return m;
-            });
+          if (row) {
+            const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+            const callerCompId = auth.company?.id;
+            const isParticipant =
+              auth.isAdmin ||
+              (callerCompId && (row.seller_company_id === callerCompId || row.buyer_company === callerCompId)) ||
+              (callerEmail && (
+                row.buyer_email?.toLowerCase().trim() === callerEmail ||
+                (row as any).seller_company?.contact_email?.toLowerCase().trim() === callerEmail
+              ));
 
-            if (hasUnread) {
-              await supabase
-                .from('product_inquiries')
-                .update({ message: JSON.stringify(updatedMsgs) })
-                .eq('id', conversationId);
+            if (!isParticipant) {
+              return NextResponse.json(
+                { success: false, error: 'Forbidden: You are not a participant in this conversation.', code: 'FORBIDDEN_NOT_PARTICIPANT' },
+                { status: 403 }
+              );
+            }
+
+            if (row.message) {
+              const msgs = parseMessagesFromRow(row.message, row as unknown as RawInquiryRow);
+              let hasUnread = false;
+              const updatedMsgs = msgs.map((m) => {
+                const isIncoming = role === 'admin' ? m.senderRole !== 'admin' :
+                                   role === 'seller' ? m.senderRole !== 'seller' :
+                                   m.senderRole !== 'buyer';
+                if (!m.isRead && isIncoming) {
+                  hasUnread = true;
+                  return { ...m, isRead: true };
+                }
+                return m;
+              });
+
+              if (hasUnread) {
+                await supabase
+                  .from('product_inquiries')
+                  .update({ message: JSON.stringify(updatedMsgs) })
+                  .eq('id', conversationId);
+              }
             }
           }
         } catch (readErr) {
@@ -637,6 +667,9 @@ export async function POST(req: NextRequest) {
 
     // 2. Admin sends a private direct message to a specific member/seller
     if (action === 'admin_direct_message') {
+      const auth = await requireAdmin();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const { sellerCompanyId, text, adminName, adminId, sellerEmail, companyName, contactName } = body;
       if (!sellerCompanyId || !text?.trim()) {
         return NextResponse.json({ success: false, error: 'Member ID and message text required' }, { status: 400 });
@@ -849,13 +882,16 @@ export async function POST(req: NextRequest) {
 
     // 3. Send message inside an existing conversation
     if (action === 'send_message') {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const { conversationId, message } = body;
       if (!conversationId || !message?.text?.trim()) {
         return NextResponse.json({ success: false, error: 'Missing conversationId or message text' }, { status: 400 });
       }
 
       let resolvedThreadId = conversationId;
-      let { data: row, error: fetchErr } = await supabase
+      const { data: initialRow, error: fetchErr } = await supabase
         .from('product_inquiries')
         .select(`
           id,
@@ -873,6 +909,8 @@ export async function POST(req: NextRequest) {
         `)
         .eq('id', resolvedThreadId)
         .maybeSingle();
+
+      let row = initialRow;
 
       if (!row && typeof resolvedThreadId === 'string' && resolvedThreadId.startsWith('admin-desk-')) {
         const targetSellerCompId = resolvedThreadId.replace('admin-desk-', '');
@@ -938,12 +976,47 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Conversation not found' }, { status: 404 });
       }
 
+      // SECURITY MANDATE: Verify caller is a participant in this conversation (or admin)
+      const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+      const callerCompId = auth.company?.id;
+
+      const isSeller = Boolean(callerCompId && row.seller_company_id === callerCompId);
+      const isBuyer = Boolean(
+        (callerCompId && row.buyer_company === callerCompId) ||
+        (callerEmail && row.buyer_email?.toLowerCase().trim() === callerEmail)
+      );
+      const isSellerEmail = Boolean(
+        callerEmail && (row as any).seller_company?.contact_email?.toLowerCase().trim() === callerEmail
+      );
+
+      const isParticipant = auth.isAdmin || isSeller || isBuyer || isSellerEmail;
+
+      if (!isParticipant) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Forbidden: You are not a participant in this conversation.',
+            code: 'FORBIDDEN_NOT_PARTICIPANT',
+          },
+          { status: 403 }
+        );
+      }
+
+      // Strictly take identity from session, never from client request body
+      const effectiveSenderId = auth.isAdmin ? 'admin' : (auth.company?.id || auth.user.id);
+      const effectiveSenderName = auth.isAdmin
+        ? 'Jeff Vetting Director (B2B LINK Desk)'
+        : (auth.company?.company_name || auth.company?.contact_name || (isSeller || isSellerEmail ? 'Seller' : 'Buyer'));
+      const effectiveSenderRole = auth.isAdmin
+        ? 'admin'
+        : (isSeller || isSellerEmail ? 'seller' : 'buyer');
+
       const existingMessages = parseMessagesFromRow(row.message, row as unknown as RawInquiryRow);
       const newChatMessage: ChatMessage = {
         id: message.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        senderId: message.senderId,
-        senderName: message.senderName,
-        senderRole: message.senderRole,
+        senderId: effectiveSenderId,
+        senderName: effectiveSenderName,
+        senderRole: effectiveSenderRole,
         text: message.text.trim(),
         timestamp: new Date().toISOString(),
         isRead: false,
@@ -1002,6 +1075,9 @@ export async function POST(req: NextRequest) {
 
     // 4. Create or Update Broadcast (ensures exactly 1 for sellers and 1 for buyers)
     if (action === 'create_broadcast') {
+      const auth = await requireAdmin();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const { title, text, adminName, adminId, targetAudience } = body;
       if (!text?.trim()) {
         return NextResponse.json({ success: false, error: 'Broadcast text required' }, { status: 400 });
@@ -1232,6 +1308,9 @@ export async function POST(req: NextRequest) {
 
     // 4.1 Create Member Broadcast (Gold accounts WTB or WTS broadcast to all members)
     if (action === 'create_member_broadcast') {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const {
         broadcastKind, // 'wtb' | 'wts'
         itemId,
@@ -1244,13 +1323,15 @@ export async function POST(req: NextRequest) {
         moq,
         barcode,
         notes,
-        senderCompanyId,
-        senderCompanyName,
-        senderContactName,
-        senderEmail,
-        senderPhone,
         targetAudience,
       } = body;
+
+      // Strictly enforce session identity for broadcast creator
+      const effectiveCompanyId = auth.isAdmin ? (body.senderCompanyId || auth.company?.id) : auth.company!.id;
+      const effectiveEmail = auth.isAdmin ? (body.senderEmail || auth.user.email) : (auth.company?.contact_email || auth.user.email || '');
+      const effectiveCompanyName = auth.isAdmin ? (body.senderCompanyName || auth.company?.company_name || 'Commercial Member') : (auth.company?.company_name || 'Commercial Member');
+      const effectiveContactName = auth.isAdmin ? (body.senderContactName || auth.company?.contact_name || 'Trading Representative') : (auth.company?.contact_name || 'Trading Representative');
+      const effectivePhone = auth.isAdmin ? (body.senderPhone || auth.company?.phone || null) : (auth.company?.phone || null);
 
       const kind: 'wtb' | 'wts' = broadcastKind === 'wts' ? 'wts' : 'wtb';
       const statusValue = kind === 'wtb' ? 'broadcast_wtb' : 'broadcast_wts';
@@ -1271,16 +1352,16 @@ export async function POST(req: NextRequest) {
         moq: Number(moq) || 1,
         barcode,
         notes,
-        ownerCompanyId: senderCompanyId,
-        ownerCompanyName: senderCompanyName || 'Commercial Member',
-        ownerContactName: senderContactName || 'Trading Representative',
-        ownerEmail: senderEmail,
-        ownerPhone: senderPhone,
+        ownerCompanyId: effectiveCompanyId,
+        ownerCompanyName: effectiveCompanyName,
+        ownerContactName: effectiveContactName,
+        ownerEmail: effectiveEmail,
+        ownerPhone: effectivePhone,
       };
 
       const broadcastMessage: ChatMessage = {
         id: `broadcast-msg-${Date.now()}`,
-        senderId: senderCompanyId,
+        senderId: effectiveCompanyId,
         senderName: `${kind.toUpperCase()} Broadcast Desk`,
         senderRole: kind === 'wtb' ? 'buyer' : 'seller',
         text: initialMsgText,
@@ -1298,10 +1379,10 @@ export async function POST(req: NextRequest) {
         .from('product_inquiries')
         .insert({
           product_id: productId,
-          seller_company_id: senderCompanyId,
-          buyer_name: senderContactName || 'Trading Representative',
-          buyer_email: senderEmail || 'member@b2blink.eu',
-          buyer_phone: senderPhone || null,
+          seller_company_id: effectiveCompanyId,
+          buyer_name: effectiveContactName,
+          buyer_email: effectiveEmail || 'member@b2blink.eu',
+          buyer_phone: effectivePhone,
           buyer_company: `[${kind.toUpperCase()} BROADCAST] ${title}`,
           requested_quantity: Number(quantity) || 1,
           target_price: Number(price) || 0,
@@ -1341,14 +1422,14 @@ export async function POST(req: NextRequest) {
             productPrice: Number(price) || 0,
             productMoq: Number(moq) || 1,
             productCategory: category,
-            sellerCompanyId: senderCompanyId,
-            sellerCompanyName: senderCompanyName || 'Commercial Member',
-            sellerContactName: senderContactName || 'Trading Representative',
-            buyerCompanyId: senderCompanyId,
-            buyerCompanyName: senderCompanyName,
-            buyerContactName: senderContactName,
-            buyerEmail: senderEmail,
-            buyerPhone: senderPhone,
+            sellerCompanyId: effectiveCompanyId,
+            sellerCompanyName: effectiveCompanyName,
+            sellerContactName: effectiveContactName,
+            buyerCompanyId: effectiveCompanyId,
+            buyerCompanyName: effectiveCompanyName,
+            buyerContactName: effectiveContactName,
+            buyerEmail: effectiveEmail,
+            buyerPhone: effectivePhone,
             lastMessageText: initialMsgText,
             lastMessageTime: 'Just now',
             unreadBySeller: true,
@@ -1373,14 +1454,20 @@ export async function POST(req: NextRequest) {
 
     // 5. Contact Admin Desk
     if (action === 'contact_admin') {
-      const { sellerCompanyId, initialMessage, contactName, contactEmail } = body;
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
+      const { initialMessage } = body;
+      const effectiveSellerCompanyId = auth.isAdmin ? (body.sellerCompanyId || auth.company?.id) : auth.company!.id;
+      const effectiveContactName = auth.isAdmin ? (body.contactName || auth.company?.contact_name || 'Seller Representative') : (auth.company?.contact_name || 'Seller Representative');
+      const effectiveContactEmail = auth.isAdmin ? (body.contactEmail || auth.user.email) : (auth.company?.contact_email || auth.user.email || '');
 
       const productId = await getSystemProductId(supabase);
 
       const initialChatMessage: ChatMessage = {
         id: `msg-admin-contact-${Date.now()}`,
-        senderId: sellerCompanyId,
-        senderName: contactName || 'Seller Representative',
+        senderId: effectiveSellerCompanyId,
+        senderName: effectiveContactName,
         senderRole: 'seller',
         text: initialMessage?.trim() || 'Requesting platform support from the admin desk.',
         timestamp: new Date().toISOString(),
@@ -1391,7 +1478,7 @@ export async function POST(req: NextRequest) {
         .from('product_inquiries')
         .insert({
           product_id: productId,
-          seller_company_id: sellerCompanyId,
+          seller_company_id: effectiveSellerCompanyId,
           buyer_name: 'Jeff Vetting Director',
           buyer_email: 'admin@b2blink.eu',
           buyer_phone: '+372 612 3456',
@@ -1439,24 +1526,29 @@ export async function POST(req: NextRequest) {
 
     // 6. Standard Marketplace inquiry
     if (action === 'create_inquiry') {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
       const {
         productId,
         sellerCompanyId,
-        buyerName,
-        buyerEmail,
-        buyerPhone,
-        buyerCompany,
         requestedQuantity,
         targetPrice,
         initialMessage,
       } = body;
 
-      if (!productId || !buyerEmail || !initialMessage) {
+      if (!productId || !initialMessage) {
         return NextResponse.json(
           { success: false, error: 'Missing required inquiry parameters' },
           { status: 400 }
         );
       }
+
+      // Strictly take buyer identity from session
+      const effectiveBuyerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+      const effectiveBuyerName = auth.company?.contact_name || body.buyerName || 'Wholesale Buyer';
+      const effectiveBuyerCompany = auth.company?.company_name || 'Commercial Member';
+      const effectiveBuyerPhone = auth.company?.phone || body.buyerPhone || null;
 
       let resolvedSellerId = sellerCompanyId;
       if (!resolvedSellerId) {
@@ -1469,8 +1561,8 @@ export async function POST(req: NextRequest) {
 
       const initialChatMessage: ChatMessage = {
         id: `msg-${Date.now()}`,
-        senderId: buyerEmail,
-        senderName: buyerName || buyerCompany || 'Buyer',
+        senderId: effectiveBuyerEmail,
+        senderName: effectiveBuyerName,
         senderRole: 'buyer',
         text: initialMessage.trim(),
         timestamp: new Date().toISOString(),
@@ -1482,10 +1574,10 @@ export async function POST(req: NextRequest) {
         .insert({
           product_id: productId,
           seller_company_id: resolvedSellerId,
-          buyer_name: buyerName,
-          buyer_email: buyerEmail,
-          buyer_phone: buyerPhone || null,
-          buyer_company: buyerCompany || `${buyerName} Commercial`,
+          buyer_name: effectiveBuyerName,
+          buyer_email: effectiveBuyerEmail,
+          buyer_phone: effectiveBuyerPhone,
+          buyer_company: effectiveBuyerCompany,
           requested_quantity: requestedQuantity || 1,
           target_price: targetPrice || 1,
           message: JSON.stringify([initialChatMessage]),

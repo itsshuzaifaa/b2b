@@ -49,6 +49,7 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [redirectConvId, setRedirectConvId] = useState<string | null>(null);
 
   // Form states
   const [unitPrice, setUnitPrice] = useState<string>('');
@@ -157,8 +158,9 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
         status: 'open',
         created_at: new Date().toISOString(),
       };
+      let convId = '';
       if (company) {
-        dispatchWtbLeadToBuyerDashboard({
+        const conv = dispatchWtbLeadToBuyerDashboard({
           wtbRequest: wtbMock,
           sellerCompany: company,
           actionType: 'unlocked',
@@ -170,9 +172,10 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
             notes,
           },
         });
+        convId = conv?.id || '';
       }
       onClose();
-      router.push('/dashboard/messages');
+      router.push(convId ? `/dashboard/inquiries?id=${convId}` : '/dashboard/inquiries');
     } else {
       const prodMock: Product = {
         id: item.id,
@@ -232,9 +235,10 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
 
     setIsSubmitting(true);
     try {
+      let convId = '';
       if (isBuy) {
         // Submit Quote for WTB
-        await submitQuotation({
+        const res = await submitQuotation({
           wtbRequestId: item.id,
           sellerCompanyId: company?.id || 'comp-local',
           sellerEmail: company?.email || 'trader@b2blink.eu',
@@ -243,8 +247,70 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
           leadTimeDays,
           notes: notes || `Direct quotation for ${targetQuantity} units at ${item.currency}${parsedPrice.toFixed(2)}.`,
         });
+
+        // Save to seller's quotes store
+        try {
+          const quotesKey = company?.id ? `b2b_sent_quotes_${company.id}` : 'b2b_sent_quotes_v2';
+          const raw = localStorage.getItem(quotesKey);
+          const existing = raw ? JSON.parse(raw) : [];
+          const newQuoteRecord = {
+            id: res.quotationId || `sq-${Date.now()}`,
+            product: item.description,
+            category: item.category,
+            buyer: item.companyName,
+            buyerContact: item.contactName,
+            buyerEmail: item.contactEmail,
+            buyerPhone: item.contactPhone || '',
+            yourPrice: parsedPrice,
+            quantity: targetQuantity,
+            sentDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            leadTimeDays,
+            notes,
+            status: 'Sent',
+          };
+          localStorage.setItem(quotesKey, JSON.stringify([newQuoteRecord, ...existing.filter((q: any) => q.product !== item.description)]));
+          window.dispatchEvent(new CustomEvent('b2b_quotes_updated'));
+        } catch {}
+
+        // Dispatch to Buyer Dashboard & create/append conversation
+        const conversation = dispatchWtbLeadToBuyerDashboard({
+          wtbRequest: {
+            id: item.id,
+            product_name: item.description,
+            category_slug: item.category.toLowerCase().replace(/\s+/g, '-'),
+            target_quantity: item.qty,
+            target_price: item.price,
+            buyer_name: item.contactName,
+            buyer_email: item.contactEmail,
+            buyer_phone: item.contactPhone,
+            buyer_company: item.companyName,
+            barcode_or_sku: item.ean,
+            notes: '',
+            status: 'open',
+            created_at: new Date().toISOString(),
+          },
+          sellerCompany: (company || {
+            id: 'supplier-co',
+            name: 'Verified Supplier',
+            email: 'seller@b2blink.eu',
+            role: 'seller',
+            membership_tier: 'gold',
+            approval_status: 'approved',
+            categories: [item.category],
+            created_at: new Date().toISOString(),
+          }) as any,
+          actionType: 'quote_submitted',
+          quoteDetails: {
+            unitPrice: parsedPrice,
+            quantity: targetQuantity,
+            totalPrice: Number((parsedPrice * targetQuantity).toFixed(2)),
+            leadTimeDays,
+            notes,
+          },
+        });
+        convId = conversation?.id || `conv-wtb-${item.id}-${company?.id || 'anon'}`;
       } else {
-        // Submit Product Inquiry
+        // Submit Product Inquiry for WTS
         await createProductInquiry({
           productId: item.id,
           buyerName: company?.contact_name || company?.name || 'Commercial Buyer',
@@ -254,8 +320,52 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
           offeredPrice: parsedPrice,
           message: notes || `Inquiry for ${targetQuantity} units at ${item.currency}${parsedPrice.toFixed(2)}.`,
         });
+
+        const targetSellerCompId = (item as any).companyId || (item as any).company_id || 'supplier-co';
+
+        // Also ensure conversation exists in chat
+        const prodMock: Product = {
+          id: item.id,
+          company_id: targetSellerCompId,
+          title: item.description,
+          description: item.description,
+          brand: item.brand,
+          category_slug: item.category.toLowerCase().replace(/\s+/g, '-'),
+          unit_price: item.price,
+          quantity_available: item.qty,
+          moq: item.moq,
+          status: 'active',
+          is_hot: true,
+          created_at: new Date().toISOString(),
+          company: {
+            id: targetSellerCompId,
+            name: item.companyName,
+            contact_name: item.contactName,
+            email: item.contactEmail,
+            role: 'seller',
+            membership_tier: 'gold',
+            approval_status: 'approved',
+            categories: [item.category],
+            created_at: new Date().toISOString(),
+          },
+        };
+        const quoteNote = `Formal Quote/Inquiry submitted: ${targetQuantity} units at ${item.currency}${parsedPrice.toFixed(2)} / unit.${notes ? ` Note: ${notes}` : ''}`;
+        const conv = startMarketplaceInquiry(
+          prodMock,
+          company,
+          company?.contact_name || company?.name || 'Verified Trader',
+          company?.email || '',
+          company?.phone || '',
+          quoteNote
+        );
+        convId = conv.id;
       }
+      setRedirectConvId(convId);
       setIsSuccess(true);
+      setTimeout(() => {
+        onClose();
+        router.push(`/dashboard/inquiries?id=${convId}`);
+      }, 1000);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error submitting request.');
     } finally {
@@ -266,7 +376,7 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
   return (
     <>
       <div
-        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B1F3A]/50 backdrop-blur-xs animate-in fade-in duration-200 pointer-events-auto"
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B1F3A]/70 pointer-events-auto"
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             onClose();
@@ -464,15 +574,26 @@ export function TradingBoardDetailModal({ item, isOpen, onClose }: TradingBoardD
                   {isBuy ? 'Quotation Dispatched!' : 'Commercial Inquiry Dispatched!'}
                 </h4>
                 <p className="text-[13.5px] text-[#64748B] max-w-md mx-auto leading-relaxed">
-                  Your offer was sent to <strong className="text-[#0B1F3A]">{item.contactName}</strong> at <strong className="text-[#0B1F3A]">{item.companyName}</strong>. You can continue negotiations in your Messages desk.
+                  Your offer was sent to <strong className="text-[#0B1F3A]">{item.contactName}</strong> at <strong className="text-[#0B1F3A]">{item.companyName}</strong>. You are being redirected to your Chat Desk to review and continue discussions.
                 </p>
-                <div className="pt-2 flex justify-center gap-3">
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      router.push(redirectConvId ? `/dashboard/inquiries?id=${redirectConvId}` : '/dashboard/inquiries');
+                    }}
+                    className="w-full sm:w-auto px-7 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[13px] hover:bg-[#0857cf] transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    <span>Open Chat Now</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-7 py-2.5 rounded-full bg-[#0A6CFF] text-white font-bold text-[13px] hover:bg-[#0857cf] transition cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-slate-100 text-[#0B1F3A] font-bold text-[13px] hover:bg-slate-200 transition cursor-pointer"
                   >
-                    Done
+                    Close
                   </button>
                 </div>
               </div>

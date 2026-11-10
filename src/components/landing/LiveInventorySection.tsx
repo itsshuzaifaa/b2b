@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { startMarketplaceInquiry } from '@/lib/messaging/messaging-store';
 import { MOCK_PRODUCTS } from '@/lib/mock-data';
 import type { Product } from '@/types/database';
+import { Skeleton } from '@/components/skeletons/Skeleton';
 
 export function LiveInventorySection() {
   const router = useRouter();
@@ -165,14 +166,14 @@ export function LiveInventorySection() {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="w-[280px] sm:w-[300px] lg:w-[calc(25%-18px)] shrink-0 animate-pulse flex flex-col gap-3"
+                className="w-[280px] sm:w-[300px] lg:w-[calc(25%-18px)] shrink-0 flex flex-col gap-3"
               >
-                <div className="bg-white rounded-[28px] border border-[#EAEFF6] p-[10px] h-[400px]">
-                  <div className="h-[200px] w-full rounded-[20px] bg-slate-200 mb-4" />
-                  <div className="h-5 bg-slate-200 rounded-md w-3/4 mb-2 mx-2" />
-                  <div className="h-4 bg-slate-200 rounded-md w-full mx-2" />
+                <div className="bg-[#F8FAFC] rounded-[28px] border border-[#EAEFF6] p-3.5 h-[400px] flex flex-col gap-3">
+                  <Skeleton className="h-[200px] w-full rounded-[20px]" />
+                  <Skeleton className="h-5 w-3/4 mx-1" />
+                  <Skeleton className="h-4 w-full mx-1" />
                 </div>
-                <div className="bg-white rounded-full border border-[#EAEFF6] h-[44px]" />
+                <Skeleton className="h-[44px] w-full rounded-full" />
               </div>
             ))}
           </div>

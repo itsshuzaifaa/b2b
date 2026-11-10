@@ -235,7 +235,7 @@ export function UpgradeMembershipModal({
   const planPricing = TIER_PRICING[selectedTier] || TIER_PRICING.gold;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/70">
       <div className={`relative w-full ${step === 'confirm_payment' ? 'max-w-xl' : isGoldOnly ? 'max-w-md' : 'max-w-2xl'} bg-white rounded-[32px] border border-[#E3E9F2] shadow-2xl p-6 sm:p-8 overflow-hidden max-h-[90vh] overflow-y-auto`}>
         {/* Close Button */}
         <button

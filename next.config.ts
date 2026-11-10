@@ -28,12 +28,12 @@ const nextConfig: NextConfig = {
       {
         source: '/admin',
         destination: '/site-admin',
-        permanent: false,
+        permanent: true,
       },
       {
         source: '/admin/:path*',
         destination: '/site-admin/:path*',
-        permanent: false,
+        permanent: true,
       },
     ];
   },

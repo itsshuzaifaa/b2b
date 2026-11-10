@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireApprovedUser } from '@/lib/auth/guards';
 import {
   areItemsMatching,
   normalizeBarcode,
@@ -8,13 +9,26 @@ import {
   processMatchesForNewWtb,
 } from '@/lib/matching/match-service';
 
+/**
+ * GET /api/matches
+ * Retrieves trade matches between active WTS products and open WTB requests.
+ * 
+ * SECURITY MANDATE:
+ * 1. Requires authenticated and approved user session via requireApprovedUser().
+ * 2. Never accepts company ID or email from query parameters for non-admins.
+ * 3. Results are strictly filtered to only matches involving the caller's company.
+ * 4. Admins can view all matches platform-wide.
+ */
 export async function GET(req: NextRequest) {
-  try {
-    const searchParams = req.nextUrl.searchParams;
-    const companyId = searchParams.get('companyId');
-    const userEmail = searchParams.get('email')?.toLowerCase().trim();
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
 
+  try {
     const admin = createAdminClient();
+
+    // Enforce session identity strictly
+    const callerCompanyId = auth.company?.id;
+    const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
 
     // 1. Fetch active products
     const { data: products } = await admin
@@ -46,12 +60,20 @@ export async function GET(req: NextRequest) {
 
           if (isSelf) continue;
 
-          // Check if this match is relevant to the requesting user
-          const isRelevantToUser =
-            !companyId && !userEmail
-              ? true
-              : (companyId && (prod.company_id === companyId || wtb.buyer_user_id === companyId || wtb.buyer_company_id === companyId)) ||
-                (userEmail && (prodSellerEmail === userEmail || wtbBuyerEmail === userEmail));
+          // Strictly filter relevance to caller's verified company
+          const isRelevantToUser = auth.isAdmin
+            ? true
+            : Boolean(
+                (callerCompanyId && (
+                  prod.company_id === callerCompanyId ||
+                  wtb.buyer_company_id === callerCompanyId ||
+                  wtb.buyer_user_id === callerCompanyId
+                )) ||
+                (callerEmail && (
+                  prodSellerEmail === callerEmail ||
+                  wtbBuyerEmail === callerEmail
+                ))
+              );
 
           if (!isRelevantToUser) continue;
 
@@ -121,18 +143,45 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * POST /api/matches
+ * Processes on-demand match evaluation for new products or WTB requests.
+ * 
+ * SECURITY MANDATE:
+ * 1. Requires authenticated and approved user session via requireApprovedUser().
+ * 2. Non-admins cannot process matches for other companies.
+ */
 export async function POST(req: NextRequest) {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const body = await req.json();
     const { action, product, wtb } = body;
 
+    const callerCompanyId = auth.company?.id;
+
     if (action === 'process_product' && product) {
-      const matches = await processMatchesForNewProduct(product);
+      // Non-admins can only match their own company's products
+      const effectiveProduct = {
+        ...product,
+        company_id: auth.isAdmin ? (product.company_id || callerCompanyId) : callerCompanyId,
+      };
+
+      const matches = await processMatchesForNewProduct(effectiveProduct);
       return NextResponse.json({ success: true, matches });
     }
 
     if (action === 'process_wtb' && wtb) {
-      const matches = await processMatchesForNewWtb(wtb);
+      // Non-admins can only match their own company's WTB requests
+      const effectiveWtb = {
+        ...wtb,
+        buyer_user_id: auth.isAdmin ? (wtb.buyer_user_id || auth.user.id) : auth.user.id,
+        buyer_company_id: auth.isAdmin ? (wtb.buyer_company_id || callerCompanyId) : callerCompanyId,
+        buyer_email: auth.isAdmin ? (wtb.buyer_email || auth.user.email) : (auth.company?.contact_email || auth.user.email),
+      };
+
+      const matches = await processMatchesForNewWtb(effectiveWtb);
       return NextResponse.json({ success: true, matches });
     }
 

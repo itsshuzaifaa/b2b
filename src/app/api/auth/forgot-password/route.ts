@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendPasswordResetEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'forgot-password');
+  if (rateLimitRes) return rateLimitRes;
   try {
     const body = await request.json();
     const rawEmail = (body.email || '').trim().toLowerCase();
@@ -31,20 +34,20 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       const msg = error.message.toLowerCase();
+      // CRITICAL SECURITY MANDATE: The password reset response must be 100% identical
+      // whether or not the email exists to prevent account enumeration.
       if (msg.includes('not found') || msg.includes('user not found')) {
-        return NextResponse.json(
-          {
-            error: `No registered account found with "${rawEmail}". Please check your email or register a new account.`,
-          },
-          { status: 404 }
-        );
+        return NextResponse.json({
+          success: true,
+          message: `If an account exists with "${rawEmail}", password reset instructions have been sent to your inbox.`,
+        });
       }
 
       console.error('[FORGOT PASSWORD GENERATE ERROR]', error);
-      return NextResponse.json(
-        { error: error.message || 'Unable to generate password reset request.' },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        success: true,
+        message: `If an account exists with "${rawEmail}", password reset instructions have been sent to your inbox.`,
+      });
     }
 
     const rawActionLink = data?.properties?.action_link;
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `We've sent a verification link to ${rawEmail}. Please check your inbox to reset your password.`,
+      message: `If an account exists with "${rawEmail}", password reset instructions have been sent to your inbox.`,
     });
   } catch (err) {
     console.error('[FORGOT PASSWORD EXCEPTION]', err);

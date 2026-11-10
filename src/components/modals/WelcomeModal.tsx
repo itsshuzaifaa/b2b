@@ -218,7 +218,7 @@ export function WelcomeModal({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/75 pointer-events-auto"
       role="dialog"
       aria-modal="true"
     >

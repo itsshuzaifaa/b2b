@@ -522,7 +522,8 @@ export interface SendNewInAppMessageEmailParams {
   senderName: string;
   senderCompany?: string;
   senderRole?: 'buyer' | 'seller' | 'admin' | string;
-  messageText: string;
+  messageText?: string;
+  messageCount?: number;
   subjectOrProduct?: string;
   conversationId: string;
   isAdmin?: boolean;
@@ -543,6 +544,7 @@ export async function sendNewInAppMessageEmail(
     senderCompany: params.senderCompany,
     senderRole: params.senderRole,
     messageText: params.messageText,
+    messageCount: params.messageCount,
     subjectOrProduct: params.subjectOrProduct,
     actionUrl,
   });

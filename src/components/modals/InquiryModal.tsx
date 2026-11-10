@@ -112,6 +112,11 @@ function InquiryDialogContent({
         setCreatedConvId(conv.id);
         setIsSuccess(true);
         if (onSuccess) onSuccess();
+
+        setTimeout(() => {
+          onClose();
+          router.push(`/dashboard/inquiries?id=${conv.id}`);
+        }, 800);
       } else {
         setErrorMsg(res.error || 'Failed to dispatch inquiry.');
       }
@@ -123,7 +128,7 @@ function InquiryDialogContent({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/40 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/70">
       <div className="relative w-full max-w-xl bg-white rounded-[28px] shadow-[0_20px_50px_rgba(11,31,58,0.14)] border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header - Matching WTB Direct Quotation Desk */}
         <div className="px-6 sm:px-8 py-5 border-b border-[#EEF2F6] flex items-center justify-between shrink-0 bg-white">

@@ -36,9 +36,11 @@ export function Navbar() {
     return null;
   }
 
+  const isDashboardUser = showAuthenticatedNav && role !== 'admin';
+
   const navLinks = [
-    { label: 'Marketplace', href: '/marketplace' },
-    { label: 'Buyer requests', href: '/requests' },
+    { label: 'Marketplace', href: isDashboardUser ? '/dashboard/marketplace' : '/marketplace' },
+    { label: 'Buyer requests', href: isDashboardUser ? '/dashboard/requests' : '/requests' },
     { label: 'About us', href: '/about' },
     { label: 'Membership', href: '/membership' },
     { label: 'Contact', href: '/contact' },

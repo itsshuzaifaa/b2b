@@ -330,7 +330,7 @@ function MatchingStockContent() {
         created_at: quotingMatch.createdAt,
       };
 
-      dispatchWtbLeadToBuyerDashboard({
+      const conversation = dispatchWtbLeadToBuyerDashboard({
         wtbRequest: mockWtbRequest as any,
         sellerCompany: company,
         actionType: 'quote_submitted',
@@ -371,11 +371,13 @@ function MatchingStockContent() {
         window.dispatchEvent(new CustomEvent('b2b_quotes_updated'));
       } catch {}
 
-      setQuoteSuccessMsg(`Official quotation of €${priceNum.toFixed(2)} sent directly to ${quotingMatch.buyerCompanyName}! Direct negotiation thread created.`);
+      const convId = conversation?.id || `conv-wtb-${quotingMatch.wtbId}-${companyId}`;
+      setQuoteSuccessMsg(`Official quotation of €${priceNum.toFixed(2)} sent directly to ${quotingMatch.buyerCompanyName}! Redirecting to chat negotiation...`);
       setTimeout(() => {
         setQuotingMatch(null);
         setQuoteSuccessMsg(null);
-      }, 3000);
+        router.push(`/dashboard/inquiries?id=${convId}`);
+      }, 700);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to submit quote.');
     } finally {

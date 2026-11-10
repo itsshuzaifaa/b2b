@@ -1,5 +1,5 @@
 export type UserRole = 'admin' | 'seller' | 'buyer';
-export type ApprovalStatus = 'pending' | 'pending_verification' | 'approved' | 'rejected' | 'suspended';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 export type MembershipTier = 'bronze' | 'silver' | 'gold';
 export type ProductStatus = 'active' | 'inactive' | 'sold_out' | 'draft' | 'unpublished';
 export type ProductCondition =
@@ -18,7 +18,7 @@ export type ProductCondition =
   | 'worn_out'
   | string;
 export type WtbStatus = 'open' | 'fulfilled' | 'closed' | 'expired';
-export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
+export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'withdrawn';
 export type NotificationType = 'niche_alert' | 'barcode_match';
 export type QueueStatus = 'pending' | 'sent' | 'failed';
 

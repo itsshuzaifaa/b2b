@@ -21,6 +21,13 @@ function MarketplaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isLoggedIn, isLoading, company, role } = useAuth();
+  const isAdmin =
+    role === 'admin' ||
+    company?.role === 'admin' ||
+    (typeof window !== 'undefined' &&
+      (localStorage.getItem('b2b_site_admin_auth') === 'true' ||
+        sessionStorage.getItem('b2b_site_admin_auth') === 'true'));
+  const effectiveLoggedIn = isLoggedIn || isAdmin;
 
   // Tab state: ALL, BUY, SELL
   const tabParam = searchParams.get('tab')?.toUpperCase();
@@ -37,14 +44,14 @@ function MarketplaceContent() {
   const [authGateOpen, setAuthGateOpen] = useState(false);
   const [createWtbOpen, setCreateWtbOpen] = useState(false);
 
-  // Load items + local user listings + local user WTBs
-  const refreshItems = () => {
+  // Load items + local user listings + local user WTBs + live database products & WTBs
+  const refreshItems = async () => {
     try {
       localStorage.removeItem('b2b_seller_listings_real_v2');
       localStorage.removeItem('b2b_seller_listings_v1');
       localStorage.removeItem('b2b_user_wtb_requests_v1');
 
-      // 1. User Sell listings
+      // 1. User Sell listings from localStorage
       const rawUserListings = localStorage.getItem('b2b_seller_listings_v3');
       const userListings = rawUserListings ? JSON.parse(rawUserListings) : [];
 
@@ -72,25 +79,103 @@ function MarketplaceContent() {
             currency: '€',
             location: l.location || 'DE',
             match: '98%',
-            companyName: company?.name || 'Verified Supplier',
-            contactEmail: company?.email || 'supplier@b2blink.eu',
-            contactName: company?.contact_name || 'Trade Desk',
-            contactPhone: company?.phone || '',
+            companyName: l.companyName || (l.company_id === company?.id ? company?.name : null) || 'Verified Supplier',
+            contactEmail: l.contactEmail || (l.company_id === company?.id ? company?.email : null) || 'supplier@b2blink.eu',
+            contactName: l.contactName || (l.company_id === company?.id ? company?.contact_name : null) || 'Trade Desk',
+            contactPhone: l.contactPhone || (l.company_id === company?.id ? company?.phone : '') || '',
             moq: Number(l.moq || 10),
+            companyId: l.company_id || l.companyId || company?.id,
           }))
         : [];
 
-      // 2. User WTB requests
+      // 2. User WTB requests from localStorage
       const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
       const userWtbs: TradingBoardItem[] = rawUserWtbs
         ? JSON.parse(rawUserWtbs).map((w: any) => ({
             ...w,
             pricingType: w.pricingType || (w.notes?.includes('POA') ? 'poa' : w.notes?.includes('NEG') ? 'neg' : 'fixed'),
             ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
+            companyId: w.companyId || w.company_id || w.buyerCompanyId,
           }))
         : [];
 
-      const combined = [...formattedUserSell, ...userWtbs, ...ALL_TRADING_BOARD_ITEMS];
+      // 3. Supabase live products (WTS)
+      let liveProducts: TradingBoardItem[] = [];
+      try {
+        const prodRes = await fetch('/api/products', { cache: 'no-store' });
+        if (prodRes.ok) {
+          const prodData = await prodRes.json();
+          if (prodData.success && Array.isArray(prodData.products)) {
+            liveProducts = prodData.products.map((p: any) => ({
+              id: p.id,
+              type: 'SELL' as const,
+              category: p.category_slug ? p.category_slug.replace(/-/g, ' ') : 'General',
+              brand: p.brand || p.title.split(' ')[0] || 'Wholesale',
+              itemCode: p.barcode_or_sku ? p.barcode_or_sku.slice(0, 8) : p.id.slice(0, 8),
+              description: p.title + (p.description ? ` — ${p.description}` : ''),
+              ean: p.barcode_or_sku || 'n/a',
+              qty: Number(p.quantity_available) || 50,
+              condition: p.condition || 'New',
+              price: Number(p.unit_price) || 0,
+              pricingType: (p.description?.includes('POA') ? 'poa' : p.description?.includes('NEG') ? 'neg' : 'fixed'),
+              currency: '€',
+              location: p.location || 'DE',
+              match: '98%',
+              companyName: p.company?.name || 'Verified Supplier',
+              contactEmail: p.company?.email || 'supplier@b2blink.eu',
+              contactName: p.company?.contact_name || 'Trade Desk',
+              contactPhone: p.company?.phone || '',
+              moq: Number(p.moq) || 1,
+              companyId: p.company_id,
+            }));
+          }
+        }
+      } catch (prodErr) {
+        console.warn('Could not load live products in marketplace:', prodErr);
+      }
+
+      // 4. Supabase live WTBs
+      let liveWtbs: TradingBoardItem[] = [];
+      try {
+        const { getPublicWtbRequests } = await import('@/lib/actions/wtb');
+        const supabaseWtbs = await getPublicWtbRequests();
+        if (Array.isArray(supabaseWtbs) && supabaseWtbs.length > 0) {
+          liveWtbs = supabaseWtbs.map((req) => ({
+            id: req.id,
+            type: 'BUY' as const,
+            category: req.category_slug
+              ? req.category_slug.charAt(0).toUpperCase() + req.category_slug.slice(1).replace(/-/g, ' ')
+              : 'Electronics',
+            brand: req.product_name.split(' ')[0] || 'Brand',
+            itemCode: req.barcode_or_sku ? req.barcode_or_sku.slice(0, 10) : `REQ-${req.id.slice(0, 6).toUpperCase()}`,
+            description: req.product_name + (req.notes ? ` — ${req.notes}` : ''),
+            ean: req.barcode_or_sku || 'n/a',
+            qty: req.target_quantity || 50,
+            condition: (req.notes?.match(/Condition:\s*([^.|]+)/i)?.[1]?.trim()) || 'New',
+            price: req.target_price || 0,
+            pricingType: (req as any).pricing_type || (req.notes?.includes('POA') ? 'poa' : req.notes?.includes('NEG') ? 'neg' : 'fixed'),
+            currency: '€',
+            location: 'EU',
+            match: '96%',
+            companyName: req.buyer_company || 'Verified Buyer',
+            contactEmail: req.buyer_email || 'buyer@b2blink.eu',
+            contactName: req.buyer_name || 'Buyer',
+            contactPhone: req.buyer_phone || '',
+            moq: 1,
+            companyId: req.buyer_company_id || req.buyer_user_id,
+          }));
+        }
+      } catch (wtbErr) {
+        console.warn('Could not load live WTBs in marketplace:', wtbErr);
+      }
+
+      const combined = [
+        ...formattedUserSell,
+        ...userWtbs,
+        ...liveProducts,
+        ...liveWtbs,
+        ...ALL_TRADING_BOARD_ITEMS,
+      ];
       const cleanItems = combined.filter((item) => {
         const cId = (item as any).companyId || (item as any).company_id;
         const cEmail = item.contactEmail || (item as any).seller_email;
@@ -227,7 +312,7 @@ function MarketplaceContent() {
             <div className="w-10 h-10 border-4 border-[#0A6CFF] border-t-transparent rounded-full animate-spin mb-4" />
             <p className="text-[#5B6B82] font-semibold text-[14px]">Loading verified wholesale exchange...</p>
           </div>
-        ) : !isLoggedIn ? (
+        ) : !effectiveLoggedIn ? (
           /* ========================================================================= */
           /* AUTH GATE: Prompt to login or create account to view all WTS/WTB Deals   */
           /* ========================================================================= */

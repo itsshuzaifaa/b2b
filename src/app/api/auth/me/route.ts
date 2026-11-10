@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { isUserAdmin } from '@/lib/auth/guards';
 import type { Company, UserRole, MembershipTier, ApprovalStatus } from '@/types/database';
 
 export async function GET(request: NextRequest) {
@@ -8,10 +9,11 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ authenticated: false, company: null });
+      return NextResponse.json({ authenticated: false, isAdmin: false, company: null });
     }
 
     const admin = createAdminClient();
+    const isAdmin = await isUserAdmin(user);
 
     // Query companies table with admin client to bypass RLS limitations
     let companyRow: any = null;
@@ -38,8 +40,11 @@ export async function GET(request: NextRequest) {
     }
 
     const metadata = user.user_metadata || {};
-    const role: UserRole = (companyRow?.role || metadata.role || 'seller') as UserRole;
-    const approvalStatus: ApprovalStatus = (companyRow?.approval_status || metadata.approval_status || (role === 'admin' ? 'approved' : 'pending')) as ApprovalStatus;
+    // SECURITY: Admin role is strictly derived from isUserAdmin(user). Never trust user_metadata.
+    const role: UserRole = isAdmin
+      ? 'admin'
+      : (companyRow?.role && companyRow.role !== 'admin' ? companyRow.role : 'seller') as UserRole;
+    const approvalStatus: ApprovalStatus = (companyRow?.approval_status || (role === 'admin' ? 'approved' : 'pending')) as ApprovalStatus;
 
     if (!companyRow) {
       // Auto-create company row if missing
@@ -63,39 +68,28 @@ export async function GET(request: NextRequest) {
     const rawTiers = [companyRow?.tier, companyRow?.membership_tier, metadata.membership_tier, metadata.tier].filter(Boolean);
     const effectiveTier = (rawTiers.includes('gold') ? 'gold' : rawTiers.includes('silver') ? 'silver' : 'bronze') as MembershipTier;
 
-    const isApproved = Boolean(
-      role === 'admin' ||
-      companyRow?.approval_status === 'approved' ||
-      metadata.approval_status === 'approved'
-    );
-    const isSuspended = Boolean(
-      companyRow?.approval_status === 'suspended' ||
-      companyRow?.approval_status === 'rejected' ||
-      metadata.approval_status === 'suspended'
-    );
-
+    // SECURITY MANDATE: Approval status is determined strictly from companies.approval_status in the database.
+    // NEVER trust user_metadata or client-provided flags.
+    const dbStatus = companyRow?.approval_status;
     const effectiveApprovalStatus: ApprovalStatus = (
-      isSuspended ? 'suspended' : isApproved ? 'approved' : (companyRow?.approval_status || metadata.approval_status || approvalStatus || 'pending')
-    ) as ApprovalStatus;
+      role === 'admin'
+        ? 'approved'
+        : dbStatus === 'approved'
+        ? 'approved'
+        : dbStatus === 'suspended'
+        ? 'suspended'
+        : dbStatus === 'rejected'
+        ? 'rejected'
+        : 'pending'
+    );
 
-    // Self-heal: If marked approved, sync both database sources immediately
-    if (isApproved && !isSuspended) {
-      if (companyRow && companyRow.approval_status !== 'approved') {
-        admin
-          .from('companies')
-          .update({ approval_status: 'approved', updated_at: new Date().toISOString() })
-          .eq('id', companyRow.id)
-          .then(() => {});
-        companyRow.approval_status = 'approved';
-      }
-      if (metadata.approval_status !== 'approved') {
-        admin.auth.admin
-          .updateUserById(user.id, {
-            email_confirm: true,
-            user_metadata: { ...metadata, approval_status: 'approved' },
-          })
-          .then(() => {});
-      }
+    // Keep user_metadata synchronized with the authoritative database status (one-way DB -> metadata)
+    if (metadata.approval_status !== effectiveApprovalStatus) {
+      admin.auth.admin
+        .updateUserById(user.id, {
+          user_metadata: { ...metadata, approval_status: effectiveApprovalStatus },
+        })
+        .then(() => {});
     }
 
     const normalizedCompany: Company = {
@@ -114,16 +108,18 @@ export async function GET(request: NextRequest) {
       tier: effectiveTier,
       membership_tier: effectiveTier,
       approval_status: effectiveApprovalStatus,
+      rejection_reason: companyRow?.rejection_reason || null,
       categories: companyRow?.niches || companyRow?.categories || metadata.selectedNiches || [],
       created_at: companyRow?.created_at || user.created_at || new Date().toISOString(),
     };
 
     return NextResponse.json({
       authenticated: true,
+      isAdmin,
       user: {
         id: user.id,
         email: user.email,
-        metadata: user.user_metadata,
+        app_metadata: user.app_metadata,
       },
       company: normalizedCompany,
       role: normalizedCompany.role,

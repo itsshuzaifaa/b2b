@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { RequestBulkCsvModal } from '@/components/modals/RequestBulkCsvModal';
+import { CreateWtbModal } from '@/components/modals/CreateWtbModal';
+import { ListingFormModal } from '@/components/modals/ListingFormModal';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS, WholesaleCondition } from '@/lib/constants/conditions';
@@ -49,6 +52,7 @@ import {
 
 export interface ListingItem {
   id: string;
+  lotType?: 'WTS' | 'WTB';
   title: string;
   brand?: string;
   itemCode?: string;
@@ -69,6 +73,12 @@ export interface ListingItem {
   expiresAt?: string;
   unpublishedAt?: string;
   unpublishNotificationSent?: boolean;
+  company_id?: string;
+  companyId?: string;
+  companyName?: string;
+  contactEmail?: string;
+  contactName?: string;
+  contactPhone?: string;
 }
 
 export const POPULAR_BRANDS = [
@@ -115,6 +125,9 @@ export default function ListingsPage() {
   const [isRequestBulkCsvOpen, setIsRequestBulkCsvOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'All' | 'Matched' | 'Active' | 'Hot' | 'Drafts' | 'Unpublished'>('All');
+  const [lotTypeFilter, setLotTypeFilter] = useState<'ALL' | 'WTS' | 'WTB'>('ALL');
+  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [tradeModalMode, setTradeModalMode] = useState<'WTB' | 'WTS'>('WTB');
   const [selectedUnpublishedIds, setSelectedUnpublishedIds] = useState<string[]>([]);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
@@ -141,36 +154,18 @@ export default function ListingsPage() {
   // Multi-step modal state (shared for Add and Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
-  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  // Form states (Clean, image-free wholesale trading specifications)
-  const [formTitle, setFormTitle] = useState('');
-  const [formBrand, setFormBrand] = useState('Apple');
-  const [brandSearch, setBrandSearch] = useState('');
-  const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
-  const [formItemCode, setFormItemCode] = useState('');
-  const [formCondition, setFormCondition] = useState<WholesaleCondition | string>('New');
-  const [formCategory, setFormCategory] = useState(WHOLESALE_CATEGORIES[0].name);
-  const [formCustomCategory, setFormCustomCategory] = useState('');
-  const [formEan, setFormEan] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formLocation, setFormLocation] = useState('DE');
-  const [formPricingType, setFormPricingType] = useState<PricingType>('fixed');
-  const [formPrice, setFormPrice] = useState('920.00');
-  const [formAvailable, setFormAvailable] = useState('50');
-  const [formMoq, setFormMoq] = useState('10');
-  const [formIsHot, setFormIsHot] = useState(true);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [showLocationHelp, setShowLocationHelp] = useState(false);
+  const [editingItem, setEditingItem] = useState<ListingItem | null>(null);
 
   // Load listings from localStorage and run lifecycle checks
   useEffect(() => {
-    const reload = () => {
+    let isCancelled = false;
+
+    const reload = async () => {
       try {
         localStorage.removeItem('b2b_seller_listings_real_v2');
         localStorage.removeItem('b2b_seller_listings_v1');
 
+        let currentWtsItems: ListingItem[] = [];
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
@@ -181,26 +176,151 @@ export default function ListingsPage() {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedListings));
               } catch {}
             }
-            setListings(updatedListings);
-            return;
+            currentWtsItems = updatedListings.map((l) => ({ ...l, lotType: 'WTS' as const }));
           }
         }
-        setListings([]);
+
+        // 1. Fetch Supabase products (WTS) in background and merge
+        if (company?.id) {
+          try {
+            const res = await fetch(`/api/products?companyId=${encodeURIComponent(company.id)}`);
+            if (res.ok && !isCancelled) {
+              const data = await res.json();
+              if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+                const dbMapped: ListingItem[] = data.products.map((p: any) => ({
+                  id: p.id,
+                  lotType: 'WTS' as const,
+                  title: p.title,
+                  brand: p.brand || p.title.split(' ')[0] || 'Wholesale',
+                  itemCode: p.barcode_or_sku ? p.barcode_or_sku.slice(0, 8) : p.id.slice(0, 8),
+                  condition: p.condition || 'New',
+                  category: p.category_slug ? p.category_slug.replace(/-/g, ' ') : 'General',
+                  ean: p.barcode_or_sku || 'n/a',
+                  description: p.description || '',
+                  unitPrice: Number(p.unit_price) || 0,
+                  available: Number(p.quantity_available) || 50,
+                  moq: Number(p.moq) || 1,
+                  status: p.is_hot ? 'Hot' : 'Active',
+                  createdAt: p.created_at || new Date().toISOString(),
+                  company_id: company.id,
+                  companyId: company.id,
+                  companyName: company.name || company.company_name || 'Verified Supplier',
+                  contactEmail: company.email || company.contact_email || '',
+                  contactName: company.contact_name || 'Trade Desk',
+                  contactPhone: company.phone || '',
+                }));
+
+                const mergedMap = new Map<string, ListingItem>();
+                dbMapped.forEach((item) => mergedMap.set(item.id, item));
+                currentWtsItems.forEach((item) => mergedMap.set(item.id, item));
+                currentWtsItems = Array.from(mergedMap.values());
+              }
+            }
+          } catch {}
+        }
+
+        // 2. Load WTB lots from localStorage
+        const wtbLots: ListingItem[] = [];
+        try {
+          const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
+          if (rawUserWtbs) {
+            const parsed = JSON.parse(rawUserWtbs);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((w: any) => {
+                wtbLots.push({
+                  id: w.id,
+                  lotType: 'WTB' as const,
+                  title: w.description || w.title || 'Procurement Lot',
+                  brand: w.brand || 'Procurement',
+                  itemCode: w.itemCode || 'WTB-REQ',
+                  condition: w.condition || 'New',
+                  category: w.category || 'General',
+                  ean: w.ean || 'n/a',
+                  description: w.description || w.title || '',
+                  unitPrice: Number(w.price) || 0,
+                  pricingType: w.pricingType,
+                  available: Number(w.qty) || 50,
+                  moq: Number(w.moq) || 1,
+                  location: w.location || 'EU',
+                  status: 'Active',
+                  createdAt: new Date().toISOString(),
+                  company_id: w.companyId || w.company_id || company?.id,
+                  companyId: w.companyId || w.company_id || company?.id,
+                  companyName: w.companyName || company?.name || 'Verified Procurement Partner',
+                  contactEmail: w.contactEmail || company?.email || '',
+                });
+              });
+            }
+          }
+        } catch {}
+
+        // 3. Load WTB lots from Supabase if buyer email is present
+        if (company?.email) {
+          try {
+            const { getBuyerWtbRequests } = await import('@/lib/actions/wtb');
+            const dbWtbs = await getBuyerWtbRequests(company.email);
+            if (Array.isArray(dbWtbs) && dbWtbs.length > 0) {
+              dbWtbs.forEach((w: any) => {
+                if (!wtbLots.some((existing) => existing.id === w.id)) {
+                  wtbLots.push({
+                    id: w.id,
+                    lotType: 'WTB' as const,
+                    title: w.product_name,
+                    brand: w.product_name.split(' ')[0] || 'Procurement',
+                    itemCode: w.barcode_or_sku ? w.barcode_or_sku.slice(0, 8) : `REQ-${w.id.slice(0, 6).toUpperCase()}`,
+                    condition: (w.notes?.match(/Condition:\s*([^.|]+)/i)?.[1]?.trim()) || 'New',
+                    category: w.category_slug ? w.category_slug.replace(/-/g, ' ') : 'General',
+                    ean: w.barcode_or_sku || 'n/a',
+                    description: w.product_name + (w.notes ? ` — ${w.notes}` : ''),
+                    unitPrice: Number(w.target_price) || 0,
+                    pricingType: (w.notes?.includes('POA') ? 'poa' : w.notes?.includes('NEG') ? 'neg' : 'fixed'),
+                    available: Number(w.target_quantity) || 50,
+                    moq: 1,
+                    location: 'EU',
+                    status: 'Active',
+                    createdAt: w.created_at || new Date().toISOString(),
+                    company_id: w.buyer_user_id || company.id,
+                    companyId: w.buyer_user_id || company.id,
+                    companyName: w.buyer_company || company.name || 'Verified Procurement Partner',
+                    contactEmail: w.buyer_email || company.email || '',
+                  });
+                }
+              });
+            }
+          } catch {}
+        }
+
+        const combinedLots = [...currentWtsItems, ...wtbLots].filter(
+          (l) => !isAccountDeleted(l.companyId || l.company_id, l.contactEmail)
+        );
+        if (!isCancelled) {
+          setListings(combinedLots);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(currentWtsItems));
+          } catch {}
+        }
       } catch {
-        setListings([]);
+        if (!isCancelled) setListings([]);
       }
     };
 
     reload();
 
+    window.addEventListener('b2b_wtb_created', reload);
+    window.addEventListener('b2b_listings_updated', reload);
+    window.addEventListener('b2b_listing_created', reload);
     window.addEventListener('b2b_admin_update', reload);
     window.addEventListener('storage', reload);
 
     return () => {
+      isCancelled = true;
+      window.removeEventListener('b2b_wtb_created', reload);
+      window.removeEventListener('b2b_listings_updated', reload);
+      window.removeEventListener('b2b_listing_created', reload);
       window.removeEventListener('b2b_admin_update', reload);
       window.removeEventListener('storage', reload);
     };
-  }, []);
+  }, [company?.id, company?.email]);
 
   // Load smart trading matches
   useEffect(() => {
@@ -294,14 +414,14 @@ export default function ListingsPage() {
     return () => clearInterval(interval);
   }, [company?.email, company?.contact_email, company?.contact_name, company?.name]);
 
-  const saveListings = (items: ListingItem[]) => {
+  function saveListings(items: ListingItem[]) {
     setListings(items);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     } catch {
       // ignore
     }
-  };
+  }
 
   // Bulk / Single Republish handler (resets 14-day timer)
   const handleRepublish = async (ids: string[]) => {
@@ -413,56 +533,13 @@ export default function ListingsPage() {
 
   const handleOpenAdd = () => {
     setModalMode('add');
-    setEditingId(null);
-    setCurrentStep(1);
-    setFormTitle('');
-    setFormBrand('Apple');
-    setBrandSearch('');
-    setIsBrandDropdownOpen(false);
-    setFormItemCode('');
-    setFormCondition('New');
-    setFormCategory(WHOLESALE_CATEGORIES[0].name);
-    setFormCustomCategory('');
-    setFormEan('');
-    setFormDescription('');
-    setFormLocation('DE');
-    setFormPricingType('fixed');
-    setFormPrice('920.00');
-    setFormAvailable('50');
-    setFormMoq('10');
-    setFormIsHot(true);
-    setFormError(null);
+    setEditingItem(null);
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (item: ListingItem) => {
     setModalMode('edit');
-    setEditingId(item.id);
-    setCurrentStep(1);
-    setFormTitle(item.title);
-    setFormBrand(item.brand || 'Apple');
-    setBrandSearch('');
-    setIsBrandDropdownOpen(false);
-    setFormItemCode(item.itemCode || '');
-    setFormCondition(item.condition || 'New');
-    const knownCategory = WHOLESALE_CATEGORIES.some((c) => c.name === item.category);
-    if (knownCategory) {
-      setFormCategory(item.category);
-      setFormCustomCategory('');
-    } else {
-      setFormCategory('Other');
-      setFormCustomCategory(item.category || '');
-    }
-    setFormEan(item.ean);
-    setFormDescription(item.description);
-    setFormLocation(item.location || 'DE');
-    const initialPricingType: PricingType = item.pricingType || (item.unitPrice > 0 ? 'fixed' : item.description?.includes('POA') ? 'poa' : item.description?.includes('NEG') ? 'neg' : 'fixed');
-    setFormPricingType(initialPricingType);
-    setFormPrice(item.unitPrice ? String(item.unitPrice) : '0');
-    setFormAvailable(String(item.available));
-    setFormMoq(String(item.moq));
-    setFormIsHot(item.status === 'Hot');
-    setFormError(null);
+    setEditingItem(item);
     setIsModalOpen(true);
   };
 
@@ -473,68 +550,47 @@ export default function ListingsPage() {
     }
   };
 
-  // Step 1 Validation
-  const handleNextStep1 = () => {
-    if (!formTitle.trim()) {
-      setFormError('Please enter a product title / description.');
-      return;
-    }
-    setFormError(null);
-    setCurrentStep(2);
-  };
-
-  // Final Submit
-  const handleSaveListing = (e: React.FormEvent) => {
-    e.preventDefault();
-    const priceNum = parseFloat(formPrice);
-    const availNum = parseInt(formAvailable, 10);
-    const moqNum = parseInt(formMoq, 10);
-    const isSpecialPricing = formPricingType === 'neg' || formPricingType === 'poa';
-
-    if (!isSpecialPricing && (isNaN(priceNum) || priceNum <= 0)) {
-      setFormError('Please enter a valid unit price.');
-      return;
-    }
-    if (isNaN(availNum) || availNum <= 0) {
-      setFormError('Available quantity must be greater than 0.');
-      return;
-    }
-    if (isNaN(moqNum) || moqNum <= 0) {
-      setFormError('Minimum Order Quantity (MOQ) must be at least 1.');
-      return;
-    }
-
-    const effectivePrice = isSpecialPricing ? 0 : priceNum;
-    const finalSku = formEan.trim() || 'n/a';
-    const finalItemCode = formItemCode.trim() || (finalSku !== 'n/a' ? finalSku.slice(0, 8) : `MDL-${Date.now().toString().slice(-5)}`);
-    const finalCategory = formCategory === 'Other' && formCustomCategory.trim() ? formCustomCategory.trim() : formCategory;
-    const pricingTag = isSpecialPricing ? ` | Pricing: ${formPricingType.toUpperCase()}` : '';
-    const descWithPricing = formDescription.trim() || formTitle.trim();
-    const finalDescription = isSpecialPricing && !descWithPricing.includes(pricingTag)
-      ? `${descWithPricing}${pricingTag}`
-      : descWithPricing;
+  // Final Submit from standalone memoized ListingFormModal
+  const handleSaveListing = (formData: any) => {
+    const isSpecialPricing = formData.pricingType === 'neg' || formData.pricingType === 'poa';
+    const effectivePrice = isSpecialPricing ? 0 : formData.unitPrice;
+    const finalSku = formData.ean || 'n/a';
+    const finalItemCode =
+      formData.itemCode ||
+      (finalSku !== 'n/a' ? finalSku.slice(0, 8) : `MDL-${Date.now().toString().slice(-5)}`);
+    const pricingTag = isSpecialPricing ? ` | Pricing: ${formData.pricingType.toUpperCase()}` : '';
+    const descWithPricing = formData.description || formData.title;
+    const finalDescription =
+      isSpecialPricing && !descWithPricing.includes(pricingTag)
+        ? `${descWithPricing}${pricingTag}`
+        : descWithPricing;
 
     const now = new Date();
     const expires = new Date(now.getTime() + LISTING_ACTIVE_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
-    if (modalMode === 'edit' && editingId) {
+    if (modalMode === 'edit' && editingItem) {
       const updated = listings.map((l) => {
-        if (l.id === editingId) {
+        if (l.id === editingItem.id) {
           return {
             ...l,
-            title: formTitle.trim(),
-            brand: formBrand,
+            title: formData.title,
+            brand: formData.brand,
             itemCode: finalItemCode,
-            condition: formCondition,
-            category: finalCategory,
+            condition: formData.condition,
+            category: formData.category,
             ean: finalSku,
             description: finalDescription,
             unitPrice: effectivePrice,
-            pricingType: formPricingType,
-            available: availNum,
-            moq: moqNum,
-            location: formLocation.toUpperCase(),
-            status: formIsHot ? ('Hot' as const) : l.status === 'Unpublished' ? ('Unpublished' as const) : ('Active' as const),
+            pricingType: formData.pricingType,
+            available: formData.available,
+            moq: formData.moq,
+            location: (formData.location || 'DE').toUpperCase(),
+            status:
+              formData.status === 'Hot'
+                ? ('Hot' as const)
+                : l.status === 'Unpublished'
+                ? ('Unpublished' as const)
+                : ('Active' as const),
           };
         }
         return l;
@@ -543,29 +599,37 @@ export default function ListingsPage() {
     } else {
       const newItem: ListingItem = {
         id: `lst-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        title: formTitle.trim(),
-        brand: formBrand,
+        title: formData.title,
+        brand: formData.brand,
         itemCode: finalItemCode,
-        condition: formCondition,
-        category: finalCategory,
+        condition: formData.condition,
+        category: formData.category,
         ean: finalSku,
         description: finalDescription,
         unitPrice: effectivePrice,
-        pricingType: formPricingType,
-        available: availNum,
-        moq: moqNum,
-        location: formLocation.toUpperCase(),
-        status: formIsHot ? 'Hot' : 'Active',
+        pricingType: formData.pricingType,
+        available: formData.available,
+        moq: formData.moq,
+        location: (formData.location || 'DE').toUpperCase(),
+        status: formData.status || 'Active',
         createdAt: now.toISOString(),
         activatedAt: now.toISOString(),
         publishedAt: now.toISOString(),
         expiresAt: expires.toISOString(),
+        company_id: company?.id,
+        companyId: company?.id,
+        companyName: company?.name || (company as any)?.company_name || 'Verified Supplier',
+        contactEmail: company?.email || (company as any)?.contact_email || 'supplier@b2blink.eu',
+        contactName: company?.contact_name || 'Trade Desk',
+        contactPhone: company?.phone || '',
       };
-      saveListings([newItem, ...listings]);
+      const updatedListings = [newItem, ...listings];
+      saveListings(updatedListings);
 
       // Dispatch event for instant update across tabs and trading board
       try {
         window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
+        window.dispatchEvent(new CustomEvent('b2b_listing_created'));
       } catch {}
 
       if (company?.id) {
@@ -574,25 +638,27 @@ export default function ListingsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId: company.id,
-            title: formTitle.trim(),
-            brand: formBrand,
-            condition: formCondition,
+            title: formData.title,
+            brand: formData.brand,
+            condition: formData.condition,
             description: finalDescription,
             barcodeOrSku: finalSku !== 'n/a' ? finalSku : undefined,
-            categorySlug: finalCategory.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
+            categorySlug: formData.category.toLowerCase().replace(/ & /g, '-').replace(/ /g, '-'),
             unitPrice: effectivePrice,
-            quantityAvailable: availNum,
-            moq: moqNum,
-            isHot: formIsHot,
+            quantityAvailable: formData.available,
+            moq: formData.moq,
+            isHot: formData.status === 'Hot',
             status: 'active',
           }),
         })
           .then(async (res) => {
             const data = await res.json();
             if (data.success && data.product) {
-              setListings((prev) =>
-                prev.map((item) => (item.id === newItem.id ? { ...item, id: data.product.id } : item))
+              const synced = updatedListings.map((item) =>
+                item.id === newItem.id ? { ...item, id: data.product.id } : item
               );
+              saveListings(synced);
+              window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
             }
           })
           .catch((err) => console.warn('[SYNC PRODUCT ERROR]', err));
@@ -620,7 +686,14 @@ export default function ListingsPage() {
   const unpublishedCount = listings.filter((l) => l.status === 'Unpublished').length;
   const matchedCount = listings.filter((l) => l.status !== 'Unpublished' && hasItemMatch(l)).length;
 
+  const wtsCount = listings.filter((l) => (l.lotType || 'WTS') === 'WTS').length;
+  const wtbCount = listings.filter((l) => l.lotType === 'WTB').length;
+
   const filteredListings = listings.filter((item) => {
+    // 1. Lot Type Filter (WTS vs WTB)
+    if (lotTypeFilter === 'WTS' && (item.lotType || 'WTS') !== 'WTS') return false;
+    if (lotTypeFilter === 'WTB' && item.lotType !== 'WTB') return false;
+
     const matchesSearch =
       !searchQuery.trim() ||
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -645,10 +718,10 @@ export default function ListingsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <div>
           <h1 className="text-[28px] sm:text-[32px] font-extrabold text-[#0B1F3A] tracking-[-0.025em] leading-tight">
-            Product listings
+            Catalog Lots &amp; Listings
           </h1>
           <p className="text-[14px] sm:text-[15px] text-[#5B6B82] mt-1 font-normal">
-            <AnimatedNumber value={activeCount} /> active wholesale listing{activeCount === 1 ? '' : 's'} on your {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)} plan.
+            <AnimatedNumber value={activeCount} /> active wholesale lot{activeCount === 1 ? '' : 's'} (<span className="text-[#0A6CFF] font-bold">{wtsCount} WTS</span> &bull; <span className="text-[#16A34A] font-bold">{wtbCount} WTB</span>) on your {currentTier.charAt(0).toUpperCase() + currentTier.slice(1)} plan.
             {unpublishedCount > 0 && (
               <span className="text-amber-700 font-semibold ml-1.5">
                 (<AnimatedNumber value={unpublishedCount} /> unpublished in 30-day recovery window)
@@ -669,11 +742,25 @@ export default function ListingsPage() {
           )}
           <button
             type="button"
-            onClick={handleOpenAdd}
+            onClick={() => {
+              setTradeModalMode('WTB');
+              setIsTradeModalOpen(true);
+            }}
+            className="w-full sm:w-auto justify-center bg-[#16A34A] hover:bg-emerald-700 text-white font-bold text-[13px] px-5 py-2.5 rounded-full flex items-center gap-1.5 transition cursor-pointer shadow-xs text-center"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Post WTB</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTradeModalMode('WTS');
+              setIsTradeModalOpen(true);
+            }}
             className="w-full sm:w-auto justify-center bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[13px] px-6 py-2.5 rounded-full flex items-center gap-1.5 transition cursor-pointer shadow-xs text-center"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Add product</span>
+            <span>+ Add WTS</span>
           </button>
         </div>
       </div>
@@ -775,6 +862,55 @@ export default function ListingsPage() {
           )}
         </div>
       )}
+
+      {/* Lot Type Selector: All, WTS, WTB */}
+      <div className="flex items-center gap-2 mt-6">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-full border border-slate-200/60 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setLotTypeFilter('ALL')}
+            className={`px-4 py-1.5 rounded-full text-[12.5px] font-extrabold transition cursor-pointer ${
+              lotTypeFilter === 'ALL'
+                ? 'bg-[#0B1F3A] text-white shadow-xs'
+                : 'text-[#5B6B82] hover:text-[#0B1F3A]'
+            }`}
+          >
+            All Lots ({listings.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setLotTypeFilter('WTS')}
+            className={`px-4 py-1.5 rounded-full text-[12.5px] font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+              lotTypeFilter === 'WTS'
+                ? 'bg-[#0A6CFF] text-white shadow-xs'
+                : 'text-[#0A6CFF] hover:bg-white/70'
+            }`}
+          >
+            <span>WTS Offers (Sell)</span>
+            <span className={`text-[10.5px] px-1.5 py-0.2 rounded-full font-bold ${
+              lotTypeFilter === 'WTS' ? 'bg-white/20 text-white' : 'bg-blue-100 text-[#0A6CFF]'
+            }`}>
+              {wtsCount}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setLotTypeFilter('WTB')}
+            className={`px-4 py-1.5 rounded-full text-[12.5px] font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+              lotTypeFilter === 'WTB'
+                ? 'bg-[#16A34A] text-white shadow-xs'
+                : 'text-[#16A34A] hover:bg-white/70'
+            }`}
+          >
+            <span>WTB Demands (Buy)</span>
+            <span className={`text-[10.5px] px-1.5 py-0.2 rounded-full font-bold ${
+              lotTypeFilter === 'WTB' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-[#16A34A]'
+            }`}>
+              {wtbCount}
+            </span>
+          </button>
+        </div>
+      </div>
 
       {/* Tabs & Search Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-7 mb-6">
@@ -1065,6 +1201,7 @@ export default function ListingsPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[#F1F5F9] text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A9BB0]">
+                  <th className="py-4 px-5">Type</th>
                   <th className="py-4 px-5">Category</th>
                   <th className="py-4 px-5">Brand</th>
                   <th className="py-4 px-5">Item Code</th>
@@ -1083,13 +1220,22 @@ export default function ListingsPage() {
               <tbody className="divide-y divide-[#F8FAFC] text-[13px]">
                 {filteredListings.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan={14} className="py-12 text-center text-slate-400 font-medium">
                       No product listings found matching your search.
                     </td>
                   </tr>
                 ) : (
                   filteredListings.map((item) => (
                     <tr key={item.id} className="hover:bg-[#F8FAFC]/80 transition group">
+                      <td className="py-3.5 px-5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-black border ${
+                          item.lotType === 'WTB'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-blue-50 text-[#0A6CFF] border-blue-200'
+                        }`}>
+                          {item.lotType === 'WTB' ? 'WTB (Buy)' : 'WTS (Sell)'}
+                        </span>
+                      </td>
                       <td className="py-3.5 px-5 font-semibold text-[#5B6B82] whitespace-nowrap">
                         {item.category}
                       </td>
@@ -1257,417 +1403,27 @@ export default function ListingsPage() {
         </div>
       </div>
 
-      {/* 2-STEP POPUP MODAL (CLEAN WHOLESALE SPECIFICATIONS, NO IMAGES) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0B1F3A]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] p-5 sm:p-7 max-w-lg w-full text-[#0B1F3A] shadow-2xl border border-[#EAEFF6] animate-in zoom-in-95 duration-200 max-h-[90dvh] overflow-y-auto">
-            {/* Modal Header & Step Indicator */}
-            <div className="pb-4 border-b border-[#F1F5F9]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#0A6CFF]">
-                  STEP {currentStep} OF 2: {currentStep === 1 ? 'PRODUCT SPECIFICATIONS' : 'PRICING & COMMERCIAL TERMS'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <h3 className="text-[20px] font-extrabold text-[#0B1F3A]">
-                {modalMode === 'add' ? 'Add New Product Listing' : 'Edit Product Listing'}
-              </h3>
-
-              {/* Progress Bar */}
-              <div className="w-full h-1.5 bg-[#EAEFF6] rounded-full overflow-hidden mt-3">
-                <div
-                  className="h-full bg-[#0A6CFF] transition-all duration-300"
-                  style={{ width: currentStep === 1 ? '50%' : '100%' }}
-                />
-              </div>
-            </div>
-
-            {formError && (
-              <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-[13px] font-medium">
-                {formError}
-              </div>
-            )}
-
-            {/* STEP 1: PRODUCT SPECIFICATIONS */}
-            {currentStep === 1 && (
-              <div className="py-5 space-y-4">
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Product Title / Description *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    placeholder="e.g. iPhone 15 Pro Max 256GB Natural Titanium"
-                    className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium"
-                  />
-                </div>
-
-                {/* Company / Brand with Searchable Dropdown */}
-                <div className="relative">
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Brand / Manufacturer *
-                  </label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl text-left bg-white font-semibold text-[#0B1F3A] flex items-center justify-between focus:outline-none focus:border-[#0A6CFF]"
-                    >
-                      <span>{formBrand || 'Select a Brand'}</span>
-                      <Search className="w-4 h-4 text-slate-400" />
-                    </button>
-
-                    {isBrandDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white border border-[#EAEFF6] rounded-2xl shadow-xl p-2.5 max-h-56 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-                        {/* Live Search inside dropdown */}
-                        <div className="relative mb-2">
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder="Filter brands (Apple, Samsung, Sony...)"
-                            value={brandSearch}
-                            onChange={(e) => setBrandSearch(e.target.value)}
-                            className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#EAEFF6] rounded-xl focus:outline-none focus:border-[#0A6CFF] font-medium"
-                          />
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                        </div>
-
-                        <div className="space-y-1">
-                          {POPULAR_BRANDS.filter((b) =>
-                            b.toLowerCase().includes(brandSearch.toLowerCase().trim())
-                          ).map((brand) => (
-                            <button
-                              key={brand}
-                              type="button"
-                              onClick={() => {
-                                setFormBrand(brand);
-                                setIsBrandDropdownOpen(false);
-                                setBrandSearch('');
-                              }}
-                              className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-between ${
-                                formBrand === brand
-                                  ? 'bg-[#0A6CFF] text-white'
-                                  : 'text-[#0B1F3A] hover:bg-slate-100'
-                              }`}
-                            >
-                              <span>{brand}</span>
-                              {formBrand === brand && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                            </button>
-                          ))}
-
-                          {brandSearch.trim() &&
-                            !POPULAR_BRANDS.some(
-                              (b) => b.toLowerCase() === brandSearch.toLowerCase().trim()
-                            ) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormBrand(brandSearch.trim());
-                                  setIsBrandDropdownOpen(false);
-                                  setBrandSearch('');
-                                }}
-                                className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-[#0A6CFF] bg-blue-50 hover:bg-blue-100 transition"
-                              >
-                                + Use custom brand &quot;{brandSearch.trim()}&quot;
-                              </button>
-                            )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Item Code & Condition */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Item / Model Code
-                    </label>
-                    <input
-                      type="text"
-                      value={formItemCode}
-                      onChange={(e) => setFormItemCode(e.target.value)}
-                      placeholder="e.g. A3106, SM-X810"
-                      className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Condition *
-                    </label>
-                    <select
-                      value={formCondition}
-                      onChange={(e) => setFormCondition(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white text-[#0B1F3A]"
-                    >
-                      {WHOLESALE_CONDITIONS.map((cond) => (
-                        <option key={cond} value={cond}>
-                          {cond}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Category & EAN/UPC */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Category *
-                    </label>
-                    <select
-                      value={formCategory}
-                      onChange={(e) => setFormCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-semibold bg-white"
-                    >
-                      {WHOLESALE_CATEGORIES.map((cat) => (
-                        <option key={cat.id} value={cat.name}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Barcode (EAN / UPC) <span className="font-normal text-[11px]">(Optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formEan}
-                      onChange={(e) => setFormEan(e.target.value)}
-                      placeholder="Optional (e.g. 195949048735)"
-                      className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-mono"
-                    />
-                  </div>
-
-                  {formCategory === 'Other' && (
-                    <div className="col-span-2">
-                      <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                        Specify Category *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formCustomCategory}
-                        onChange={(e) => setFormCustomCategory(e.target.value)}
-                        placeholder="Type custom category name (e.g. Solar Equipment, Vintage Watches...)"
-                        className="w-full px-4 py-2.5 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                    Lot Description &amp; Packaging Notes
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    placeholder="Master carton packing, batch codes, EU/UK specs, warranty details..."
-                    className="w-full px-4 py-2 text-[13px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium resize-none leading-relaxed"
-                  />
-                </div>
-
-                <div className="pt-3 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleNextStep1}
-                    className="flex-1 py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                  >
-                    <span>Continue to Pricing &amp; Terms</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="py-3 px-5 rounded-full bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] font-bold text-[14px] transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: PRICING & COMMERCIAL TERMS */}
-            {currentStep === 2 && (
-              <form onSubmit={handleSaveListing} className="py-5 space-y-4">
-                {/* 3 OPTIONS FOR PRICING: Fixed Price, NEG, POA */}
-                <div className="space-y-2 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80">
-                  <PricingOptionSelector
-                    value={formPricingType}
-                    onChange={setFormPricingType}
-                    tradeMode="WTS"
-                  />
-
-                  {formPricingType === 'fixed' && (
-                    <div className="pt-1">
-                      <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                        Fixed Unit Price (€) *
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[14px]">
-                          €
-                        </span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          required={formPricingType === 'fixed'}
-                          value={formPrice}
-                          onChange={(e) => setFormPrice(e.target.value)}
-                          placeholder="e.g. 450.00"
-                          className="w-full pl-8 pr-4 py-2.5 text-[14px] border border-[#CBD5E1] rounded-xl focus:outline-none focus:border-[#0A6CFF] font-bold bg-white text-[#0B1F3A]"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Available Stock (Units) *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      value={formAvailable}
-                      onChange={(e) => setFormAvailable(e.target.value)}
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-bold uppercase text-[#8A9BB0] mb-1">
-                      Minimum Order (MOQ) *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      value={formMoq}
-                      onChange={(e) => setFormMoq(e.target.value)}
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-bold"
-                    />
-                  </div>
-                </div>
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <label className="text-[12px] font-bold uppercase text-[#8A9BB0]">
-                        Warehouse Location (Country) *
-                      </label>
-                      <div className="relative inline-flex items-center">
-                        <button
-                          type="button"
-                          onClick={() => setShowLocationHelp((prev) => !prev)}
-                          onMouseEnter={() => setShowLocationHelp(true)}
-                          onMouseLeave={() => setShowLocationHelp(false)}
-                          className="p-0.5 text-slate-400 hover:text-[#0A6CFF] rounded-full focus:outline-none transition cursor-pointer"
-                          aria-label="Location guidance help"
-                          title="Hub Location Guidance: In WTS this is where items are situated; in WTB this is where items are delivered."
-                        >
-                          <HelpCircle className="w-3.5 h-3.5" />
-                        </button>
-                        {showLocationHelp && (
-                          <div
-                            role="tooltip"
-                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 sm:w-80 p-3.5 bg-[#0B1F3A] text-white text-[12px] rounded-2xl shadow-2xl z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150 border border-slate-700 normal-case"
-                          >
-                            <div className="font-bold text-[12.5px] text-[#38BDF8] flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-700/60">
-                              <HelpCircle className="w-3.5 h-3.5 text-[#38BDF8]" />
-                              <span>Hub Location Guide</span>
-                            </div>
-                            <div className="space-y-2 leading-relaxed text-slate-200">
-                              <p>
-                                <span className="inline-block px-1.5 py-0.2 bg-sky-500/20 text-sky-400 rounded font-bold mr-1">WTS</span>
-                                <strong>In WTS:</strong> This is where the items currently are situated.
-                              </p>
-                              <p>
-                                <span className="inline-block px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 rounded font-bold mr-1">WTB</span>
-                                <strong>In WTB:</strong> This is where you want these items delivered.
-                              </p>
-                            </div>
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0B1F3A]" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <select
-                      value={formLocation}
-                      onChange={(e) => setFormLocation(e.target.value)}
-                      className="w-full px-4 py-2.5 text-[14px] border border-[#EAEFF6] rounded-2xl focus:outline-none focus:border-[#0A6CFF] font-medium bg-white text-[#0B1F3A]"
-                    >
-                      {TRADING_HUB_LOCATIONS.map((loc) => (
-                        <option key={loc.code} value={loc.code}>
-                          {loc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                {/* Hot Lot Promotion Toggle */}
-                <div className="p-4 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Flame className="w-5 h-5 text-orange-500 shrink-0" />
-                    <div>
-                      <div className="text-[13px] font-bold text-[#0B1F3A]">Feature as Hot Lot</div>
-                      <div className="text-[11px] text-[#5B6B82]">Highlight with hot badge across Live Trading Board</div>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formIsHot}
-                    onChange={(e) => setFormIsHot(e.target.checked)}
-                    className="w-5 h-5 accent-orange-500 cursor-pointer"
-                  />
-                </div>
-
-                {/* Wholesale Lot Valuation summary */}
-                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAEFF6] flex items-center justify-between text-[13px]">
-                  <span className="text-[#8A9BB0] font-semibold">Total Lot Wholesale Value:</span>
-                  <span className="font-extrabold text-[#0B1F3A]">
-                    €{((parseFloat(formPrice) || 0) * (parseInt(formAvailable, 10) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div className="pt-3 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(1)}
-                    className="py-3 px-5 rounded-full bg-[#F3F6FB] hover:bg-[#EAEFF6] text-[#0B1F3A] font-bold text-[14px] flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span>Back</span>
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[14px] flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{modalMode === 'add' ? 'Publish Listing' : 'Save Changes'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      {/* 2-STEP POPUP MODAL (OPTIMIZED STANDALONE COMPONENT FOR ULTRA-SMOOTH 60FPS TYPING) */}
+      <ListingFormModal
+        isOpen={isModalOpen}
+        mode={modalMode}
+        initialData={editingItem}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSaveListing}
+      />
 
       {/* REQUEST BULK CSV MODAL (GOLD EXCLUSIVE) */}
       <RequestBulkCsvModal
         isOpen={isRequestBulkCsvOpen}
         onClose={() => setIsRequestBulkCsvOpen(false)}
         company={company}
+      />
+
+      {/* UNIFIED TRADE MODAL (WTB / WTS) */}
+      <CreateWtbModal
+        isOpen={isTradeModalOpen}
+        onClose={() => setIsTradeModalOpen(false)}
+        initialMode={tradeModalMode}
       />
     </>
   );

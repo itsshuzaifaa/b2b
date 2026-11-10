@@ -2,6 +2,7 @@
 
 import Papa from 'papaparse';
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireApprovedUser } from '@/lib/auth/guards';
 import type { Product, MembershipTier, ProductStatus } from '@/types/database';
 import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
@@ -93,6 +94,28 @@ export async function importProductsFromCsv({
   companyId: string;
   csvContent: string;
 }): Promise<CsvImportResult> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const errorMsg = auth.errorResponse?.status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.';
+    return {
+      success: false,
+      totalProcessed: 0,
+      insertedCount: 0,
+      errors: [{ row: 0, message: errorMsg }],
+    };
+  }
+
+  // Non-admins can ONLY import for their own authenticated company
+  const effectiveCompanyId = auth.isAdmin ? (companyId || auth.company?.id) : auth.company!.id;
+  if (!effectiveCompanyId) {
+    return {
+      success: false,
+      totalProcessed: 0,
+      insertedCount: 0,
+      errors: [{ row: 0, message: 'No registered company found.' }],
+    };
+  }
+
   const errors: CsvRowError[] = [];
   const admin = createAdminClient();
 
@@ -100,7 +123,7 @@ export async function importProductsFromCsv({
   const { data: company, error: companyError } = await admin
     .from('companies')
     .select('id, company_name, tier, approval_status')
-    .eq('id', companyId)
+    .eq('id', effectiveCompanyId)
     .single();
 
   if (companyError || !company) {
@@ -177,7 +200,7 @@ export async function importProductsFromCsv({
     const { count: activeCount, error: countError } = await admin
       .from('products')
       .select('*', { count: 'exact', head: true })
-      .eq('company_id', companyId)
+      .eq('company_id', effectiveCompanyId)
       .eq('status', 'active');
 
     if (countError) {
@@ -333,7 +356,7 @@ export async function importProductsFromCsv({
     }
 
     validProductsToInsert.push({
-      company_id: companyId,
+      company_id: effectiveCompanyId,
       category_id: resolvedCategoryId,
       title,
       description: descWithCondition,

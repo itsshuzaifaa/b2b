@@ -48,7 +48,7 @@ function VerifyEmailContent() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       if (!email) {
-        const savedEmail = localStorage.getItem('b2b_pending_verification_email');
+        const savedEmail = localStorage.getItem('b2b_pending_signup_email');
         if (savedEmail) setEmail(savedEmail);
       }
       const savedTier = localStorage.getItem('b2b_pending_tier') || searchTier;
@@ -217,23 +217,12 @@ function VerifyEmailContent() {
         return;
       }
 
-      // Free Bronze tier: Mark verified and proceed to dashboard
+      // Free Bronze tier: Email verified, KYC documentation requested, pending admin business approval
       setPhase('verify_success');
       await triggerKycEmail(email);
 
-      const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
-        if (companyId) {
-          localStorage.setItem(`b2b_account_verified_${companyId}`, 'true');
-        }
-        localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
-        if (companyId) {
-          localStorage.removeItem(`b2b_onboarding_completed_${companyId}`);
-        }
-        sessionStorage.setItem('b2b_just_verified', 'true');
-        sessionStorage.setItem('b2b_show_onboarding', 'true');
-        localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_pending_signup_email');
         localStorage.removeItem('b2b_pending_tier');
         localStorage.removeItem('b2b_demo_role');
       }
@@ -304,10 +293,6 @@ function VerifyEmailContent() {
 
       const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
-        if (companyId) {
-          localStorage.setItem(`b2b_account_verified_${companyId}`, 'true');
-        }
         localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
         if (companyId) {
           localStorage.removeItem(`b2b_onboarding_completed_${companyId}`);
@@ -316,7 +301,7 @@ function VerifyEmailContent() {
         sessionStorage.setItem('b2b_show_onboarding', 'true');
         localStorage.setItem('b2b_registered_tier', 'bronze');
         localStorage.removeItem('b2b_pending_tier');
-        localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_pending_signup_email');
         localStorage.removeItem('b2b_demo_role');
       }
 
@@ -423,10 +408,6 @@ function VerifyEmailContent() {
 
       const cleanEmail = email.trim().toLowerCase();
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
-        if (effectiveCompanyId) {
-          localStorage.setItem(`b2b_account_verified_${effectiveCompanyId}`, 'true');
-        }
         localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
         if (effectiveCompanyId) {
           localStorage.removeItem(`b2b_onboarding_completed_${effectiveCompanyId}`);
@@ -435,7 +416,7 @@ function VerifyEmailContent() {
         sessionStorage.setItem('b2b_show_onboarding', 'true');
         localStorage.setItem('b2b_registered_tier', selectedTier);
         localStorage.removeItem('b2b_pending_tier');
-        localStorage.removeItem('b2b_pending_verification_email');
+        localStorage.removeItem('b2b_pending_signup_email');
         localStorage.removeItem('b2b_demo_role');
       }
 

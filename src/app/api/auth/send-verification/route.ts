@@ -3,8 +3,11 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { sendVerificationEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
 import { saveVerificationCode } from '@/lib/auth/verification-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'send-verification');
+  if (rateLimitRes) return rateLimitRes;
   try {
     const body = await request.json();
     const rawEmail = (body.email || '').trim().toLowerCase();

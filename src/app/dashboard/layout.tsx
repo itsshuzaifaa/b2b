@@ -5,7 +5,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
-import { getAdminAccounts } from '@/lib/admin/admin-store';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
+import { DashboardSkeleton } from '@/components/skeletons/DashboardSkeleton';
+import type { Company, ApprovalStatus } from '@/types/database';
 import { getUnreadInquiriesCountForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
 import { WelcomeModal } from '@/components/modals/WelcomeModal';
 import {
@@ -27,6 +29,284 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+
+function PendingVerificationScreen({
+  company,
+  onRefresh,
+  isChecking,
+  onSignOut,
+}: {
+  company: Company;
+  onRefresh: () => void;
+  isChecking: boolean;
+  onSignOut: () => void;
+}) {
+  const companyName = company.name || company.company_name || 'Your Company';
+  const mailto = `mailto:newcustomers@b2blink.eu?subject=${encodeURIComponent(
+    `Verification Inquiry - ${companyName} (${company.email}) - B2B LINK`
+  )}`;
+
+  return (
+    <div className="py-6 sm:py-10 max-w-3xl mx-auto space-y-6 animate-fade-in text-[#0B1F3A]">
+      {/* Top Status Header */}
+      <div className="text-center space-y-3">
+        <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
+          <Lock className="w-3.5 h-3.5 text-amber-600" />
+          <span>Account Status · Pending Business Verification</span>
+        </div>
+        <h2 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] tracking-tight leading-tight">
+          Business Verification In Progress
+        </h2>
+        <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
+          Your email has been verified. The B2B LINK Verification Team is currently reviewing your company registration and wholesale credentials.
+        </p>
+      </div>
+
+      {/* Live Polling Status Banner */}
+      <div className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-[#1E3A8A]">
+        <div className="w-10 h-10 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+          <RefreshCw className={`w-5 h-5 ${isChecking ? 'animate-spin' : ''}`} />
+        </div>
+        <div className="text-[13px] leading-relaxed">
+          <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5 flex items-center gap-2">
+            <span>Automatic Live Verification Active</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+          <p className="text-[#3B5278]">
+            We check your approval status automatically every 25 seconds and whenever you return to this window. As soon as compliance approves your account, your dashboard will unlock immediately without any manual page reload.
+          </p>
+        </div>
+      </div>
+
+      {/* Required Checks 2x2 Grid */}
+      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 sm:p-6">
+        <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3.5 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
+          <span>Standard Business Verification Checks</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
+            <div>
+              <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
+              <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or official registry extract</div>
+            </div>
+          </div>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
+            <div>
+              <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
+              <div className="text-[11px] text-[#5B6B82]">National business tax or VAT registration</div>
+            </div>
+          </div>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
+            <div>
+              <div className="text-[12px] font-bold text-[#0B1F3A]">Business Contact & Domain</div>
+              <div className="text-[11px] text-[#5B6B82]">Corporate website domain and verified trading contact</div>
+            </div>
+          </div>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
+            <div>
+              <div className="text-[12px] font-bold text-[#0B1F3A]">Bank Account Information</div>
+              <div className="text-[11px] text-[#5B6B82]">Corporate bank details or official statement header</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+        <a
+          href={mailto}
+          className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+        >
+          <Mail className="w-4 h-4" />
+          <span>Contact Verification Team</span>
+        </a>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isChecking}
+          className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin text-[#0A6CFF]' : ''}`} />
+          <span>{isChecking ? 'Checking...' : 'Check Status Now'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Log Out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RejectedVerificationScreen({
+  company,
+  onRefresh,
+  isChecking,
+  onSignOut,
+}: {
+  company: Company;
+  onRefresh: () => void;
+  isChecking: boolean;
+  onSignOut: () => void;
+}) {
+  const companyName = company.name || company.company_name || 'Your Company';
+  const reason = company.rejection_reason || 'Application did not meet official business verification criteria.';
+  const appealMailto = `mailto:compliance@b2blink.eu?subject=${encodeURIComponent(
+    `Appeal Verification Decision - ${companyName} (${company.email})`
+  )}&body=${encodeURIComponent(
+    `Dear B2B LINK Compliance Team,\n\nI would like to appeal the verification decision for our account:\n\nCompany Name: ${companyName}\nRegistered Email: ${company.email}\nReason Provided: ${reason}\n\nAttached please find our official business documentation:\n- [Certificate of Incorporation / Registry Extract]\n- [VAT / Tax Registration Certificate]\n- [Proof of Operating Address]\n\nThank you,\n${company.contact_name || 'Representative'}`
+  )}`;
+
+  return (
+    <div className="py-6 sm:py-10 max-w-2xl mx-auto space-y-6 animate-fade-in text-[#0B1F3A]">
+      {/* Top Status Header */}
+      <div className="text-center space-y-3">
+        <div className="inline-flex items-center gap-2 bg-rose-50 border border-rose-300 text-rose-700 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
+          <X className="w-3.5 h-3.5 text-rose-600" />
+          <span>Account Status · Application Declined</span>
+        </div>
+        <h2 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] tracking-tight leading-tight">
+          Business Verification Declined
+        </h2>
+        <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
+          Following compliance review, your business registration could not be verified for active platform trading at this time.
+        </p>
+      </div>
+
+      {/* Decision Reason Card */}
+      <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-5 space-y-2 text-left">
+        <div className="text-[11px] font-extrabold uppercase tracking-wider text-rose-800">
+          Reason for Decision
+        </div>
+        <div className="text-[14px] font-semibold text-[#0B1F3A] leading-relaxed">
+          &ldquo;{reason}&rdquo;
+        </div>
+      </div>
+
+      {/* How to Appeal Card */}
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3 text-left text-[13px] text-slate-700">
+        <div className="font-extrabold text-[14px] text-[#0B1F3A]">
+          How to Appeal This Decision
+        </div>
+        <p className="text-[#5B6B82] leading-relaxed">
+          If you believe this decision was reached in error or you have updated documentation to submit, you can file an appeal directly to our compliance department:
+        </p>
+        <div className="space-y-1.5 text-[12px] pt-1">
+          <div><strong>1.</strong> Review the specific reason cited above.</div>
+          <div><strong>2.</strong> Gather your official registry extract, VAT registration, or operating address proof.</div>
+          <div><strong>3.</strong> Click below to draft an appeal email with your supporting documents attached.</div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+        <a
+          href={appealMailto}
+          className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+        >
+          <Mail className="w-4 h-4" />
+          <span>Submit Appeal by Email</span>
+        </a>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isChecking}
+          className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin text-[#0A6CFF]' : ''}`} />
+          <span>{isChecking ? 'Checking...' : 'Check Status'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Log Out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SuspendedAccountScreen({
+  company,
+  onRefresh,
+  isChecking,
+  onSignOut,
+}: {
+  company: Company;
+  onRefresh: () => void;
+  isChecking: boolean;
+  onSignOut: () => void;
+}) {
+  const companyName = company.name || company.company_name || 'Your Company';
+  const reason = company.rejection_reason || 'Account suspended by compliance officer.';
+  const complianceMailto = `mailto:compliance@b2blink.eu?subject=${encodeURIComponent(
+    `Suspension Inquiry - ${companyName} (${company.email}) - B2B LINK`
+  )}`;
+
+  return (
+    <div className="py-6 sm:py-12 max-w-2xl mx-auto text-center space-y-6 animate-fade-in text-[#0B1F3A]">
+      <div className="w-16 h-16 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+        <LogOut className="w-8 h-8" />
+      </div>
+      <div>
+        <span className="text-[11px] font-extrabold uppercase tracking-widest text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">
+          Account Suspended
+        </span>
+        <h2 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] mt-3">
+          Platform Access Temporarily Suspended
+        </h2>
+        <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed max-w-lg mx-auto">
+          Your B2B LINK account ({companyName}) has been temporarily suspended while compliance reviews an account or verification matter.
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-left text-[13px] text-slate-700 space-y-2">
+        <div><strong>Account:</strong> {companyName}</div>
+        <div><strong>Email:</strong> {company.email}</div>
+        <div><strong>Reason:</strong> {reason}</div>
+        <div><strong>Compliance Contact:</strong> <a href={complianceMailto} className="text-[#0A6CFF] font-semibold hover:underline">compliance@b2blink.eu</a></div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <a
+          href={complianceMailto}
+          className="w-full sm:w-auto bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition cursor-pointer inline-flex items-center justify-center gap-2"
+        >
+          <Mail className="w-4 h-4" />
+          <span>Contact Compliance Team</span>
+        </a>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isChecking}
+          className="w-full sm:w-auto px-5 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin text-[#0A6CFF]' : ''}`} />
+          <span>{isChecking ? 'Checking...' : 'Check Status'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[13px] px-6 py-3 rounded-full transition"
+        >
+          Log Out
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardLayout({
   children,
@@ -77,20 +357,12 @@ export default function DashboardLayout({
       if (res.ok) {
         const data = await res.json();
         if (data.authenticated && data.company) {
-          const status = data.company.approval_status;
-          if (status === 'approved') {
-            if (data.company.id) {
-              localStorage.setItem(`b2b_account_verified_${data.company.id}`, 'true');
-              localStorage.removeItem(`b2b_onboarding_completed_${data.company.id}`);
-            }
-            if (data.company.email) {
-              const clean = data.company.email.toLowerCase().trim();
-              localStorage.setItem(`b2b_account_verified_${clean}`, 'true');
-              localStorage.removeItem(`b2b_onboarding_completed_${clean}`);
-            }
+          await refreshProfile();
+          if (data.company.approval_status === 'approved') {
             sessionStorage.setItem('b2b_just_verified', 'true');
             sessionStorage.setItem('b2b_show_onboarding', 'true');
-            await refreshProfile();
+            window.dispatchEvent(new Event('b2b_trade_matches_updated'));
+            window.dispatchEvent(new Event('b2b_inquiry_update'));
             setIsCheckingVerification(false);
             return;
           }
@@ -244,81 +516,72 @@ export default function DashboardLayout({
     return () => window.removeEventListener('b2b_trade_matches_updated', checkMatches);
   }, [company?.id, company?.email]);
 
-  const adminStoreAccount = React.useMemo(() => {
-    if (typeof window === 'undefined' || !company) return null;
-    try {
-      const accounts = getAdminAccounts();
-      return (
-        accounts.find((a) =>
-          (a.id && a.id === company.id) ||
-          (a.email && company.email && a.email.toLowerCase() === company.email.toLowerCase())
-        ) || null
-      );
-    } catch {
-      return null;
-    }
-  }, [company, adminUpdateTrigger]);
+  // Authoritative single source of truth: companies.approval_status
+  const approvalStatus: ApprovalStatus = role === 'admin' ? 'approved' : (company?.approval_status || 'pending');
+  const isApproved = approvalStatus === 'approved';
+  const isPending = approvalStatus === 'pending';
+  const isRejected = approvalStatus === 'rejected';
+  const isSuspended = approvalStatus === 'suspended';
 
-  const isVerifiedInAdminStore = adminStoreAccount?.approval_status === 'approved';
-
-  const isAccountPersistentlyVerified = React.useMemo(() => {
-    if (typeof window === 'undefined' || !company) return false;
-    const idKey = company.id ? `b2b_account_verified_${company.id}` : null;
-    const emailKey = company.email ? `b2b_account_verified_${company.email.toLowerCase().trim()}` : null;
-    return Boolean(
-      (idKey && localStorage.getItem(idKey) === 'true') ||
-      (emailKey && localStorage.getItem(emailKey) === 'true') ||
-      company.approval_status === 'approved' ||
-      adminStoreAccount?.approval_status === 'approved'
-    );
-  }, [company, adminStoreAccount]);
-
-  const effectiveApprovalStatus = (
-    role === 'admin'
-      ? 'approved'
-      : (adminStoreAccount?.approval_status || company?.approval_status || (isLoading ? 'loading' : 'pending'))
-  );
-
+  // Polling while status is pending (every 25s), or rejected/suspended (every 60s), and on window focus.
+  // When it becomes approved, unlocks the user and refreshes data automatically with no manual reload.
+  // Stop polling once approved.
   useEffect(() => {
-    if (typeof window !== 'undefined' && company && (effectiveApprovalStatus === 'approved' || isVerifiedInAdminStore)) {
-      if (company.id) localStorage.setItem(`b2b_account_verified_${company.id}`, 'true');
-      if (company.email) localStorage.setItem(`b2b_account_verified_${company.email.toLowerCase().trim()}`, 'true');
+    if (!company || role === 'admin' || company.approval_status === 'approved') {
+      return;
     }
-  }, [company, effectiveApprovalStatus, isVerifiedInAdminStore]);
 
-  const isPendingVerification = (
-    !isLoading &&
-    !!company &&
-    role !== 'admin' &&
-    !isAccountPersistentlyVerified &&
-    !isVerifiedInAdminStore &&
-    effectiveApprovalStatus !== 'approved' &&
-    (effectiveApprovalStatus === 'pending' || effectiveApprovalStatus === 'pending_verification')
-  );
+    let isMounted = true;
+    const currentStatus = company.approval_status;
+    const pollIntervalMs = currentStatus === 'pending' ? 25000 : 60000;
 
-  const isSuspended = (
-    !isLoading &&
-    !!company &&
-    (effectiveApprovalStatus === 'suspended' || effectiveApprovalStatus === 'rejected')
-  );
+    const pollStatus = async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isMounted) return;
 
-  const isAccountVerified = Boolean(
-    !isLoading &&
-    !!company &&
-    !isSuspended &&
-    !isPendingVerification &&
-    (
-      role === 'admin' ||
-      effectiveApprovalStatus === 'approved' ||
-      isAccountPersistentlyVerified ||
-      isVerifiedInAdminStore ||
-      company.approval_status === 'approved'
-    )
-  );
+        if (data.authenticated && data.company) {
+          const newStatus: ApprovalStatus = data.company.approval_status;
+          if (newStatus !== currentStatus) {
+            await refreshProfile();
+            if (newStatus === 'approved') {
+              sessionStorage.setItem('b2b_just_verified', 'true');
+              sessionStorage.setItem('b2b_show_onboarding', 'true');
+            }
+            window.dispatchEvent(new Event('b2b_trade_matches_updated'));
+            window.dispatchEvent(new Event('b2b_inquiry_update'));
+            window.dispatchEvent(new Event('b2b_company_updated'));
+          }
+        }
+      } catch (err) {
+        console.warn('[VERIFICATION POLL NOTICE]', err);
+      }
+    };
+
+    // Auto poll at appropriate interval (25s for pending, 60s for rejected/suspended)
+    const intervalId = setInterval(pollStatus, pollIntervalMs);
+
+    // Poll on window focus
+    const handleFocus = () => {
+      void pollStatus();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [company?.approval_status, company?.id, role, refreshProfile]);
 
   // Auto-dispatch KYC Document Request email if account is pending verification and not yet dispatched
   useEffect(() => {
-    if (company?.email && isPendingVerification) {
+    if (company?.email && isPending) {
       fetch('/api/auth/dispatch-kyc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -327,7 +590,7 @@ export default function DashboardLayout({
         console.warn('[DASHBOARD KYC DISPATCH NOTICE]', err);
       });
     }
-  }, [company?.email, isPendingVerification]);
+  }, [company?.email, isPending]);
 
   // Lead unlock stats for unified counter
   const [remainingUnlocks, setRemainingUnlocks] = useState<number>(2);
@@ -375,6 +638,17 @@ export default function DashboardLayout({
   const verificationMailto = `mailto:newcustomers@b2blink.eu?subject=${encodeURIComponent(
     `Action Required: Submit verification documents to activate your account${targetCompanyName ? ` - ${targetCompanyName}` : ''} - B2B LINK`
   )}`;
+
+  // Gate state: show a skeleton while loading, never the dashboard or the modal until /api/auth/me returns, so there is no flash
+  if (isLoading || !company) {
+    return (
+      <div className="min-h-screen bg-[#F3F6FB] p-4 sm:p-6 md:p-8 flex items-center justify-center">
+        <div className="w-full max-w-7xl">
+          <DashboardSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
@@ -457,7 +731,7 @@ export default function DashboardLayout({
 
               <div className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase px-2 mb-2 select-none flex items-center justify-between">
                 <span>TRADING PLATFORM</span>
-                {isPendingVerification && (
+                {!isApproved && (
                   <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
                     LOCKED
                   </span>
@@ -469,7 +743,7 @@ export default function DashboardLayout({
                 {navItems.map((item) => {
                   const active = isActive(item.href);
                   const Icon = item.icon;
-                  const isLockedItem = isPendingVerification && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
+                  const isLockedItem = !isApproved && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
 
                   return (
                     <Link
@@ -607,7 +881,7 @@ export default function DashboardLayout({
           {!isCollapsed ? (
             <div className="text-[11px] font-bold tracking-[0.14em] text-[#64748B] uppercase px-3 mb-2.5 select-none flex items-center justify-between">
               <span>TRADING PLATFORM</span>
-              {isPendingVerification && (
+              {!isApproved && (
                 <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
                   LOCKED
                 </span>
@@ -622,7 +896,7 @@ export default function DashboardLayout({
             {navItems.map((item) => {
               const active = isActive(item.href);
               const Icon = item.icon;
-              const isLockedItem = isPendingVerification && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
+              const isLockedItem = !isApproved && item.href !== '/dashboard' && item.href !== '/dashboard/profile';
 
               return (
                 <Link
@@ -794,170 +1068,40 @@ export default function DashboardLayout({
       {/* MAIN WHITE CANVAS CONTENT                                */}
       {/* ========================================================= */}
       <main className="flex-1 w-full min-h-0 h-full max-h-[calc(100dvh-4.5rem)] md:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[22px] sm:rounded-[32px] md:rounded-[36px] p-4 sm:p-6 md:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
-        {/* If account is suspended, show suspension banner */}
-        {isSuspended ? (
-          <div className="py-12 max-w-2xl mx-auto text-center space-y-6">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
-              <LogOut className="w-8 h-8" />
-            </div>
-            <div>
-              <span className="text-[11px] font-extrabold uppercase tracking-widest text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">
-                Account Suspended
-              </span>
-              <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] mt-3">
-                Platform Access Temporarily Suspended
-              </h2>
-              <p className="text-[14px] text-[#5B6B82] mt-2 leading-relaxed">
-                Your B2B LINK account ({companyName}) has been temporarily suspended while we review an account or verification matter. Please contact the B2B LINK Verification Team for further information.
-              </p>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-left text-[13px] text-slate-700 space-y-2">
-              <div><strong>Account Email:</strong> {company?.email}</div>
-              <div><strong>Verification Team:</strong> <a href={verificationMailto} className="text-[#0A6CFF] font-semibold hover:underline">newcustomers@b2blink.eu</a></div>
-              <div><strong>Status:</strong> Suspended (Under Review)</div>
-            </div>
-            <div className="flex justify-center gap-3 pt-2">
-              <a
-                href={verificationMailto}
-                className="bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] px-6 py-3 rounded-full transition cursor-pointer inline-flex items-center justify-center"
-              >
-                Contact Verification Team
-              </a>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[13px] px-6 py-3 rounded-full transition"
-              >
-                Log Out
-              </button>
-            </div>
-          </div>
-        ) : (
+        {isApproved ? (
           children
-        )}
-
-        {/* ========================================================= */}
-        {/* NON-CANCELLABLE BLOCKING VERIFICATION MODAL POPUP         */}
-        {/* ========================================================= */}
-        {isPendingVerification && (
-          <div className="fixed inset-0 z-[100] bg-[#050E1D]/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-            {/* Modal Card - Uncancellable: No X button, no backdrop click-away */}
-            <div
-              className="w-full max-w-2xl bg-white rounded-[32px] border border-[#EAEFF6] shadow-[0_25px_70px_rgba(11,31,58,0.25)] p-6 sm:p-9 text-[#0B1F3A] my-auto relative space-y-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Top Status Header */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
-                  <Lock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Account Status · Pending Verification</span>
-                </div>
-                <h2 className="text-[26px] sm:text-[30px] font-black text-[#0B1F3A] tracking-tight leading-tight">
-                  Business Verification In Progress
-                </h2>
-                <p className="text-[14px] text-[#5B6B82] max-w-lg mx-auto leading-relaxed">
-                  Your email address has been verified, and your account is now awaiting business verification by the B2B LINK Verification Team.
-                </p>
-              </div>
-
-              {/* Email Notice Card */}
-              <div className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-[#1E3A8A]">
-                <div className="w-10 h-10 rounded-xl bg-[#0A6CFF] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                  <Mail className="w-5 h-5" />
-                </div>
-                <div className="text-[13px] leading-relaxed">
-                  <div className="font-extrabold text-[14px] text-[#0B1F3A] mb-0.5">
-                    Verification Team Review
-                  </div>
-                  <p className="text-[#3B5278]">
-                    Our Verification Team checks company registration details, VAT details where applicable, business contact information, company email/domain and bank account information. If additional information or documents are required, we will contact you directly at <strong className="text-[#0B1F3A]">{company?.email}</strong>.
-                  </p>
-                </div>
-              </div>
-
-              {/* Required Documents 2x2 Grid */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                <div className="text-[13px] font-extrabold text-[#0B1F3A] uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-[#0A6CFF]" />
-                  <span>Business Verification Checks</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">1</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Company Registration</div>
-                      <div className="text-[11px] text-[#5B6B82]">Certificate of Incorporation or official registry extract</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">2</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">VAT / Tax Details</div>
-                      <div className="text-[11px] text-[#5B6B82]">National business tax or VAT registration</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">3</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Business Contact & Domain</div>
-                      <div className="text-[11px] text-[#5B6B82]">Corporate website domain and verified trading contact</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-[11px] font-bold">4</span>
-                    <div>
-                      <div className="text-[12px] font-bold text-[#0B1F3A]">Bank Account Information</div>
-                      <div className="text-[11px] text-[#5B6B82]">Corporate bank details or official statement header</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <a
-                  href={verificationMailto}
-                  className="w-full sm:w-auto flex-1 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
-                >
-                  <Mail className="w-4 h-4" />
-                  <span>Contact Verification Team</span>
-                </a>
-
-                <button
-                  type="button"
-                  onClick={handleRefreshVerificationStatus}
-                  disabled={isCheckingVerification}
-                  className="w-full sm:w-auto px-5 min-h-[46px] rounded-full bg-slate-100 hover:bg-slate-200 text-[#0B1F3A] font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isCheckingVerification ? 'animate-spin text-[#0A6CFF]' : ''}`} />
-                  <span>{isCheckingVerification ? 'Checking Status...' : 'Refresh Status'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="w-full sm:w-auto px-4 min-h-[46px] rounded-full bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[13px] flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out</span>
-                </button>
-              </div>
-            </div>
-          </div>
+        ) : isPending ? (
+          <PendingVerificationScreen
+            company={company}
+            onRefresh={handleRefreshVerificationStatus}
+            isChecking={isCheckingVerification}
+            onSignOut={handleSignOut}
+          />
+        ) : isRejected ? (
+          <RejectedVerificationScreen
+            company={company}
+            onRefresh={handleRefreshVerificationStatus}
+            isChecking={isCheckingVerification}
+            onSignOut={handleSignOut}
+          />
+        ) : (
+          <SuspendedAccountScreen
+            company={company}
+            onRefresh={handleRefreshVerificationStatus}
+            isChecking={isCheckingVerification}
+            onSignOut={handleSignOut}
+          />
         )}
       </main>
 
       {/* Onboarding Feature Tour Modal (Only opens after account is confirmed verified and loading into dashboard) */}
-      {isAccountVerified && (
+      {isApproved && (
         <WelcomeModal
           buyerName={sellerFullName}
           buyerEmail={company?.email || ''}
           companyId={company?.id}
           role={company?.role}
-          isVerified={isAccountVerified}
+          isVerified={isApproved}
         />
       )}
     </div>

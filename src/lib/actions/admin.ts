@@ -1,6 +1,7 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/auth/guards';
 import { sendVettingDecisionEmail, sendAccountApprovalEmail, sendAccountSuspensionEmail } from '@/lib/email/dispatcher';
 import { TIER_LIMITS, type MembershipTier, type ApprovalStatus, type Company, type Product } from '@/types/database';
 import { MOCK_COMPANIES, MOCK_PRODUCTS } from '@/lib/mock-data';
@@ -18,6 +19,14 @@ export async function updateSellerVetting(
   status: 'approved' | 'rejected',
   notes?: string
 ): Promise<AdminActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.user) {
+    return { success: false, error: 'Unauthorized: Authentication required.' };
+  }
+  if (!auth.isAdmin) {
+    return { success: false, error: 'Forbidden: Administrator privileges required.' };
+  }
+
   try {
     if (!companyId?.trim()) {
       return { success: false, error: 'Company ID is required.' };
@@ -108,6 +117,14 @@ export async function updateSellerTier(
   companyId: string,
   tier: 'bronze' | 'silver' | 'gold'
 ): Promise<AdminActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.user) {
+    return { success: false, error: 'Unauthorized: Authentication required.' };
+  }
+  if (!auth.isAdmin) {
+    return { success: false, error: 'Forbidden: Administrator privileges required.' };
+  }
+
   try {
     if (!companyId?.trim()) {
       return { success: false, error: 'Company ID is required.' };
@@ -159,6 +176,14 @@ export async function toggleProductHot(
   productId: string,
   isHot: boolean
 ): Promise<AdminActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.user) {
+    return { success: false, error: 'Unauthorized: Authentication required.' };
+  }
+  if (!auth.isAdmin) {
+    return { success: false, error: 'Forbidden: Administrator privileges required.' };
+  }
+
   try {
     if (!productId?.trim()) {
       return { success: false, error: 'Product ID is required.' };

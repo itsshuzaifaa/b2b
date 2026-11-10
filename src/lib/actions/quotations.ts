@@ -1,6 +1,7 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireApprovedUser, requireUser, AuthError } from '@/lib/auth/guards';
 import { sendQuoteReceivedEmail } from '@/lib/email/dispatcher';
 import { TIER_LIMITS, type MembershipTier, type WtbRequest, type Company } from '@/types/database';
 import { MOCK_COMPANIES, MOCK_WTB_REQUESTS } from '@/lib/mock-data';
@@ -20,42 +21,44 @@ export interface QuotationActionResult {
   success: boolean;
   quotationId?: string;
   error?: string;
+  code?: string;
 }
 
 /**
  * Retrieves the count of quotations submitted by a seller in the current calendar month.
- * First calls the Supabase RPC `fn_get_seller_monthly_quote_usage`.
- * If the RPC is not yet registered or fails, falls back to a direct count query on `quotations`.
+ * SECURITY MANDATE: Derives company ID strictly from the caller's authenticated session.
+ * Callers cannot probe quotation usage of competitor companies.
  */
-export async function getSellerQuoteUsage(companyId: string): Promise<number> {
-  const admin = createAdminClient();
-
-  try {
-    const { data, error } = await admin.rpc('fn_get_seller_monthly_quote_usage', {
-      p_company_id: companyId,
-    });
-
-    if (!error && typeof data === 'number') {
-      return data;
-    }
-  } catch (rpcErr) {
-    console.warn('[QUOTATION RPC WARNING] fn_get_seller_monthly_quote_usage fallback:', rpcErr);
+export async function getSellerQuoteUsage(companyId?: string): Promise<number> {
+  const auth = await requireUser();
+  if (auth.errorResponse || !auth.user) {
+    throw new AuthError(401, 'Unauthorized: Authentication required.');
   }
 
-  // Fallback: Query quotations submitted in current calendar month
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-  const { count, error: countError } = await admin
-    .from('quotations')
-    .select('*', { count: 'exact', head: true })
-    .eq('seller_company_id', companyId)
-    .gte('created_at', startOfMonth);
-
-  if (countError) {
-    console.error('[GET QUOTE USAGE ERROR]', countError);
+  // Session company is authoritative; admins may query a specific target company
+  const targetCompanyId = auth.isAdmin && companyId ? companyId : auth.company?.id;
+  if (!targetCompanyId) {
     return 0;
   }
 
-  return count ?? 0;
+  const admin = createAdminClient();
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+  try {
+    const { count, error: countError } = await admin
+      .from('quotations')
+      .select('*', { count: 'exact', head: true })
+      .eq('seller_company_id', targetCompanyId)
+      .gte('created_at', startOfMonth);
+
+    if (!countError && typeof count === 'number') {
+      return count;
+    }
+  } catch (err) {
+    console.warn('[GET QUOTE USAGE ERROR]', err);
+  }
+
+  return 0;
 }
 
 /**
@@ -63,13 +66,28 @@ export async function getSellerQuoteUsage(companyId: string): Promise<number> {
  * and notifies the buyer via email.
  */
 export async function submitQuotation(data: QuotationInput): Promise<QuotationActionResult> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const status = auth.errorResponse?.status || 401;
+    let code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    let errorMsg = status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.';
+    try {
+      const cloned = auth.errorResponse?.clone();
+      const errJson = await cloned?.json();
+      if (errJson?.code) code = errJson.code;
+      if (errJson?.error) errorMsg = errJson.error;
+    } catch {}
+    return {
+      success: false,
+      error: errorMsg,
+      code,
+    };
+  }
+
   try {
     // 1. Input Validation
     if (!data.wtbRequestId?.trim()) {
       return { success: false, error: 'WTB Request ID is required.' };
-    }
-    if (!data.sellerCompanyId?.trim()) {
-      return { success: false, error: 'Seller Company ID is required.' };
     }
     if (data.unitPrice === undefined || data.unitPrice <= 0) {
       return { success: false, error: 'Unit price must be greater than zero.' };
@@ -78,16 +96,28 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
       return { success: false, error: 'Offered quantity must be greater than zero.' };
     }
 
+    // Enforce session identity for seller company and email
+    const effectiveSellerCompanyId = auth.isAdmin
+      ? (data.sellerCompanyId || auth.company?.id)
+      : auth.company!.id;
+    const effectiveSellerEmail = auth.isAdmin
+      ? (data.sellerEmail || auth.user.email)
+      : (auth.company?.contact_email || auth.user.email || '');
+
+    if (!effectiveSellerCompanyId) {
+      return { success: false, error: 'Seller Company ID is required.', code: 'NO_COMPANY' };
+    }
+
     const admin = createAdminClient();
 
     // 2. Verify Seller Company using exact PostgreSQL schema (company_name, contact_email, tier, approval_status)
     let sellerRow: any = null;
 
-    if (data.sellerCompanyId) {
+    if (effectiveSellerCompanyId) {
       const { data: byId } = await admin
         .from('companies')
         .select('id, user_id, company_name, contact_name, contact_email, phone, approval_status, tier')
-        .or(`id.eq.${data.sellerCompanyId},user_id.eq.${data.sellerCompanyId}`)
+        .or(`id.eq.${effectiveSellerCompanyId},user_id.eq.${effectiveSellerCompanyId}`)
         .maybeSingle();
 
       if (byId) {
@@ -147,8 +177,12 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
       return { success: false, error: 'Seller company not found.' };
     }
 
-    if (seller.approval_status === 'rejected') {
-      return { success: false, error: 'Your seller account has been deactivated.' };
+    if (!auth.isAdmin && seller.approval_status !== 'approved') {
+      return {
+        success: false,
+        error: `Forbidden: Seller account is not approved (current status: ${seller.approval_status}).`,
+        code: 'ACCOUNT_NOT_APPROVED',
+      };
     }
 
     const tier: MembershipTier = seller.membership_tier;
@@ -214,24 +248,22 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
 
     const quotationId = insertedQuote?.id || `quote-${Date.now()}`;
 
-    // 5. Send Notification Email to Buyer
+    // 5. Send Notification Email to Buyer asynchronously (non-blocking for immediate UI feedback)
     if (wtb.buyer_email) {
-      try {
-        await sendQuoteReceivedEmail(wtb.buyer_email, {
-          buyerName: wtb.buyer_name,
-          productName: wtb.product_name,
-          sellerCompanyName: seller.name,
-          unitPrice: data.unitPrice,
-          totalPrice,
-          quantityOffered: data.quantityOffered,
-          leadTimeDays: data.leadTimeDays,
-          notes: data.notes,
-          quotationId,
-          wtbRequestId: wtb.id,
-        });
-      } catch (emailErr) {
+      void sendQuoteReceivedEmail(wtb.buyer_email, {
+        buyerName: wtb.buyer_name,
+        productName: wtb.product_name,
+        sellerCompanyName: seller.name,
+        unitPrice: data.unitPrice,
+        totalPrice,
+        quantityOffered: data.quantityOffered,
+        leadTimeDays: data.leadTimeDays,
+        notes: data.notes,
+        quotationId,
+        wtbRequestId: wtb.id,
+      }).catch((emailErr) => {
         console.warn('[QUOTE EMAIL NOTICE]', emailErr);
-      }
+      });
     }
 
     return {
@@ -242,4 +274,169 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
     const message = err instanceof Error ? err.message : 'Unexpected error submitting quotation.';
     return { success: false, error: message };
   }
+}
+
+/**
+ * Retrieves quotations submitted for a specific WTB request.
+ * SECURITY MANDATE:
+ * Requires approved user session.
+ * Caller MUST be a party to this transaction:
+ * - The buyer who created the WTB request (can see all quotes on their request).
+ * - A seller who submitted a quotation for this WTB (can only see their own quote).
+ * - A platform administrator (can see all quotes).
+ * Non-parties are rejected with 403 Forbidden.
+ */
+export async function getListingQuotations(wtbRequestId: string): Promise<any[]> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const status = auth.errorResponse?.status === 401 ? 401 : 403;
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+  }
+
+  const admin = createAdminClient();
+
+  // 1. Fetch WTB request to verify buyer ownership
+  const { data: wtb, error: wtbError } = await admin
+    .from('wtb_requests')
+    .select('id, buyer_email, buyer_user_id')
+    .eq('id', wtbRequestId)
+    .single();
+
+  if (wtbError || !wtb) {
+    throw new AuthError(403, 'Forbidden: WTB request not found.');
+  }
+
+  const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+  const callerCompanyId = auth.company?.id;
+
+  const isBuyerOwner =
+    auth.isAdmin ||
+    (wtb.buyer_user_id && wtb.buyer_user_id === auth.user.id) ||
+    (wtb.buyer_email && wtb.buyer_email.toLowerCase().trim() === callerEmail);
+
+  let query = admin.from('quotations').select('*').eq('wtb_request_id', wtbRequestId);
+
+  if (auth.isAdmin || isBuyerOwner) {
+    // Buyer or Admin can see all quotations for this request
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data;
+  }
+
+  // Seller party check: non-buyers can only view quotations if their own company submitted them
+  if (callerCompanyId) {
+    query = query.eq('seller_company_id', callerCompanyId);
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data;
+    }
+  }
+
+  // If not a party to this WTB request at all -> 403 Forbidden
+  throw new AuthError(403, 'Forbidden: You are not a party to this WTB request.');
+}
+
+/**
+ * Retrieves quotations associated with the caller's company.
+ * SECURITY MANDATE:
+ * Requires approved user session.
+ * Derives company identity strictly from session (or companyId parameter if platform admin).
+ */
+export async function getCompanyQuotations(companyId?: string): Promise<any[]> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const status = auth.errorResponse?.status === 401 ? 401 : 403;
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+  }
+
+  const effectiveCompanyId = auth.isAdmin && companyId ? companyId : auth.company?.id;
+  if (!effectiveCompanyId) {
+    return [];
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('quotations')
+    .select('*')
+    .eq('seller_company_id', effectiveCompanyId)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data;
+}
+
+/**
+ * Updates quotation status ('accepted' | 'rejected' | 'withdrawn').
+ * SECURITY MANDATE:
+ * Requires approved user session.
+ * - Accept/Reject: ONLY the buyer who owns the WTB request (or an admin) can accept or reject.
+ * - Withdraw: The seller who submitted the quotation (or an admin) can withdraw it.
+ */
+export async function updateQuotationStatus(
+  quotationId: string,
+  status: 'accepted' | 'rejected' | 'withdrawn'
+): Promise<{ success: boolean; error?: string }> {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse || !auth.user) {
+    const statusVal = auth.errorResponse?.status === 401 ? 401 : 403;
+    throw new AuthError(statusVal, statusVal === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+  }
+
+  const admin = createAdminClient();
+
+  // 1. Fetch quotation and associated WTB request
+  const { data: quote, error: quoteErr } = await admin
+    .from('quotations')
+    .select('id, seller_company_id, wtb_request_id')
+    .eq('id', quotationId)
+    .single();
+
+  if (quoteErr || !quote) {
+    return { success: false, error: 'Quotation not found.' };
+  }
+
+  const { data: wtb, error: wtbErr } = await admin
+    .from('wtb_requests')
+    .select('id, buyer_email, buyer_user_id')
+    .eq('id', quote.wtb_request_id)
+    .single();
+
+  if (wtbErr || !wtb) {
+    throw new AuthError(403, 'Forbidden: Associated WTB request not accessible.');
+  }
+
+  const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+  const callerCompanyId = auth.company?.id;
+
+  const isBuyerOwner =
+    auth.isAdmin ||
+    (wtb.buyer_user_id && wtb.buyer_user_id === auth.user.id) ||
+    (wtb.buyer_email && wtb.buyer_email.toLowerCase().trim() === callerEmail);
+
+  const isSellerOwner =
+    auth.isAdmin ||
+    (callerCompanyId && quote.seller_company_id === callerCompanyId);
+
+  // Status transition policy
+  if (status === 'withdrawn') {
+    if (!isSellerOwner) {
+      throw new AuthError(403, 'Forbidden: Only the seller who submitted this quotation can withdraw it.');
+    }
+  } else {
+    // 'accepted' or 'rejected'
+    if (!isBuyerOwner) {
+      throw new AuthError(403, 'Forbidden: Only the buyer who owns the WTB request can accept or reject quotations.');
+    }
+  }
+
+  const { error: updateErr } = await admin
+    .from('quotations')
+    .update({ status })
+    .eq('id', quotationId);
+
+  if (updateErr) {
+    return { success: false, error: updateErr.message };
+  }
+
+  return { success: true };
 }

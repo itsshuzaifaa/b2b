@@ -139,11 +139,47 @@ export function LiveTradingBoard() {
         console.warn('Could not load Supabase WTBs:', err);
       }
 
+      // 4. Supabase live products (WTS)
+      let liveProducts: TradingBoardItem[] = [];
+      try {
+        const prodRes = await fetch('/api/products', { cache: 'no-store' });
+        if (prodRes.ok) {
+          const prodData = await prodRes.json();
+          if (prodData.success && Array.isArray(prodData.products)) {
+            liveProducts = prodData.products.map((p: any) => ({
+              id: p.id,
+              type: 'SELL' as const,
+              category: p.category_slug ? p.category_slug.replace(/-/g, ' ') : 'General',
+              brand: p.brand || p.title.split(' ')[0] || 'Wholesale',
+              itemCode: p.barcode_or_sku ? p.barcode_or_sku.slice(0, 8) : p.id.slice(0, 8),
+              description: p.title + (p.description ? ` — ${p.description}` : ''),
+              ean: p.barcode_or_sku || 'n/a',
+              qty: Number(p.quantity_available) || 50,
+              condition: p.condition || 'New',
+              price: Number(p.unit_price) || 0,
+              pricingType: (p.description?.includes('POA') ? 'poa' : p.description?.includes('NEG') ? 'neg' : 'fixed'),
+              currency: '€',
+              location: p.location || 'DE',
+              match: '98%',
+              companyName: p.company?.name || 'Verified Supplier',
+              contactEmail: p.company?.email || 'supplier@b2blink.eu',
+              contactName: p.company?.contact_name || 'Trade Desk',
+              contactPhone: p.company?.phone || '',
+              moq: Number(p.moq) || 1,
+              companyId: p.company_id,
+            }));
+          }
+        }
+      } catch (prodErr) {
+        console.warn('Could not load live products in LiveTradingBoard:', prodErr);
+      }
+
       // Combine and filter out any items from deleted accounts
       const combined = [
         ...formattedUserSell,
         ...formattedUserWtbs,
         ...supabaseMapped,
+        ...liveProducts,
         ...ALL_TRADING_BOARD_ITEMS,
       ];
 

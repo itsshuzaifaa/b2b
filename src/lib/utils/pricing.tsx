@@ -100,7 +100,7 @@ export function PricingOptionSelector({
         <button
           type="button"
           onClick={() => onChange('fixed')}
-          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition-colors duration-100 ease-out flex items-center justify-center gap-1.5 cursor-pointer ${
             value === 'fixed'
               ? 'bg-white text-[#0B1F3A] shadow-xs border border-slate-200/80'
               : 'text-slate-600 hover:text-slate-900'
@@ -113,7 +113,7 @@ export function PricingOptionSelector({
         <button
           type="button"
           onClick={() => onChange('neg')}
-          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition flex items-center justify-center gap-1 cursor-pointer ${
+          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition-colors duration-100 ease-out flex items-center justify-center gap-1 cursor-pointer ${
             value === 'neg'
               ? 'bg-amber-500 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
@@ -127,7 +127,7 @@ export function PricingOptionSelector({
         <button
           type="button"
           onClick={() => onChange('poa')}
-          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition flex items-center justify-center gap-1 cursor-pointer ${
+          className={`py-2 px-2.5 rounded-xl text-[12.5px] font-extrabold transition-colors duration-100 ease-out flex items-center justify-center gap-1 cursor-pointer ${
             value === 'poa'
               ? 'bg-purple-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900'

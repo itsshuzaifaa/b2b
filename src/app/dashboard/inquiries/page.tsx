@@ -361,7 +361,7 @@ function InquiriesContent() {
             <span>&larr; Back to Dashboard</span>
           </Link>
           <Link
-            href="/marketplace"
+            href="/dashboard/marketplace"
             className="px-3.5 py-1.5 rounded-full text-[13px] font-bold bg-[#0A6CFF] hover:bg-[#0857cf] text-white transition flex items-center gap-1.5 shadow-xs"
           >
             <span>Browse Marketplace</span>
@@ -443,7 +443,7 @@ function InquiriesContent() {
                 </div>
 
                 <Link
-                  href="/marketplace"
+                  href="/dashboard/marketplace"
                   className="mt-4 inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white text-[12px] font-bold transition shadow-xs"
                 >
                   <span>Explore Marketplace</span>
@@ -698,7 +698,7 @@ function InquiriesContent() {
                         href={
                           activeConv.productId && !activeConv.productId.startsWith('00000000') && !activeConv.productId.startsWith('broadcast-')
                             ? `/marketplace/${activeConv.productId}`
-                            : '/marketplace'
+                            : '/dashboard/marketplace'
                         }
                         className="bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#334155] text-[12px] font-semibold px-3 py-1 rounded-full transition shadow-2xs inline-flex items-center gap-1"
                       >
@@ -1047,7 +1047,7 @@ function InquiriesContent() {
                   &larr; View All Conversations
                 </button>
                 <Link
-                  href="/marketplace"
+                  href="/dashboard/marketplace"
                   className="px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition shadow-xs inline-flex items-center gap-2"
                 >
                   <span>Browse Marketplace Products</span>

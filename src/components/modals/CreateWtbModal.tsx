@@ -16,9 +16,10 @@ import {
   Loader2,
   ArrowRight,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { ALL_TRADING_BOARD_ITEMS } from '@/lib/trading-board-data';
-import { POPULAR_BRANDS } from '@/app/dashboard/listings/page';
+import { POPULAR_BRANDS } from '@/lib/constants/brands';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
 import { WHOLESALE_CONDITIONS } from '@/lib/constants/conditions';
 import { TRADING_HUB_LOCATIONS } from '@/lib/constants/locations';
@@ -163,31 +164,29 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           window.dispatchEvent(new CustomEvent('b2b_admin_update'));
         } catch {}
 
-        // Persist to Supabase & trigger automatic matching with open WTB requests
+        // Persist to Supabase & trigger automatic matching with open WTB requests (non-blocking for fast UI)
         if (company?.id) {
-          try {
-            const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
-            await fetch('/api/products', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId: company.id,
-                title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
-                brand,
-                condition,
-                description: notes ? `${notes} | Stock Location: ${location}${pricingTag}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.${pricingTag}`,
-                barcodeOrSku: ean.trim() && ean.trim() !== 'n/a' ? ean.trim() : undefined,
-                categorySlug: finalCategory.toLowerCase().replace(/\s+/g, '-'),
-                unitPrice: effectivePrice,
-                quantityAvailable: qtyNum,
-                moq: Math.min(10, qtyNum),
-                isHot: true,
-                status: 'active',
-              }),
-            });
-          } catch (postErr) {
+          const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
+          void fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId: company.id,
+              title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
+              brand,
+              condition,
+              description: notes ? `${notes} | Stock Location: ${location}${pricingTag}` : `Verified wholesale stock: ${brand} ${productName.trim()}. Condition: ${condition}.${pricingTag}`,
+              barcodeOrSku: ean.trim() && ean.trim() !== 'n/a' ? ean.trim() : undefined,
+              categorySlug: finalCategory.toLowerCase().replace(/\s+/g, '-'),
+              unitPrice: effectivePrice,
+              quantityAvailable: qtyNum,
+              moq: Math.min(10, qtyNum),
+              isHot: true,
+              status: 'active',
+            }),
+          }).catch((postErr) => {
             console.warn('[POST PRODUCT ERROR]', postErr);
-          }
+          });
         }
       } else {
         // Submit WTB request
@@ -195,7 +194,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
         const buyerEmail = company?.email || 'buyer@b2blink.eu';
         const pricingTag = isSpecialPricing ? ` | Pricing: ${pricingType.toUpperCase()}` : '';
 
-        await createWtbRequest({
+        const wtbRes = await createWtbRequest({
           buyerName,
           buyerEmail,
           buyerPhone: company?.phone || undefined,
@@ -210,33 +209,111 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           notes: `${notes ? `${notes} | ` : ''}Condition: ${condition} | Delivery: ${location} | Model: ${itemCode || 'Standard'}${pricingTag}`,
         });
 
-        // Also save to local storage for immediate visibility in Trading Board
+        const effectiveWtbId = wtbRes.wtbRequestId || `wtb-usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        // Also save to local storage for immediate visibility in Trading Board & Listings
         try {
           localStorage.removeItem('b2b_user_wtb_requests_v1');
           const localKey = 'b2b_user_wtb_requests_v2';
           const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
           const newWtbItem = {
-            id: `wtb-usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: effectiveWtbId,
             type: 'BUY',
+            lotType: 'WTB',
             category: finalCategory,
             brand,
             itemCode: itemCode || 'WTB-REQ',
             description: productName.trim(),
+            title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
             ean: ean.trim() || 'n/a',
             qty: qtyNum,
+            available: qtyNum,
             condition,
             price: effectivePrice,
+            unitPrice: effectivePrice,
             pricingType,
             currency: '€',
             location,
             match: '96%',
+            companyId: company?.id,
+            company_id: company?.id,
             companyName: company?.name || 'Verified Procurement Partner',
             contactEmail: buyerEmail,
             contactName: buyerName,
             contactPhone: company?.phone || '',
-            moq: Math.min(10, qtyNum),
+            moq: 1,
+            status: 'Active',
+            createdAt: new Date().toISOString(),
           };
-          localStorage.setItem(localKey, JSON.stringify([newWtbItem, ...existing]));
+          localStorage.setItem(localKey, JSON.stringify([newWtbItem, ...existing.filter((item: any) => item.id !== effectiveWtbId)]));
+
+          // Also save to seller listings store with lotType: 'WTB' so it appears on the seller's listings page
+          const sellerListingsKey = 'b2b_seller_listings_v3';
+          const existingSellerListings = JSON.parse(localStorage.getItem(sellerListingsKey) || '[]');
+          const sellerWtbListing = {
+            id: effectiveWtbId,
+            lotType: 'WTB',
+            title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
+            brand: brand || 'Procurement',
+            itemCode: itemCode || 'WTB-REQ',
+            category: finalCategory,
+            ean: ean.trim() || 'n/a',
+            condition,
+            description: notes ? `${notes} | Location: ${location}${pricingTag}` : `Wanted: ${brand ? `${brand} ` : ''}${productName.trim()}.${pricingTag}`,
+            unitPrice: effectivePrice,
+            pricingType,
+            available: qtyNum,
+            moq: 1,
+            location,
+            status: 'Active' as const,
+            createdAt: new Date().toISOString(),
+            activatedAt: new Date().toISOString(),
+            companyId: company?.id,
+            company_id: company?.id,
+            companyName: company?.name || 'Verified Procurement Partner',
+            contactEmail: buyerEmail,
+            contactName: buyerName,
+            contactPhone: company?.phone || '',
+          };
+          localStorage.setItem(
+            sellerListingsKey,
+            JSON.stringify([sellerWtbListing, ...existingSellerListings.filter((item: any) => item.id !== effectiveWtbId)])
+          );
+
+          // Save to admin moderated listings store
+          const adminKey = 'b2b_admin_listings_v5';
+          const existingAdminListings = JSON.parse(localStorage.getItem(adminKey) || '[]');
+          const adminWtbListing = {
+            id: effectiveWtbId,
+            type: 'BUY',
+            company_id: company?.id || 'buyer',
+            company_name: company?.name || 'Verified Procurement Partner',
+            seller_email: buyerEmail,
+            contact_name: buyerName,
+            contact_phone: company?.phone || '',
+            title: `${brand ? `${brand} ` : ''}${productName.trim()}`,
+            brand: brand || 'Procurement',
+            item_code: itemCode || 'WTB-REQ',
+            category_slug: finalCategory.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            category_name: finalCategory,
+            ean: ean.trim() || 'n/a',
+            condition,
+            unit_price: effectivePrice,
+            currency: '€',
+            location,
+            quantity_available: qtyNum,
+            moq: 1,
+            barcode_or_sku: ean.trim() || itemCode,
+            is_hot: false,
+            moderation_status: 'active',
+            images: [],
+            created_at: new Date().toISOString(),
+          };
+          localStorage.setItem(
+            adminKey,
+            JSON.stringify([adminWtbListing, ...existingAdminListings.filter((item: any) => item.id !== effectiveWtbId)])
+          );
+
           window.dispatchEvent(new CustomEvent('b2b_wtb_created'));
         } catch {}
       }
@@ -341,7 +418,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B1F3A]/60 backdrop-blur-xs animate-in fade-in duration-200 pointer-events-auto"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B1F3A]/70 pointer-events-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -349,7 +426,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
       }}
     >
       <div
-        className="relative w-full max-w-lg bg-white rounded-[32px] shadow-2xl border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[90vh] pointer-events-auto"
+        className="relative w-full max-w-lg bg-white rounded-[32px] shadow-2xl border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[90vh] pointer-events-auto transform-gpu"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -365,7 +442,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-[#F1F5F9] text-[#0B1F3A] hover:bg-[#E2E8F0] flex items-center justify-center transition cursor-pointer"
+            className="w-9 h-9 rounded-full bg-[#F1F5F9] text-[#0B1F3A] hover:bg-[#E2E8F0] flex items-center justify-center transition-colors duration-100 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -377,25 +454,25 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
             <button
               type="button"
               onClick={() => setTradeMode('WTB')}
-              className={`flex-1 py-2 text-[13px] font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
+              className={`flex-1 py-2 text-[13px] font-bold rounded-xl transition-colors duration-100 flex items-center justify-center gap-2 cursor-pointer ${
                 tradeMode === 'WTB'
                   ? 'bg-white text-[#16A34A] shadow-xs'
                   : 'text-[#64748B] hover:text-[#0B1F3A]'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+              <span className={`w-2 h-2 rounded-full ${tradeMode === 'WTB' ? 'bg-[#16A34A]' : 'bg-slate-300'}`} />
               <span>Buy (WTB) Request</span>
             </button>
             <button
               type="button"
               onClick={() => setTradeMode('WTS')}
-              className={`flex-1 py-2 text-[13px] font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
+              className={`flex-1 py-2 text-[13px] font-bold rounded-xl transition-colors duration-100 flex items-center justify-center gap-2 cursor-pointer ${
                 tradeMode === 'WTS'
                   ? 'bg-white text-[#0A6CFF] shadow-xs'
                   : 'text-[#64748B] hover:text-[#0B1F3A]'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-[#0A6CFF]" />
+              <span className={`w-2 h-2 rounded-full ${tradeMode === 'WTS' ? 'bg-[#0A6CFF]' : 'bg-slate-300'}`} />
               <span>Sell (WTS) Listing</span>
             </button>
           </div>
@@ -531,7 +608,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                       type="button"
                       onClick={() => {
                         onClose();
-                        router.push('/marketplace');
+                        router.push('/dashboard/marketplace');
                       }}
                       className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition shadow-xs cursor-pointer"
                     >
@@ -568,7 +645,11 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
                   placeholder="e.g. Galaxy Tab S9 128GB Wi-Fi Graphite"
-                  className="w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-medium"
+                  className={`w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                    tradeMode === 'WTB'
+                      ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                      : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                  }`}
                 />
               </div>
 
@@ -578,17 +659,24 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                     Brand
                   </label>
-                  <select
-                    value={brand}
-                    onChange={(e) => setBrand(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-bold"
-                  >
-                    {POPULAR_BRANDS.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={brand}
+                      onChange={(e) => setBrand(e.target.value)}
+                      className={`w-full appearance-none bg-white px-3.5 py-2.5 pr-9 text-[14px] border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-bold cursor-pointer ${
+                        tradeMode === 'WTB'
+                          ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                          : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                      }`}
+                    >
+                      {POPULAR_BRANDS.map((b) => (
+                        <option key={b} value={b}>
+                          {b}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
 
                 <div>
@@ -600,7 +688,11 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                     value={itemCode}
                     onChange={(e) => setItemCode(e.target.value)}
                     placeholder="e.g. SM-X810"
-                    className="w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-medium"
+                    className={`w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                      tradeMode === 'WTB'
+                        ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                        : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                    }`}
                   />
                 </div>
               </div>
@@ -611,34 +703,48 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                     Category
                   </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-medium"
-                  >
-                    {WHOLESALE_CATEGORIES.map((cat) => (
-                      <option key={cat.id} value={cat.name}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className={`w-full appearance-none bg-white px-3.5 py-2.5 pr-9 text-[14px] border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium cursor-pointer ${
+                        tradeMode === 'WTB'
+                          ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                          : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                      }`}
+                    >
+                      {WHOLESALE_CATEGORIES.map((cat) => (
+                        <option key={cat.id} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
                     Condition
                   </label>
-                  <select
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-medium"
-                  >
-                    {WHOLESALE_CONDITIONS.map((cond) => (
-                      <option key={cond} value={cond}>
-                        {cond}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={condition}
+                      onChange={(e) => setCondition(e.target.value)}
+                      className={`w-full appearance-none bg-white px-3.5 py-2.5 pr-9 text-[14px] border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium cursor-pointer ${
+                        tradeMode === 'WTB'
+                          ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                          : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                      }`}
+                    >
+                      {WHOLESALE_CONDITIONS.map((cond) => (
+                        <option key={cond} value={cond}>
+                          {cond}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
 
                 {category === 'Other' && (
@@ -652,7 +758,11 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                       value={customCategory}
                       onChange={(e) => setCustomCategory(e.target.value)}
                       placeholder="Type your category (e.g. Vintage Watches, Medical Supplies, Industrial Machinery...)"
-                      className="w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none focus:border-[#16A34A] transition font-medium"
+                      className={`w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                        tradeMode === 'WTB'
+                          ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                          : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                      }`}
                     />
                   </div>
                 )}
@@ -668,7 +778,11 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   value={ean}
                   onChange={(e) => setEan(e.target.value)}
                   placeholder="Optional (e.g. 8806095087286)"
-                  className="w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] font-mono focus:outline-none focus:border-[#16A34A] transition"
+                  className={`w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] font-mono focus:outline-none transition-colors duration-100 ease-out ${
+                    tradeMode === 'WTB'
+                      ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20'
+                      : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                  }`}
                 />
               </div>
 
@@ -685,8 +799,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                     value={targetQuantity}
                     onChange={(e) => setTargetQuantity(e.target.value)}
                     placeholder="e.g. 100"
-                    className={`w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
-                      tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
+                    className={`w-full px-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                      tradeMode === 'WTB' ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20' : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
                     }`}
                   />
                 </div>
@@ -712,8 +826,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                         value={targetPrice}
                         onChange={(e) => setTargetPrice(e.target.value)}
                         placeholder={tradeMode === 'WTB' ? 'Target price e.g. 420.00' : 'Unit price e.g. 450.00'}
-                        className={`w-full pl-8 pr-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
-                          tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
+                        className={`w-full pl-8 pr-4 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                          tradeMode === 'WTB' ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20' : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
                         }`}
                       />
                     </div>
@@ -735,7 +849,7 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                       onClick={() => setShowLocationHelp((prev) => !prev)}
                       onMouseEnter={() => setShowLocationHelp(true)}
                       onMouseLeave={() => setShowLocationHelp(false)}
-                      className="p-0.5 text-slate-400 hover:text-[#0A6CFF] rounded-full focus:outline-none transition cursor-pointer"
+                      className="p-0.5 text-slate-400 hover:text-[#0A6CFF] rounded-full focus:outline-none transition-colors duration-100 ease-out cursor-pointer"
                       aria-label="Location guidance help"
                       title="Hub Location Guidance: In WTB this is where items are delivered; in WTS this is where items are situated."
                     >
@@ -767,19 +881,22 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                   </div>
                 </div>
 
-                <select
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 text-[14px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
-                    tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
-                  }`}
-                >
-                  {TRADING_HUB_LOCATIONS.map((loc) => (
-                    <option key={loc.code} value={loc.code}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className={`w-full appearance-none bg-white px-3.5 py-2.5 pr-9 text-[14px] border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium cursor-pointer ${
+                      tradeMode === 'WTB' ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20' : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
+                    }`}
+                  >
+                    {TRADING_HUB_LOCATIONS.map((loc) => (
+                      <option key={loc.code} value={loc.code}>
+                        {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
               </div>
 
               {/* Delivery / Sourcing Notes */}
@@ -796,8 +913,8 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                       ? 'e.g. Ready for prompt payment. Pallet delivery requested to central Rotterdam hub.'
                       : 'e.g. Factory sealed master cartons. Immediate dispatch available from Hamburg warehouse.'
                   }
-                  className={`w-full px-4 py-2 text-[13px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition font-medium ${
-                    tradeMode === 'WTB' ? 'focus:border-[#16A34A]' : 'focus:border-[#0A6CFF]'
+                  className={`w-full px-4 py-2 text-[13px] bg-white border border-[#CBD5E1] rounded-xl text-[#0B1F3A] focus:outline-none transition-colors duration-100 ease-out font-medium ${
+                    tradeMode === 'WTB' ? 'focus:border-[#16A34A] focus:ring-2 focus:ring-[#16A34A]/20' : 'focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/20'
                   }`}
                 />
               </div>
@@ -807,14 +924,14 @@ export function CreateWtbModal({ isOpen, onClose, onSuccess, initialMode = 'WTB'
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 rounded-full text-[13px] font-bold text-[#64748B] hover:bg-slate-100 transition cursor-pointer"
+                  className="px-6 py-2.5 rounded-full text-[13px] font-bold text-[#64748B] hover:bg-slate-100 transition-colors duration-100 ease-out cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className={`px-7 py-2.5 rounded-full disabled:opacity-50 text-white text-[13.5px] font-bold flex items-center gap-2 transition shadow-xs cursor-pointer ${
+                  className={`px-7 py-2.5 rounded-full disabled:opacity-50 text-white text-[13.5px] font-bold flex items-center gap-2 transition-colors duration-100 ease-out shadow-xs cursor-pointer ${
                     tradeMode === 'WTB'
                       ? 'bg-[#16A34A] hover:bg-emerald-700'
                       : 'bg-[#0A6CFF] hover:bg-blue-700'

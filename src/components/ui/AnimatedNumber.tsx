@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 interface AnimatedNumberProps {
-  value: number;
+  value?: number | null;
   duration?: number; // ms, default 900
   prefix?: string;
   suffix?: string;
@@ -19,18 +19,39 @@ export function AnimatedNumber({
   decimals = 0,
   className = '',
 }: AnimatedNumberProps) {
-  const [displayValue, setDisplayValue] = useState<number>(0);
+  const [displayValue, setDisplayValue] = useState<number | null>(() =>
+    typeof value === 'number' ? value : null
+  );
 
   useEffect(() => {
-    let startTimestamp: number | null = null;
-    const startVal = 0;
-    const endVal = Number(value) || 0;
+    if (value === undefined || value === null) {
+      setDisplayValue(null);
+      return;
+    }
+
+    const endVal = Number(value);
+    if (isNaN(endVal)) {
+      setDisplayValue(null);
+      return;
+    }
+
+    // Respect prefers-reduced-motion
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setDisplayValue(endVal);
+      return;
+    }
 
     if (endVal === 0) {
       setDisplayValue(0);
       return;
     }
 
+    let startTimestamp: number | null = null;
+    const startVal = 0;
     let animationFrameId: number;
 
     const step = (timestamp: number) => {
@@ -60,7 +81,14 @@ export function AnimatedNumber({
     };
   }, [value, duration]);
 
-  const formatted = decimals > 0 ? displayValue.toFixed(decimals) : Math.round(displayValue).toLocaleString();
+  if (displayValue === null) {
+    return null;
+  }
+
+  const formatted =
+    decimals > 0
+      ? displayValue.toFixed(decimals)
+      : Math.round(displayValue).toLocaleString();
 
   return (
     <span className={className}>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import type { TradeMatch } from '@/lib/matching/match-types';
 import { getStoredMatches, getUserMatches, dismissMatch } from '@/lib/matching/match-types';
+import { Skeleton } from '@/components/skeletons/Skeleton';
 import {
   Sparkles,
   ArrowRight,
@@ -256,9 +257,26 @@ export function TradingMatchesWidget({
       {/* Content Area */}
       <div className="mt-5">
         {isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#64748B]">
-            <RefreshCw className="w-5 h-5 animate-spin text-[#0A6CFF]" />
-            <span className="text-[13px] font-medium">Scanning live marketplace &amp; procurement board...</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Array.from({ length: 2 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="p-5 rounded-2xl border border-[#EAEFF6] bg-[#F8FAFC] flex flex-col justify-between min-h-[190px] space-y-4"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-5 w-48 rounded-full" />
+                    <Skeleton className="h-5 w-24 rounded-full" />
+                  </div>
+                  <Skeleton className="h-5 w-3/4 rounded-md" />
+                  <Skeleton className="h-4 w-1/2 rounded-md" />
+                </div>
+                <div className="pt-3 border-t border-[#EAEFF6] flex items-center justify-between">
+                  <Skeleton className="h-4 w-28 rounded-md" />
+                  <Skeleton className="h-8 w-28 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredMatches.length === 0 ? (
           <div className="p-8 text-center text-[#5B6B82] bg-slate-50/60 rounded-2xl border border-dashed border-[#CFD9E8]">
@@ -291,7 +309,7 @@ export function TradingMatchesWidget({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
             {bundledMatches.map((bundle) => {
               const topMatch = bundle.matches[0];
 

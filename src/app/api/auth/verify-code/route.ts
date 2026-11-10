@@ -4,8 +4,11 @@ import {
   validateVerificationCode,
   consumeVerificationCode,
 } from '@/lib/auth/verification-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'verify-code');
+  if (rateLimitRes) return rateLimitRes;
   try {
     const body = await request.json();
     const rawEmail = (body.email || '').trim().toLowerCase();
@@ -25,8 +28,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Enforce 15-minute timer and latest-code rule
-    const validation = validateVerificationCode(rawEmail, code);
+    // 1. Enforce 15-minute timer, single use, max 5 attempts, and latest-code rule
+    const validation = await validateVerificationCode(rawEmail, code);
     if (!validation.valid) {
       return NextResponse.json(
         { error: validation.error || 'Verification code has expired or is invalid.' },
@@ -67,16 +70,6 @@ export async function POST(request: NextRequest) {
         await admin.auth.admin.updateUserById(confirmedUserId, {
           email_confirm: true,
         });
-
-        // Also update companies record if pending verification
-        await admin
-          .from('companies')
-          .update({
-            approval_status: 'pending',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', confirmedUserId)
-          .eq('approval_status', 'pending_verification');
       }
     } catch (adminErr) {
       console.warn('[VERIFY CODE ADMIN CONFIRM NOTICE]', adminErr);

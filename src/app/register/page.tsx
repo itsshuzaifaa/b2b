@@ -358,7 +358,7 @@ function RegisterContent() {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('b2b_demo_role');
         localStorage.removeItem('b2b_cached_company');
-        localStorage.setItem('b2b_pending_verification_email', email.trim().toLowerCase());
+        localStorage.setItem('b2b_pending_signup_email', email.trim().toLowerCase());
         localStorage.setItem('b2b_pending_tier', selectedTier);
         localStorage.setItem('b2b_registered_tier', selectedTier);
         localStorage.setItem('b2b_pending_company_name', companyName.trim() || `${firstName} ${lastName}`.trim());
@@ -371,7 +371,16 @@ function RegisterContent() {
       router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}&role=seller&tier=${selectedTier}${redirectQuery}`);
     } catch (err) {
       console.error('Registration exception:', err);
-      setErrorMsg(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      const isNetworkError =
+        err instanceof Error &&
+        (err.message === 'fetch failed' || err.message.includes('network') || err.message.includes('Failed to fetch'));
+      setErrorMsg(
+        isNetworkError
+          ? 'Network blip encountered while connecting to server. Please click "Create Account" again.'
+          : err instanceof Error
+          ? err.message
+          : 'Registration failed. Please try again.'
+      );
     } finally {
       setLoading(false);
     }

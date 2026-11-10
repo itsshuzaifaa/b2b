@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { verifyCronOrAdmin } from '@/lib/auth/guards';
 import {
   LISTING_ACTIVE_DURATION_DAYS,
   LISTING_RECOVERY_WINDOW_DAYS,
@@ -11,6 +12,14 @@ import { sendListingInactivatedEmail } from '@/lib/email/dispatcher';
 import { getDynamicAppUrl } from '@/lib/utils/app-url';
 
 export async function POST(req: NextRequest) {
+  const isAuthorized = await verifyCronOrAdmin(req);
+  if (!isAuthorized) {
+    return NextResponse.json(
+      { error: 'Unauthorized: Invalid cron secret or admin credentials.' },
+      { status: 401 }
+    );
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const { listings, companyId, companyEmail, contactName, companyName } = body || {};

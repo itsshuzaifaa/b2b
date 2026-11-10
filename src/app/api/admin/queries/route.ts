@@ -7,8 +7,12 @@ import {
 import { sendEmail } from '@/lib/email/dispatcher';
 import { customerQueryReplyEmail } from '@/lib/email/templates';
 import { getDynamicAppUrl } from '@/lib/utils/app-url';
+import { requireAdmin } from '@/lib/auth/guards';
 
 export async function GET() {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const queries = getServerCustomerQueries();
     return NextResponse.json({ success: true, queries });
@@ -22,6 +26,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (auth.errorResponse) return auth.errorResponse;
+
   try {
     const body = await request.json();
     const { action, id, replyText, replySubject } = body;

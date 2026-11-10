@@ -146,78 +146,9 @@ export function isAccountDeleted(id?: string | null, email?: string | null): boo
   return false;
 }
 
-// INITIAL SEED ACCOUNTS (Clean empty state for real user accounts & testing)
+// Empty initial seed structures (Hardcoded sample accounts, listings, and payments removed)
 const INITIAL_ACCOUNTS: AdminClientAccount[] = [];
-
-// INITIAL SEED PAYMENTS - Verified membership transactions for active Gold seller accounts
-export const INITIAL_PAYMENTS: AdminPaymentRecord[] = [
-  {
-    id: 'PAY-a73bd495',
-    company_id: 'a73bd495-ab88-47f3-9b10-631d9d3cbc55',
-    company_name: 'G Line Investments',
-    contact_email: 'vee@globle-investments.com',
-    plan_or_service: 'Gold VIP Membership',
-    amount_gbp: 179.0,
-    payment_method: 'Wise Bank Transfer',
-    wise_reference: 'WISE-GLINE-8821',
-    transaction_id: 'TX-WISE-GL8821',
-    status: 'Completed',
-    created_at: '29 Oct 2026, 16:05',
-    completed_at: '29 Oct 2026, 16:05',
-    invoice_number: 'INV-2026-004',
-    notes: 'Direct Wise B2B settlement verified and cleared.',
-  },
-  {
-    id: 'PAY-f947aaa9',
-    company_id: 'f947aaa9-ee79-4361-bbc5-6d8efa9136ad',
-    company_name: 'European Holding OU',
-    contact_email: 'jeff@european-holdings.ee',
-    plan_or_service: 'Gold VIP Membership',
-    amount_gbp: 179.0,
-    payment_method: 'SEPA Wire',
-    wise_reference: 'SEPA-EUHOLD-4392',
-    transaction_id: 'TX-SEPA-EH4392',
-    status: 'Completed',
-    created_at: '26 Oct 2026, 17:55',
-    completed_at: '26 Oct 2026, 17:55',
-    invoice_number: 'INV-2026-003',
-    notes: 'SEPA Direct Business Wire settled to B2B LINK IBAN.',
-  },
-  {
-    id: 'PAY-151a6ad8',
-    company_id: '151a6ad8-9d02-4fe5-809d-e0e4af0f6a3d',
-    company_name: 'Unit D5 The Seedbed Centre IG10 3TQ',
-    contact_email: 'info@rensure.co.uk',
-    plan_or_service: 'Gold VIP Membership',
-    amount_gbp: 179.0,
-    payment_method: 'Wise Bank Transfer',
-    wise_reference: 'WISE-RENSURE-7714',
-    transaction_id: 'TX-WISE-RE7714',
-    status: 'Completed',
-    created_at: '26 Oct 2026, 17:45',
-    completed_at: '26 Oct 2026, 17:45',
-    invoice_number: 'INV-2026-002',
-    notes: 'Wise business transfer cleared.',
-  },
-  {
-    id: 'PAY-cdf59748',
-    company_id: 'cdf59748-4090-4a15-b630-7ec2f62e1241',
-    company_name: 'Globle Investments Ltd',
-    contact_email: 'jeff@globle-investments.com',
-    plan_or_service: 'Gold VIP Membership',
-    amount_gbp: 179.0,
-    payment_method: 'Corporate Card',
-    wise_reference: 'STRIPE-CH-99214',
-    transaction_id: 'TX-CARD-GL9921',
-    status: 'Completed',
-    created_at: '26 Oct 2026, 17:18',
-    completed_at: '26 Oct 2026, 17:18',
-    invoice_number: 'INV-2026-001',
-    notes: 'Recurring monthly subscription charge succeeded.',
-  },
-];
-
-// INITIAL SEED MODERATED LISTINGS (Empty for testing)
+export const INITIAL_PAYMENTS: AdminPaymentRecord[] = [];
 const INITIAL_LISTINGS: AdminModeratedListing[] = [];
 
 // BROADCAST HELPER
@@ -261,12 +192,9 @@ export function saveAdminAccounts(accounts: AdminClientAccount[]) {
   if (typeof window === 'undefined') return;
   if (!Array.isArray(accounts) || accounts.length === 0) return; // Prevent network blips from wiping cached accounts
   try {
-    // Reconcile: If active accounts are provided, ensure they are unflagged from deleted blacklist
-    for (const a of accounts) {
-      if (a.id) unmarkAccountAsDeleted(a.id);
-      if (a.email) unmarkAccountAsDeleted(a.email);
-    }
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+    // Only persist non-deleted accounts
+    const filtered = accounts.filter((a) => !isAccountDeleted(a.id, a.email));
+    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filtered));
     broadcastAdminUpdate();
   } catch {
     // ignore
@@ -405,6 +333,28 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
           localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(remaining));
         }
       }
+
+      // 5. Purge from local messaging conversations
+      const rawInquiries = localStorage.getItem('b2b_inquiry_conversations_v4');
+      if (rawInquiries) {
+        const parsed = JSON.parse(rawInquiries);
+        if (Array.isArray(parsed)) {
+          const remaining = parsed.filter(
+            (c: any) =>
+              c.sellerCompanyId !== companyId &&
+              c.buyerCompanyId !== companyId &&
+              (!effectiveEmail || (c.sellerContactEmail?.toLowerCase() !== effectiveEmail.toLowerCase() && c.buyerContactEmail?.toLowerCase() !== effectiveEmail.toLowerCase()))
+          );
+          localStorage.setItem('b2b_inquiry_conversations_v4', JSON.stringify(remaining));
+        }
+      }
+
+      // 6. Dispatch backend API delete request to purge from PostgreSQL
+      try {
+        fetch(`/api/admin/accounts?id=${encodeURIComponent(companyId)}${effectiveEmail ? `&email=${encodeURIComponent(effectiveEmail)}` : ''}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+      } catch {}
     } catch (err) {
       console.error('Error cascading account deletion:', err);
     }
@@ -515,18 +465,28 @@ export function updateAccountTier(
   return true;
 }
 
-export function updateAccountApproval(companyId: string, status: ApprovalStatus): boolean {
+export function updateAccountApproval(companyId: string, status: ApprovalStatus, email?: string): boolean {
   const current = getAdminAccounts();
-  const updated = current.map((acc) =>
-    acc.id === companyId
-      ? {
-          ...acc,
-          approval_status: status,
-          account_status: status === 'approved' ? ('active' as AccountStatus) : ('suspended' as AccountStatus),
-          verified_documents: status === 'approved',
-        }
-      : acc
-  );
+  const cleanId = (companyId || '').trim().toLowerCase();
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+
+  const updated = current.map((acc) => {
+    const isMatch =
+      acc.id === companyId ||
+      acc.id?.toLowerCase() === cleanId ||
+      (acc.email && acc.email.toLowerCase() === cleanId) ||
+      (cleanEmail && acc.email && acc.email.toLowerCase() === cleanEmail);
+
+    if (isMatch) {
+      return {
+        ...acc,
+        approval_status: status,
+        account_status: status === 'approved' ? ('active' as AccountStatus) : ('suspended' as AccountStatus),
+        verified_documents: status === 'approved',
+      };
+    }
+    return acc;
+  });
   saveAdminAccounts(updated);
 
   if (typeof window !== 'undefined') {
@@ -587,88 +547,25 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus)
 // ==========================================
 export function reconcilePaymentsWithAccounts(
   payments: AdminPaymentRecord[],
-  accounts?: AdminClientAccount[]
+  _accounts?: AdminClientAccount[]
 ): AdminPaymentRecord[] {
-  const result = [...payments];
-  const list = accounts || (typeof window !== 'undefined' ? getAdminAccounts() : []);
-
-  // First ensure default seed payments for known gold accounts are present if list is empty
-  for (const initPay of INITIAL_PAYMENTS) {
-    if (!result.some((p) => p.company_id === initPay.company_id || (p.contact_email && p.contact_email.toLowerCase() === initPay.contact_email.toLowerCase()))) {
-      result.push(initPay);
-    }
-  }
-
-  // Next reconcile dynamically with any active Gold or Silver accounts in the list
-  for (const acc of list) {
-    if (acc.role === 'admin' || acc.email?.toLowerCase() === 'admin@b2blink.eu') continue;
-    if (acc.membership_tier !== 'gold' && acc.membership_tier !== 'silver') continue;
-
-    const hasPayment = result.some(
-      (p) =>
-        p.company_id === acc.id ||
-        (acc.email && p.contact_email?.toLowerCase().trim() === acc.email.toLowerCase().trim())
-    );
-
-    if (!hasPayment) {
-      const isGold = acc.membership_tier === 'gold';
-      const price = isGold ? 179.0 : 79.0;
-      const plan = isGold ? 'Gold VIP Membership' : 'Silver Tier Membership';
-      const defaultDef = INITIAL_PAYMENTS.find(
-        (ip) =>
-          ip.company_id === acc.id ||
-          (acc.email && ip.contact_email.toLowerCase() === acc.email.toLowerCase())
-      );
-
-      result.push(
-        defaultDef || {
-          id: `PAY-${acc.id.slice(0, 8)}`,
-          company_id: acc.id,
-          company_name: acc.name,
-          contact_email: acc.email,
-          plan_or_service: plan,
-          amount_gbp: price,
-          payment_method: 'Wise Bank Transfer',
-          wise_reference: `WISE-${acc.name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase()}-01`,
-          transaction_id: `TX-WISE-${acc.id.slice(0, 6).toUpperCase()}`,
-          status: 'Completed',
-          created_at: acc.created_at
-            ? new Date(acc.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', 10:00'
-            : '26 Oct 2026, 10:00',
-          completed_at: acc.created_at
-            ? new Date(acc.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', 10:00'
-            : '26 Oct 2026, 10:00',
-          invoice_number: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
-          notes: 'Membership payment automatically reconciled.',
-        }
-      );
-    }
-  }
-
-  return result;
+  return payments;
 }
 
 export function getAdminPayments(): AdminPaymentRecord[] {
-  if (typeof window === 'undefined') return INITIAL_PAYMENTS;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(PAYMENTS_STORAGE_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const reconciled = reconcilePaymentsWithAccounts(parsed);
-        if (reconciled.length !== parsed.length) {
-          localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(reconciled));
-        }
-        return reconciled;
+      if (Array.isArray(parsed)) {
+        return parsed;
       }
     }
-    // Seed initial payments if empty or null
-    localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(INITIAL_PAYMENTS));
-    return INITIAL_PAYMENTS;
+    return [];
   } catch {
-    // ignore
+    return [];
   }
-  return INITIAL_PAYMENTS;
 }
 
 export function saveAdminPayments(payments: AdminPaymentRecord[]) {
@@ -693,16 +590,6 @@ export function markPaymentCompleted(paymentId: string): boolean {
       : p
   );
   saveAdminPayments(updatedPayments);
-
-  // If this payment was for a company, automatically approve that company if not already approved!
-  if (payment?.company_id) {
-    const accounts = getAdminAccounts();
-    const existing = accounts.find((a) => a.id === payment.company_id || (payment.contact_email && a.email?.toLowerCase() === payment.contact_email.toLowerCase().trim()));
-    if (existing && existing.approval_status !== 'approved') {
-      updateAccountApproval(payment.company_id, 'approved');
-    }
-  }
-
   return true;
 }
 
@@ -721,22 +608,6 @@ export function recordManualPayment(newPay: Omit<AdminPaymentRecord, 'id' | 'cre
   };
 
   saveAdminPayments([created, ...payments]);
-
-  if (created.status === 'Completed' && created.company_id) {
-    const accounts = getAdminAccounts();
-    const existing = accounts.find(
-      (a) =>
-        a.id === created.company_id ||
-        (created.contact_email && a.email?.toLowerCase() === created.contact_email.toLowerCase().trim())
-    );
-    // Only trigger initial KYC approval if account is NOT already approved and NOT a membership renewal/upgrade
-    const planText = (created.plan_or_service || '').toLowerCase();
-    const isMembershipTx = planText.includes('membership') || planText.includes('upgrade') || planText.includes('subscription');
-    if (existing && existing.approval_status !== 'approved' && !isMembershipTx) {
-      updateAccountApproval(created.company_id, 'approved');
-    }
-  }
-
   return created;
 }
 

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { requireUser, requireApprovedUser } from '@/lib/auth/guards';
 import type { Product } from '@/types/database';
 import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
+/**
+ * GET /api/products
+ * Public endpoint for retrieving wholesale products.
+ * SECURITY: Restricted to whitelisted public fields only.
+ * Private fields (contact_phone, vat_number, company_number, kyc documents) are never exposed.
+ */
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
@@ -15,7 +22,11 @@ export async function GET(req: NextRequest) {
 
     let dbQuery = admin
       .from('products')
-      .select('*, company:companies(*), category:categories(id, name, slug)')
+      .select(`
+        *,
+        company:companies(id, company_name, name, contact_name, country, role, tier, membership_tier, approval_status, niches, categories, created_at),
+        category:categories(id, name, slug)
+      `)
       .neq('id', '00000000-0000-4000-a000-000000000001') // exclude system anchor product
       .order('created_at', { ascending: false });
 
@@ -82,14 +93,45 @@ export async function GET(req: NextRequest) {
   }
 }
 
+let cachedCategories: { data: { id: string; slug: string }[]; expiresAt: number } | null = null;
+async function getCategoriesCached(admin: any) {
+  const now = Date.now();
+  if (cachedCategories && cachedCategories.expiresAt > now) {
+    return cachedCategories.data;
+  }
+  const { data: dbCategories } = await admin.from('categories').select('id, slug');
+  if (dbCategories && dbCategories.length > 0) {
+    cachedCategories = { data: dbCategories, expiresAt: now + 5 * 60 * 1000 };
+    return dbCategories;
+  }
+  return cachedCategories?.data || [];
+}
+
+/**
+ * POST /api/products
+ * Creates or updates a product.
+ * SECURITY:
+ * 1. Requires authenticated user session via requireUser().
+ * 2. Non-admins can only create/update products for their own verified company.
+ * 3. Admins can create/update products on behalf of any company.
+ */
 export async function POST(req: NextRequest) {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
+
+  if (!auth.isAdmin && !auth.company) {
+    return NextResponse.json(
+      { success: false, error: 'Forbidden: No registered company found for your user account.' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
     const admin = createAdminClient();
 
     const {
       id,
-      companyId,
       title,
       description,
       barcodeOrSku,
@@ -106,16 +148,24 @@ export async function POST(req: NextRequest) {
     if (!title?.trim()) {
       return NextResponse.json({ success: false, error: 'Product title is required' }, { status: 400 });
     }
-    if (!companyId) {
+
+    // Determine target company:
+    // If admin: can use body.companyId or fallback to auth.company?.id
+    // If non-admin: MUST use auth.company!.id (ignore any companyId passed from client)
+    const effectiveCompanyId = auth.isAdmin
+      ? (body.companyId || auth.company?.id)
+      : auth.company!.id;
+
+    if (!effectiveCompanyId) {
       return NextResponse.json({ success: false, error: 'Seller company ID is required' }, { status: 400 });
     }
 
     // Resolve category id
     let resolvedCategoryId = categoryId;
     if (!resolvedCategoryId && categorySlug) {
-      const { data: dbCategories } = await admin.from('categories').select('id, slug');
+      const dbCategories = await getCategoriesCached(admin);
       const match = dbCategories?.find(
-        (c) => c.slug === categorySlug || categorySlug.includes(c.slug) || c.slug.includes(categorySlug)
+        (c: any) => c.slug === categorySlug || categorySlug.includes(c.slug) || c.slug.includes(categorySlug)
       );
       if (match) resolvedCategoryId = match.id;
     }
@@ -124,23 +174,16 @@ export async function POST(req: NextRequest) {
       resolvedCategoryId = firstCat?.id;
     }
 
-    // Ensure seller company exists and is approved to satisfy database triggers
-    let effectiveCompanyId = companyId;
-    const { data: comp } = await admin.from('companies').select('id, approval_status').eq('id', companyId).maybeSingle();
-    if (!comp) {
-      const { data: anySeller } = await admin.from('companies').select('id').eq('role', 'seller').limit(1).maybeSingle();
-      if (anySeller) effectiveCompanyId = anySeller.id;
-    } else if (comp.approval_status !== 'approved') {
-      await admin.from('companies').update({ approval_status: 'approved' }).eq('id', companyId);
-    }
-
     const rowCondition = (body.condition || '').trim();
     let descBase = description?.trim() || null;
     if (rowCondition && (!descBase || !descBase.toLowerCase().includes('condition:'))) {
       descBase = descBase ? `${descBase} | Condition: ${rowCondition}` : `Condition: ${rowCondition}`;
     }
 
-    let safeBarcode = barcodeOrSku?.trim() && barcodeOrSku.trim() !== 'n/a' ? barcodeOrSku.trim() : null;
+    let safeBarcode =
+      barcodeOrSku?.trim() && barcodeOrSku.trim().toLowerCase() !== 'n/a'
+        ? barcodeOrSku.trim()
+        : `SKU-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
     if (!id && safeBarcode) {
       // Check if this seller already has a product with this exact barcode_or_sku
@@ -152,7 +195,6 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (existing) {
-        // Disambiguate duplicate barcode by condition to satisfy database unique_seller_barcode constraint
         const conditionTag = rowCondition ? rowCondition.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
         safeBarcode = `${safeBarcode}-${conditionTag || Date.now().toString().slice(-4)}`;
       }
@@ -174,7 +216,27 @@ export async function POST(req: NextRequest) {
     };
 
     if (id) {
-      // Update
+      // 1. Updating existing product -> Verify ownership
+      const { data: existingProduct, error: fetchErr } = await admin
+        .from('products')
+        .select('id, company_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr || !existingProduct) {
+        return NextResponse.json({ success: false, error: 'Product listing not found.' }, { status: 404 });
+      }
+
+      // Non-admin can only update products owned by their own company
+      if (!auth.isAdmin && existingProduct.company_id !== auth.company!.id) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You cannot modify products belonging to another company.' },
+          { status: 403 }
+        );
+      }
+
+      payload.company_id = existingProduct.company_id;
+
       const { data, error } = await admin
         .from('products')
         .update(payload)
@@ -184,7 +246,7 @@ export async function POST(req: NextRequest) {
 
       if (error) throw error;
 
-      // Trigger automatic matching with open WTB requests and send immediate emails
+      // Trigger automatic matching with open WTB requests
       try {
         void processMatchesForNewProduct({
           id: data.id,
@@ -203,7 +265,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, product: data });
     } else {
-      // Create
+      // 2. Creating new product
       payload.created_at = new Date().toISOString();
       const { data, error } = await admin
         .from('products')
@@ -213,7 +275,7 @@ export async function POST(req: NextRequest) {
 
       if (error) throw error;
 
-      // Trigger automatic matching with open WTB requests and send immediate emails
+      // Trigger automatic matching with open WTB requests
       try {
         void processMatchesForNewProduct({
           id: data.id,
@@ -241,59 +303,24 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    const idsParam = searchParams.get('ids');
-    const companyIdParam = searchParams.get('companyId');
+/**
+ * PATCH /api/products
+ * Updates status of products.
+ * SECURITY:
+ * 1. Requires authenticated user session via requireUser().
+ * 2. Non-admins can only update products belonging to their own company.
+ */
+export async function PATCH(req: NextRequest) {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
 
-    const admin = createAdminClient();
-
-    if (companyIdParam) {
-      const { error, count } = await admin.from('products').delete().eq('company_id', companyIdParam);
-      if (error) throw error;
-      return NextResponse.json({ success: true, count });
-    }
-
-    let idsToDelete: string[] = [];
-    if (idsParam) {
-      idsToDelete = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
-    } else if (id) {
-      idsToDelete = [id.trim()];
-    } else {
-      try {
-        const body = await req.json();
-        if (body?.companyId) {
-          const { error, count } = await admin.from('products').delete().eq('company_id', body.companyId);
-          if (error) throw error;
-          return NextResponse.json({ success: true, count });
-        }
-        if (Array.isArray(body?.ids)) {
-          idsToDelete = body.ids.map((s: any) => String(s).trim()).filter(Boolean);
-        } else if (body?.id) {
-          idsToDelete = [String(body.id).trim()];
-        }
-      } catch {}
-    }
-
-    if (!idsToDelete.length) {
-      return NextResponse.json({ success: false, error: 'Product ID or IDs required' }, { status: 400 });
-    }
-
-    const { error } = await admin.from('products').delete().in('id', idsToDelete);
-
-    if (error) throw error;
-    return NextResponse.json({ success: true, count: idsToDelete.length });
-  } catch (err) {
+  if (!auth.isAdmin && !auth.company) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Failed to delete product' },
-      { status: 500 }
+      { success: false, error: 'Forbidden: No registered company found for your user account.' },
+      { status: 403 }
     );
   }
-}
 
-export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const { ids, id, status = 'suspended' } = body || {};
@@ -310,6 +337,28 @@ export async function PATCH(req: NextRequest) {
     }
 
     const admin = createAdminClient();
+
+    // If non-admin: verify ALL target products belong to caller's company
+    if (!auth.isAdmin) {
+      const { data: targetProducts, error: checkErr } = await admin
+        .from('products')
+        .select('id, company_id')
+        .in('id', targetIds);
+
+      if (checkErr) throw checkErr;
+
+      const hasUnauthorizedProduct = (targetProducts || []).some(
+        (p) => p.company_id !== auth.company!.id
+      );
+
+      if (hasUnauthorizedProduct || (targetProducts || []).length !== targetIds.length) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You cannot modify products belonging to another company.' },
+          { status: 403 }
+        );
+      }
+    }
+
     const updatePayload: any = {
       status,
       updated_at: new Date().toISOString(),
@@ -318,16 +367,129 @@ export async function PATCH(req: NextRequest) {
       // Republished: reset active timer
       updatePayload.created_at = new Date().toISOString();
     }
-    const { error } = await admin
-      .from('products')
-      .update(updatePayload)
-      .in('id', targetIds);
 
+    let updateQuery = admin.from('products').update(updatePayload).in('id', targetIds);
+    if (!auth.isAdmin) {
+      updateQuery = updateQuery.eq('company_id', auth.company!.id);
+    }
+
+    const { error } = await updateQuery;
     if (error) throw error;
+
     return NextResponse.json({ success: true, count: targetIds.length });
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Failed to update products' },
+      { status: 500 }
+    );
+  }
+}
+
+export const PUT = POST;
+
+/**
+ * DELETE /api/products
+ * Deletes products by ID(s) or company ID.
+ * SECURITY:
+ * 1. Requires authenticated user session via requireUser().
+ * 2. Non-admins can only delete products belonging to their own company.
+ * 3. Bypassing company_id via query or payload is blocked.
+ */
+export async function DELETE(req: NextRequest) {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
+
+  if (!auth.isAdmin && !auth.company) {
+    return NextResponse.json(
+      { success: false, error: 'Forbidden: No registered company found for your user account.' },
+      { status: 403 }
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    const idsParam = searchParams.get('ids');
+    const companyIdParam = searchParams.get('companyId');
+
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch {}
+
+    const admin = createAdminClient();
+
+    // 1. Bulk delete by company ID
+    const targetCompanyId = companyIdParam || body?.companyId;
+    if (targetCompanyId) {
+      // Non-admins can NEVER target another company's products
+      if (!auth.isAdmin && targetCompanyId !== auth.company!.id) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You cannot delete products belonging to another company.' },
+          { status: 403 }
+        );
+      }
+
+      const effectiveCompId = auth.isAdmin ? targetCompanyId : auth.company!.id;
+      const { error, count } = await admin
+        .from('products')
+        .delete()
+        .eq('company_id', effectiveCompId);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true, count });
+    }
+
+    // 2. Delete by specific product ID(s)
+    let idsToDelete: string[] = [];
+    if (idsParam) {
+      idsToDelete = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
+    } else if (id) {
+      idsToDelete = [id.trim()];
+    } else if (Array.isArray(body?.ids)) {
+      idsToDelete = body.ids.map((s: any) => String(s).trim()).filter(Boolean);
+    } else if (body?.id) {
+      idsToDelete = [String(body.id).trim()];
+    }
+
+    if (!idsToDelete.length) {
+      return NextResponse.json({ success: false, error: 'Product ID or IDs required' }, { status: 400 });
+    }
+
+    // If non-admin: verify ALL target products belong to caller's company!
+    if (!auth.isAdmin) {
+      const { data: targetProducts, error: fetchErr } = await admin
+        .from('products')
+        .select('id, company_id')
+        .in('id', idsToDelete);
+
+      if (fetchErr) throw fetchErr;
+
+      // If any product belongs to another company or wasn't found, deny
+      const hasOtherCompanyProduct = (targetProducts || []).some(
+        (p) => p.company_id !== auth.company!.id
+      );
+
+      if (hasOtherCompanyProduct || (targetProducts || []).length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You cannot delete products belonging to another company.' },
+          { status: 403 }
+        );
+      }
+    }
+
+    let deleteQuery = admin.from('products').delete().in('id', idsToDelete);
+    if (!auth.isAdmin) {
+      deleteQuery = deleteQuery.eq('company_id', auth.company!.id);
+    }
+
+    const { error, count } = await deleteQuery;
+    if (error) throw error;
+
+    return NextResponse.json({ success: true, count: count ?? idsToDelete.length });
+  } catch (err) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : 'Failed to delete product' },
       { status: 500 }
     );
   }

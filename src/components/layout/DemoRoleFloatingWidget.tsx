@@ -59,7 +59,7 @@ export function DemoRoleFloatingWidget() {
   const handleSelectRole = (roleId: string) => {
     switchDemoRole(roleId as DemoRoleType);
     if (roleId === 'admin') {
-      router.push('/admin');
+      router.push('/site-admin');
     }
   };
 

@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { submitQuotation } from '@/lib/actions/quotations';
 import { useAuth } from '@/lib/auth/auth-context';
 import { dispatchWtbLeadToBuyerDashboard } from '@/lib/messaging/messaging-store';
 import type { WtbRequest } from '@/types/database';
-import { X, CheckCircle2, AlertCircle, Send, Clock, ShieldAlert, Mail } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Send, Clock, ShieldAlert, Mail, MessageSquare } from 'lucide-react';
 
 interface QuotationModalProps {
   wtbRequest: WtbRequest | null;
@@ -23,6 +24,7 @@ function QuotationDialogContent({
   onClose: () => void;
   onSuccess?: () => void;
 }) {
+  const router = useRouter();
   const { company } = useAuth();
   const [unitPrice, setUnitPrice] = useState<string>(wtbRequest.target_price ? String(wtbRequest.target_price) : '');
   const [quantityOffered, setQuantityOffered] = useState<number>(wtbRequest.target_quantity || 100);
@@ -31,6 +33,7 @@ function QuotationDialogContent({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [redirectConvId, setRedirectConvId] = useState<string | null>(null);
 
   const isPendingSeller = company?.approval_status === 'pending';
   const isBuyerOnly = company?.role === 'buyer';
@@ -100,7 +103,7 @@ function QuotationDialogContent({
         }
 
         // Dispatch official quotation and seller company info to Buyer Dashboard
-        dispatchWtbLeadToBuyerDashboard({
+        const conversation = dispatchWtbLeadToBuyerDashboard({
           wtbRequest,
           sellerCompany: company,
           actionType: 'quote_submitted',
@@ -113,8 +116,16 @@ function QuotationDialogContent({
           },
         });
 
+        const targetConvId = conversation?.id || `conv-wtb-${wtbRequest.id}-${company.id}`;
+        setRedirectConvId(targetConvId);
         setIsSuccess(true);
         if (onSuccess) onSuccess();
+
+        // Redirect directly to the chat conversation so the seller sees what they quoted and can continue messaging
+        setTimeout(() => {
+          onClose();
+          router.push(`/dashboard/inquiries?id=${targetConvId}`);
+        }, 1200);
       } else {
         setErrorMsg(res.error || 'Failed to submit quotation.');
       }
@@ -126,7 +137,7 @@ function QuotationDialogContent({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/40 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1F3A]/70">
       <div className="relative w-full max-w-xl bg-white rounded-[28px] shadow-[0_20px_50px_rgba(11,31,58,0.14)] border border-[#EAEFF6] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 sm:px-8 py-5 border-b border-[#EEF2F6] flex items-center justify-between shrink-0 bg-white">
@@ -197,14 +208,21 @@ function QuotationDialogContent({
               </div>
               <h4 className="text-[22px] font-extrabold text-[#0B1F3A]">Quotation Dispatched!</h4>
               <p className="text-[14px] text-[#5B6B82] max-w-md mx-auto leading-relaxed">
-                Your quote was submitted and the buyer (<strong className="text-[#0B1F3A]">{wtbRequest.buyer_name}</strong>) received an official notification email with your pricing and terms.
+                Your quote was submitted to <strong className="text-[#0B1F3A]">{wtbRequest.buyer_name}</strong>. Opening your live trade conversation thread...
               </p>
-              <button
-                onClick={onClose}
-                className="mt-4 px-8 min-h-[46px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[14px] font-bold shadow-xs transition cursor-pointer"
-              >
-                Close
-              </button>
+              <div className="pt-2 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    if (redirectConvId) router.push(`/dashboard/inquiries?id=${redirectConvId}`);
+                  }}
+                  className="px-6 min-h-[44px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[13px] font-bold shadow-xs transition cursor-pointer flex items-center gap-2"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Go to Conversation Now</span>
+                </button>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">

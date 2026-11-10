@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { MOCK_COMPANIES } from '@/lib/mock-data';
-import { getAdminAccounts } from '@/lib/admin/admin-store';
+import { isAccountDeleted } from '@/lib/admin/admin-store';
 import type { Company, UserRole, MembershipTier, ApprovalStatus } from '@/types/database';
 
 export type DemoRoleType = 'guest' | 'buyer' | 'seller' | 'seller_pending' | 'seller_approved' | 'admin';
@@ -35,97 +35,11 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [company, setCompany] = useState<Company | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('b2b_cached_company');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          try {
-            const accounts = getAdminAccounts();
-            const match = accounts.find((a) =>
-              (a.id && a.id === parsed.id) ||
-              (a.email && parsed.email && a.email.toLowerCase() === parsed.email.toLowerCase())
-            );
-            if (match && match.approval_status) {
-              parsed.approval_status = match.approval_status;
-            }
-          } catch {}
-          return parsed;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return null;
-  });
-
-  const [isLoading, setIsLoading] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('b2b_cached_company');
-        if (cached) return false;
-      } catch {
-        // ignore
-      }
-    }
-    return true;
-  });
-
-  const [demoRole, setDemoRole] = useState<DemoRoleType>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('b2b_cached_company');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          return (parsed.role as DemoRoleType) || 'guest';
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return 'guest';
-  });
-
-  const resolveVerifiedStatus = (userId?: string, email?: string, currentStatus?: string): ApprovalStatus => {
-    if (typeof window === 'undefined') return (currentStatus || 'pending') as ApprovalStatus;
-    try {
-      // 1. If this account was already marked verified in localStorage, preserve it permanently!
-      const userKey = userId ? `b2b_account_verified_${userId}` : null;
-      const emailKey = email ? `b2b_account_verified_${email.toLowerCase().trim()}` : null;
-      if (
-        (userKey && localStorage.getItem(userKey) === 'true') ||
-        (emailKey && localStorage.getItem(emailKey) === 'true')
-      ) {
-        return 'approved';
-      }
-
-      // 2. Check cached company in localStorage
-      const cached = localStorage.getItem('b2b_cached_company');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (
-          ((userId && parsed.id === userId) || (email && parsed.email?.toLowerCase().trim() === email.toLowerCase().trim())) &&
-          parsed.approval_status === 'approved'
-        ) {
-          return 'approved';
-        }
-      }
-
-      // 3. Check admin store
-      const accounts = getAdminAccounts();
-      const match = accounts.find((a) =>
-        (userId && a.id === userId) ||
-        (email && a.email && a.email.toLowerCase() === email.toLowerCase())
-      );
-      if (match && match.approval_status) {
-        return match.approval_status;
-      }
-    } catch {
-      // ignore
-    }
-    return (currentStatus || 'pending') as ApprovalStatus;
-  };
+  // Gate state: Start with null company and isLoading = true.
+  // We NEVER resolve gate state or render dashboard/modals until /api/auth/me returns to eliminate any flash.
+  const [company, setCompany] = useState<Company | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [demoRole, setDemoRole] = useState<DemoRoleType>('guest');
 
   const resolveEffectiveTier = (companyId?: string, email?: string, currentTier?: string): MembershipTier => {
     if (typeof window === 'undefined') return (currentTier || 'bronze') as MembershipTier;
@@ -133,14 +47,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const regTier = localStorage.getItem('b2b_registered_tier') as MembershipTier;
       if (regTier === 'gold') return 'gold';
       if (regTier === 'silver' && currentTier !== 'gold') return 'silver';
-
-      const accounts = getAdminAccounts();
-      const match = accounts.find((a) =>
-        (companyId && a.id === companyId) ||
-        (email && a.email && a.email.toLowerCase() === email.toLowerCase())
-      );
-      if (match?.membership_tier === 'gold') return 'gold';
-      if (match?.membership_tier === 'silver' && currentTier !== 'gold') return 'silver';
 
       if (companyId) {
         const saved = localStorage.getItem(`b2b_profile_override_${companyId}`);
@@ -190,6 +96,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return baseCompany;
   };
 
+  const signOut = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch {
+      // Ignored
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('b2b_demo_role');
+      localStorage.removeItem('b2b_seller_sidebar_collapsed');
+      localStorage.removeItem('b2b_cached_company');
+      localStorage.removeItem('b2b_live_inquiries_real_v3');
+      localStorage.removeItem('b2b_live_inquiries_real_v2');
+      localStorage.removeItem('b2b_live_inquiries_real_v1');
+      localStorage.removeItem('b2b_pending_signup_email');
+      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
+      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
+
+      // Clean up any user-specific quote or lead storage keys and legacy verification flags
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (
+            k &&
+            (k.startsWith('b2b_received_quotes_') ||
+              k.startsWith('b2b_unlocked_leads_') ||
+              k.startsWith('b2b_profile_override_') ||
+              k.startsWith('b2b_account_verified_') ||
+              k.startsWith('b2b_email_verified_'))
+          ) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch {
+        // ignore
+      }
+    }
+    setCompany(null);
+    setDemoRole('guest');
+  }, []);
+
   const loadSession = useCallback(async () => {
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
@@ -197,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // 1. Primary: fetch user session & company from secure server endpoint
+      // companies.approval_status in database is the single authoritative source of truth.
       const res = await fetch('/api/auth/me', {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
@@ -207,24 +157,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (typeof window !== 'undefined') {
             localStorage.removeItem('b2b_demo_role');
           }
-          let resolvedCompany = data.company;
-          // Check local verification & tier overrides
-          const verifiedStatus = resolveVerifiedStatus(resolvedCompany.id, resolvedCompany.email, resolvedCompany.approval_status);
-          const effectiveTier = resolveEffectiveTier(resolvedCompany.id, resolvedCompany.email, resolvedCompany.tier || resolvedCompany.membership_tier);
-          resolvedCompany = {
-            ...resolvedCompany,
-            tier: effectiveTier,
-            membership_tier: effectiveTier,
-            approval_status: verifiedStatus,
-          };
+          const resolvedCompany: Company = data.company;
+          if (isAccountDeleted(resolvedCompany.id, resolvedCompany.email)) {
+            await signOut();
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login?deleted=true';
+            }
+            return;
+          }
 
           setCompany(resolvedCompany);
           if (typeof window !== 'undefined') {
             localStorage.setItem('b2b_cached_company', JSON.stringify(resolvedCompany));
-            if (verifiedStatus === 'approved') {
-              if (resolvedCompany.id) localStorage.setItem(`b2b_account_verified_${resolvedCompany.id}`, 'true');
-              if (resolvedCompany.email) localStorage.setItem(`b2b_account_verified_${resolvedCompany.email.toLowerCase().trim()}`, 'true');
-            }
           }
           setDemoRole(resolvedCompany.role as DemoRoleType);
           setIsLoading(false);
@@ -237,13 +181,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        if (isAccountDeleted(user.id, user.email)) {
+          await signOut();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login?deleted=true';
+          }
+          return;
+        }
         if (typeof window !== 'undefined') {
           localStorage.removeItem('b2b_demo_role');
         }
         const meta = user.user_metadata || {};
-        const metaRole = (meta.role || 'seller') as UserRole;
-        const initialStatus = meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
-        const effectiveStatus = resolveVerifiedStatus(user.id, user.email, initialStatus);
+        const appMeta = user.app_metadata || {};
+        // SECURITY: Admin role is strictly derived from server app_metadata, never user_metadata.
+        const isAppAdmin = appMeta.role === 'admin' || appMeta.is_admin === true;
+        const metaRole = (isAppAdmin ? 'admin' : (meta.role === 'buyer' ? 'buyer' : 'seller')) as UserRole;
+        // User metadata is NOT used to make approval decision: defaults to pending until /api/auth/me verifies
+        const effectiveStatus: ApprovalStatus = metaRole === 'admin' ? 'approved' : 'pending';
         const effectiveTier = resolveEffectiveTier(user.id, user.email, meta.membership_tier || meta.tier);
 
         const normalized: Company = {
@@ -297,9 +251,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('b2b_demo_role');
     }
     const meta = user.user_metadata || {};
-    const metaRole = (meta.role || 'seller') as UserRole;
-    const initialStatus = meta.approval_status || (metaRole === 'admin' ? 'approved' : 'pending');
-    const effectiveStatus = resolveVerifiedStatus(user.id, user.email, initialStatus);
+    const appMeta = user.app_metadata || {};
+    // SECURITY: Admin role is strictly derived from server app_metadata, never user_metadata.
+    const isAppAdmin = appMeta.role === 'admin' || appMeta.is_admin === true;
+    const metaRole = (isAppAdmin ? 'admin' : (meta.role === 'buyer' ? 'buyer' : 'seller')) as UserRole;
+    // User metadata is NOT used to make approval decision: defaults to pending until /api/auth/me verifies
+    const effectiveStatus: ApprovalStatus = metaRole === 'admin' ? 'approved' : 'pending';
     const effectiveTier = resolveEffectiveTier(user.id, user.email, meta.membership_tier || meta.tier);
 
     const normalized: Company = {
@@ -323,14 +280,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCompany(normalized);
     if (typeof window !== 'undefined') {
       localStorage.setItem('b2b_cached_company', JSON.stringify(normalized));
-      if (effectiveStatus === 'approved') {
-        if (normalized.id) localStorage.setItem(`b2b_account_verified_${normalized.id}`, 'true');
-        if (normalized.email) localStorage.setItem(`b2b_account_verified_${normalized.email.toLowerCase().trim()}`, 'true');
-      }
     }
     setDemoRole(metaRole as DemoRoleType);
-    setIsLoading(false);
-  }, []);
+    // Immediately trigger server verification from /api/auth/me
+    void loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
     void loadSession();
@@ -380,6 +334,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadSession, setAuthenticatedUser]);
 
+  // Real-time account deletion guard: Immediately logs out a user if their account is purged by admin
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkDeleted = () => {
+      if (company && isAccountDeleted(company.id, company.email)) {
+        void signOut().then(() => {
+          window.location.href = '/login?deleted=true';
+        });
+      }
+    };
+
+    window.addEventListener('b2b_admin_update', checkDeleted);
+    window.addEventListener('storage', checkDeleted);
+    const interval = setInterval(checkDeleted, 3000);
+    return () => {
+      window.removeEventListener('b2b_admin_update', checkDeleted);
+      window.removeEventListener('storage', checkDeleted);
+      clearInterval(interval);
+    };
+  }, [company, signOut]);
+
+  // Presence heartbeat: tracks online status to suppress email notifications while user is active
+  useEffect(() => {
+    if (!company?.email) return;
+
+    const pingPresence = () => {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          navigator.sendBeacon(
+            '/api/presence',
+            new Blob([JSON.stringify({ email: company.email, userId: company.id })], {
+              type: 'application/json',
+            })
+          );
+        } else {
+          fetch('/api/presence', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: company.email, userId: company.id }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch {}
+    };
+
+    pingPresence();
+    const interval = setInterval(pingPresence, 45000);
+
+    const handleActivity = () => {
+      pingPresence();
+    };
+    window.addEventListener('focus', handleActivity, { passive: true });
+    window.addEventListener('click', handleActivity, { passive: true });
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleActivity);
+      window.removeEventListener('click', handleActivity);
+    };
+  }, [company?.email, company?.id]);
+
   const switchDemoRole = (newRole: DemoRoleType) => {
     setDemoRole(newRole);
     if (typeof window !== 'undefined') {
@@ -390,42 +406,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined' && comp) {
       localStorage.setItem('b2b_cached_company', JSON.stringify(comp));
     }
-  };
-
-  const signOut = async () => {
-    try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-    } catch {
-      // Ignored
-    }
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('b2b_demo_role');
-      localStorage.removeItem('b2b_seller_sidebar_collapsed');
-      localStorage.removeItem('b2b_cached_company');
-      localStorage.removeItem('b2b_live_inquiries_real_v3');
-      localStorage.removeItem('b2b_live_inquiries_real_v2');
-      localStorage.removeItem('b2b_live_inquiries_real_v1');
-      localStorage.removeItem('b2b_pending_verification_email');
-      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
-      sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
-
-      // Clean up any user-specific quote or lead storage keys
-      try {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('b2b_received_quotes_') || k.startsWith('b2b_unlocked_leads_') || k.startsWith('b2b_profile_override_'))) {
-            keysToRemove.push(k);
-          }
-        }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-      } catch {
-        // ignore
-      }
-    }
-    setCompany(null);
-    setDemoRole('guest');
   };
 
   const refreshProfile = async () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 const RESERVED_USERNAMES = new Set([
   'admin',
@@ -24,6 +25,9 @@ const RESERVED_USERNAMES = new Set([
 ]);
 
 export async function GET(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'check-username');
+  if (rateLimitRes) return rateLimitRes;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const rawUsername = searchParams.get('username') || '';

@@ -2,24 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { sendPasswordResetOtpEmail } from '@/lib/email/dispatcher';
-
-// In-memory OTP storage for password resets (15 minute validity)
-interface StoredOtp {
-  code: string;
-  expiresAt: number;
-}
-
-// Global declaration to maintain OTP cache across Next.js API reloads
-declare global {
-  // eslint-disable-next-line no-var
-  var __b2b_password_reset_otps: Map<string, StoredOtp> | undefined;
-}
-
-const otpStore: Map<string, StoredOtp> =
-  global.__b2b_password_reset_otps || new Map<string, StoredOtp>();
-global.__b2b_password_reset_otps = otpStore;
+import { saveHashedOtp, verifyHashedOtp, consumeHashedOtp } from '@/lib/auth/otp-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  const rateLimitRes = await enforceRateLimit(request, 'reset-password');
+  if (rateLimitRes) return rateLimitRes;
   try {
     const body = await request.json();
     const action = body.action || (body.oldPassword ? 'reset_with_old_password' : 'verify_code_and_reset');
@@ -40,12 +28,9 @@ export async function POST(request: NextRequest) {
     if (action === 'send_code') {
       // 1. Generate 6-digit numeric OTP code
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
-
-      otpStore.set(rawEmail, {
-        code: otpCode,
-        expiresAt,
-      });
+      
+      // Store hashed OTP in Redis/database with 15-min expiry and max 5 attempts
+      await saveHashedOtp('recovery', rawEmail, otpCode);
 
       // 2. Fetch contact name if exists
       let contactName: string | undefined;
@@ -74,10 +59,10 @@ export async function POST(request: NextRequest) {
         console.warn('[RESET PASSWORD OTP DISPATCH NOTICE]', emailResult.error);
       }
 
+      // CRITICAL SECURITY MANDATE: Password reset response is identical whether or not email exists
       return NextResponse.json({
         success: true,
-        message: `We've sent a 6-digit verification code to ${rawEmail}. Please check your inbox.`,
-        // In local development sandbox return devOtp for seamless testing if needed
+        message: `If an account exists with this email, a 6-digit verification code has been dispatched to your inbox.`,
         ...(process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_OTP === 'true' ? { devOtp: otpCode } : {}),
       });
     }
@@ -103,26 +88,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Check stored OTP
-      const stored = otpStore.get(rawEmail);
-      if (!stored) {
+      // Validate hashed OTP (enforces 15-min expiry, single-use, max 5 attempts, missing code check)
+      const otpValidation = await verifyHashedOtp('recovery', rawEmail, code);
+      if (!otpValidation.valid) {
         return NextResponse.json(
-          { error: 'No verification code was requested for this email, or it has expired. Please request a new code.' },
-          { status: 400 }
-        );
-      }
-
-      if (Date.now() > stored.expiresAt) {
-        otpStore.delete(rawEmail);
-        return NextResponse.json(
-          { error: 'Verification code has expired. Please click "Send code" again.' },
-          { status: 400 }
-        );
-      }
-
-      if (stored.code !== code) {
-        return NextResponse.json(
-          { error: 'Invalid verification code. Please check your email and enter the 6 digits carefully.' },
+          { error: otpValidation.error || 'Verification code has expired or is invalid.' },
           { status: 400 }
         );
       }
@@ -173,7 +143,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Invalidate OTP after successful reset
-      otpStore.delete(rawEmail);
+      await consumeHashedOtp('recovery', rawEmail);
 
       return NextResponse.json({
         success: true,
