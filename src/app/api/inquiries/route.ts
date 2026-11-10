@@ -310,7 +310,7 @@ export async function GET(req: NextRequest) {
 
       // Determine user account registration time to prevent showing past broadcasts
       const companyCreatedAt = auth.company?.created_at;
-      let accountCreatedTime = companyCreatedAt ? new Date(companyCreatedAt).getTime() : 0;
+      const accountCreatedTime = companyCreatedAt ? new Date(companyCreatedAt).getTime() : 0;
 
       conversations = conversations.filter((c) => {
         // 1. Broadcasts - strictly respect member package tiers and account creation date
@@ -675,24 +675,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Member ID and message text required' }, { status: 400 });
       }
 
-      // 1. Resiliently locate or reconcile company record
+      // 1. Resiliently locate company record by id or user_id
       let sellerComp: any = null;
       const { data: compById } = await supabase
         .from('companies')
         .select('id, user_id, company_name, contact_name, contact_email')
-        .or(`id.eq.${sellerCompanyId},user_id.eq.${sellerCompanyId}`)
+        .eq('id', sellerCompanyId)
         .maybeSingle();
       sellerComp = compById;
 
-      const cleanTargetEmail = (sellerEmail || (sellerCompanyId.includes('@') ? sellerCompanyId : '')).toLowerCase().trim();
-      if (!sellerComp && cleanTargetEmail) {
-        const { data: compByEmail } = await supabase
+      if (!sellerComp) {
+        const { data: compByUserId } = await supabase
           .from('companies')
           .select('id, user_id, company_name, contact_name, contact_email')
-          .ilike('contact_email', cleanTargetEmail)
+          .eq('user_id', sellerCompanyId)
           .maybeSingle();
-        sellerComp = compByEmail;
+        sellerComp = compByUserId;
       }
+
+      const cleanTargetEmail = (sellerEmail || (sellerCompanyId.includes('@') ? sellerCompanyId : '')).toLowerCase().trim();
 
       if (!sellerComp) {
         try {
@@ -913,8 +914,9 @@ export async function POST(req: NextRequest) {
       let row = initialRow;
 
       if (!row && typeof resolvedThreadId === 'string' && resolvedThreadId.startsWith('admin-desk-')) {
-        const targetSellerCompId = resolvedThreadId.replace('admin-desk-', '');
-        const { data: fallbackRow } = await supabase
+        const targetIdentifier = resolvedThreadId.replace('admin-desk-', '').trim();
+        const isEmail = targetIdentifier.includes('@');
+        let fallbackQuery = supabase
           .from('product_inquiries')
           .select(`
             id,
@@ -930,8 +932,15 @@ export async function POST(req: NextRequest) {
             products:products(id, title, unit_price, moq, image_urls),
             seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
           `)
-          .eq('status', 'admin_desk')
-          .or(`seller_company_id.eq.${targetSellerCompId},buyer_email.ilike.${targetSellerCompId}`)
+          .eq('status', 'admin_desk');
+
+        if (isEmail) {
+          fallbackQuery = fallbackQuery.ilike('buyer_email', targetIdentifier);
+        } else {
+          fallbackQuery = fallbackQuery.eq('seller_company_id', targetIdentifier);
+        }
+
+        const { data: fallbackRow } = await fallbackQuery
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();

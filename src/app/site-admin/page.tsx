@@ -5,14 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import {
-  getAdminAccounts,
-  saveAdminAccounts,
-  getAdminPayments,
-  saveAdminPayments,
-  getAdminListings,
-  getCustomerQueries,
   broadcastMessageToAllSellers,
-  isAccountDeleted,
   type AdminClientAccount,
   type AdminPaymentRecord,
   type CustomerQuery,
@@ -58,10 +51,11 @@ export default function SiteAdminOverviewPage() {
 
     try {
       // Parallel fetch to avoid connection waterfall
-      const [accRes, payRes, qRes] = await Promise.allSettled([
+      const [accRes, payRes, qRes, prodRes] = await Promise.allSettled([
         fetch('/api/admin/accounts', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
         fetch('/api/admin/payments', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
         fetch('/api/admin/queries', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        fetch('/api/products?all=true', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
       ]);
 
       let hasError = false;
@@ -72,12 +66,10 @@ export default function SiteAdminOverviewPage() {
           if (Array.isArray(data.accounts)) {
             const clean = data.accounts.filter(
               (a: AdminClientAccount) =>
-                !isAccountDeleted(a.id, a.email) &&
                 a.role !== 'admin' &&
                 a.email?.toLowerCase() !== 'admin@b2blink.eu'
             );
             setAccounts(clean);
-            saveAdminAccounts(clean);
           }
         } catch {
           hasError = true;
@@ -86,14 +78,22 @@ export default function SiteAdminOverviewPage() {
         hasError = true;
       }
 
-      setListingsCount(getAdminListings().length);
+      if (prodRes.status === 'fulfilled' && prodRes.value.ok) {
+        try {
+          const prodData = await prodRes.value.json();
+          if (Array.isArray(prodData.products)) {
+            setListingsCount(prodData.products.length);
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       if (payRes.status === 'fulfilled' && payRes.value.ok) {
         try {
           const pData = await payRes.value.json();
           if (Array.isArray(pData.payments)) {
             setPayments(pData.payments);
-            saveAdminPayments(pData.payments);
           }
         } catch {
           hasError = true;
@@ -107,11 +107,6 @@ export default function SiteAdminOverviewPage() {
           const qData = await qRes.value.json();
           if (Array.isArray(qData.queries)) {
             setQueries(qData.queries);
-            try {
-              localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(qData.queries));
-            } catch {
-              // ignore
-            }
           }
         } catch {
           hasError = true;

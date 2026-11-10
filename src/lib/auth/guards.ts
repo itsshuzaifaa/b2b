@@ -6,10 +6,12 @@ import type { Company } from '@/types/database';
 
 export class AuthError extends Error {
   status: 401 | 403;
-  constructor(status: 401 | 403, message: string) {
+  code?: string;
+  constructor(status: 401 | 403, message: string, code?: string) {
     super(message);
     this.name = 'AuthError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -125,7 +127,7 @@ export async function requireUser(): Promise<AuthResult> {
     };
   } catch (err) {
     // Rethrow Next.js internal signals (redirects, prerender bailout, connection errors)
-    if (typeof (err as any)?.digest === 'string') {
+    if (typeof (err as { digest?: unknown })?.digest === 'string') {
       throw err;
     }
     console.error('[AUTH GUARD EXCEPTION requireUser]', err);
@@ -249,8 +251,7 @@ export async function assertApprovedUser(): Promise<{ user: User; company: Compa
         if (body?.code) code = body.code;
       } catch {}
     }
-    const err = new AuthError(status, message);
-    (err as any).code = code;
+    const err = new AuthError(status, message, code);
     throw err;
   }
   return { user: res.user, company: res.company, isAdmin: res.isAdmin };

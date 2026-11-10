@@ -18,7 +18,7 @@ envContent.split('\n').forEach((line) => {
 });
 
 const admin = createAdminClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-const BASE_URL = 'http://localhost:6978';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 async function createCookieSession(email, password) {
   const cookieJar = {};

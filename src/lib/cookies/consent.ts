@@ -39,18 +39,21 @@ function setCookie(name: string, value: string, days = 365) {
  * Updates Google Consent Mode (gtag) if Google Analytics / Tag Manager is present
  */
 function syncWithGtag(consent: { functional: boolean; analytics: boolean; marketing: boolean }) {
-  if (typeof window !== 'undefined' && typeof (window as any).gtag === 'function') {
-    try {
-      (window as any).gtag('consent', 'update', {
-        analytics_storage: consent.analytics ? 'granted' : 'denied',
-        ad_storage: consent.marketing ? 'granted' : 'denied',
-        ad_user_data: consent.marketing ? 'granted' : 'denied',
-        ad_personalization: consent.marketing ? 'granted' : 'denied',
-        functionality_storage: consent.functional ? 'granted' : 'denied',
-        personalization_storage: consent.functional ? 'granted' : 'denied',
-      });
-    } catch {
-      // ignore
+  if (typeof window !== 'undefined') {
+    const win = window as unknown as { gtag?: (...args: unknown[]) => void };
+    if (typeof win.gtag === 'function') {
+      try {
+        win.gtag('consent', 'update', {
+          analytics_storage: consent.analytics ? 'granted' : 'denied',
+          ad_storage: consent.marketing ? 'granted' : 'denied',
+          ad_user_data: consent.marketing ? 'granted' : 'denied',
+          ad_personalization: consent.marketing ? 'granted' : 'denied',
+          functionality_storage: consent.functional ? 'granted' : 'denied',
+          personalization_storage: consent.functional ? 'granted' : 'denied',
+        });
+      } catch {
+        // ignore
+      }
     }
   }
 }

@@ -292,11 +292,23 @@ export async function getPublicWtbRequests(): Promise<WtbRequest[]> {
  * Requires approved user session.
  * Caller MUST be the verified owner of the WTB request, or an administrator.
  */
-export async function deleteWtbRequest(wtbId: string): Promise<{ success: boolean; error?: string }> {
+export async function deleteWtbRequest(wtbId: string): Promise<{ success: boolean; error?: string; code?: string }> {
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
-    const status = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const status = auth.errorResponse?.status || 401;
+    let code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    let errorMsg = status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.';
+    try {
+      const cloned = auth.errorResponse?.clone();
+      const errJson = await cloned?.json();
+      if (errJson?.code) code = errJson.code;
+      if (errJson?.error) errorMsg = errJson.error;
+    } catch {}
+    return {
+      success: false,
+      error: errorMsg,
+      code,
+    };
   }
 
   const admin = createAdminClient();

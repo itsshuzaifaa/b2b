@@ -74,11 +74,11 @@ export default function SiteAdminUsersPage() {
   const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [activeMenuAccount, setActiveMenuAccount] = useState<AdminClientAccount | null>(null);
-  const [menuCoords, setMenuCoords] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const [menuCoords, setMenuCoords] = useState<{ top?: number; bottom?: number; right: number; maxHeight?: number } | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'delete'>('success');
 
-  // Auto-close floating dropdown on scroll or window resize
+  // Auto-close floating dropdown on scroll or window resize (capture: true ensures inner <main> scrolls trigger closure)
   useEffect(() => {
     if (!activeMenuAccount) return;
     const closeMenu = () => {
@@ -86,10 +86,10 @@ export default function SiteAdminUsersPage() {
       setMenuCoords(null);
       setOpenMenuId(null);
     };
-    window.addEventListener('scroll', closeMenu, { passive: true });
+    window.addEventListener('scroll', closeMenu, { capture: true, passive: true });
     window.addEventListener('resize', closeMenu, { passive: true });
     return () => {
-      window.removeEventListener('scroll', closeMenu);
+      window.removeEventListener('scroll', closeMenu, { capture: true });
       window.removeEventListener('resize', closeMenu);
     };
   }, [activeMenuAccount]);
@@ -104,21 +104,25 @@ export default function SiteAdminUsersPage() {
     }
 
     const rect = e.currentTarget.getBoundingClientRect();
-    const dropdownHeight = 290;
+    const dropdownHeight = 280;
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
     const right = Math.max(16, window.innerWidth - rect.right);
 
-    // Only position upward if space below is insufficient AND there is enough room above
-    if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
+    // If space below is sufficient (or greater than space above), open downwards.
+    // Otherwise open upwards. Max-height is strictly clamped to the available space
+    // so it can NEVER get cut off or push offscreen regardless of zoom or viewport height.
+    if (spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove) {
       setMenuCoords({
-        bottom: window.innerHeight - rect.top + 6,
+        top: Math.max(8, rect.bottom + 6),
         right,
+        maxHeight: Math.min(320, Math.max(120, spaceBelow - 16)),
       });
     } else {
       setMenuCoords({
-        top: rect.bottom + 6,
+        bottom: Math.max(8, window.innerHeight - rect.top + 6),
         right,
+        maxHeight: Math.min(320, Math.max(120, spaceAbove - 16)),
       });
     }
 
@@ -350,16 +354,6 @@ export default function SiteAdminUsersPage() {
       await fetch(`/api/products?companyId=${encodeURIComponent(acc.id)}`, {
         method: 'DELETE',
       });
-      // Also update local storage if any
-      const rawUser = localStorage.getItem('b2b_seller_listings_v3');
-      if (rawUser) {
-        try {
-          const parsed = JSON.parse(rawUser);
-          if (Array.isArray(parsed)) {
-            localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => p.company_id !== acc.id)));
-          }
-        } catch {}
-      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('b2b_admin_update'));
       }
@@ -788,10 +782,23 @@ export default function SiteAdminUsersPage() {
                             <span>Suspended</span>
                           </span>
                         ) : acc.approval_status === 'pending' ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
-                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Pending KYC</span>
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Pending KYC</span>
+                            </span>
+                            {acc.membership_tier && acc.membership_tier !== 'bronze' && (
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${
+                                  acc.membership_tier === 'gold'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                    : 'bg-slate-100 text-slate-800 border-slate-300'
+                                }`}
+                              >
+                                {acc.membership_tier} Paid
+                              </span>
+                            )}
+                          </div>
                         ) : acc.approval_status === 'rejected' ? (
                           <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[11px] font-bold px-2.5 py-1 rounded-full border border-rose-200">
                             <X className="w-3 h-3 text-rose-600" />
@@ -953,11 +960,12 @@ export default function SiteAdminUsersPage() {
             }}
           />
           <div
-            className="fixed z-[9999] w-56 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-1.5 animate-in fade-in zoom-in-95 text-left pointer-events-auto"
+            className="fixed z-[9999] w-56 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-1.5 animate-in fade-in zoom-in-95 text-left pointer-events-auto overflow-y-auto [scrollbar-width:thin]"
             style={{
               top: menuCoords.top !== undefined ? `${menuCoords.top}px` : undefined,
               bottom: menuCoords.bottom !== undefined ? `${menuCoords.bottom}px` : undefined,
               right: `${menuCoords.right}px`,
+              maxHeight: menuCoords.maxHeight !== undefined ? `${menuCoords.maxHeight}px` : undefined,
             }}
             onClick={(e) => e.stopPropagation()}
           >

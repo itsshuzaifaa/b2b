@@ -31,9 +31,7 @@ interface PendingMessageNotification {
 
 // Global singletons to survive Fast Refresh in Next.js development
 declare global {
-  // eslint-disable-next-line no-var
   var __b2b_presence_map: Map<string, UserPresenceRecord> | undefined;
-  // eslint-disable-next-line no-var
   var __b2b_pending_msg_notifications: Map<string, PendingMessageNotification> | undefined;
 }
 
@@ -124,7 +122,6 @@ export function enqueueMessageNotification(params: DispatchMessageNotificationPa
     (recipientUserId ? isUserOnline(recipientUserId) : false);
 
   if (isOnline) {
-    console.log(`[MESSAGE NOTIFICATION SUPPRESSED] Recipient ${cleanRecipientEmail} is currently ONLINE in-app.`);
     return { status: 'suppressed_online' };
   }
 
@@ -138,7 +135,6 @@ export function enqueueMessageNotification(params: DispatchMessageNotificationPa
     if (pending.lastEmailSentAt && now - pending.lastEmailSentAt < EMAIL_COOLDOWN_MS) {
       pending.messageCount += 1;
       pending.lastMessageAt = now;
-      console.log(`[MESSAGE NOTIFICATION COOLDOWN] Notification already sent recently to ${cleanRecipientEmail}. Bundling unread count (${pending.messageCount}).`);
       return { status: 'cooldown_active' };
     }
 
@@ -175,12 +171,9 @@ export function enqueueMessageNotification(params: DispatchMessageNotificationPa
 
       // Double-check presence before actual dispatch in case user just came online
       if (isUserOnline(current.recipientEmail)) {
-        console.log(`[MESSAGE NOTIFICATION CANCELLED] Recipient ${current.recipientEmail} came online during bundle window.`);
         pendingNotifications.delete(bundleKey);
         return;
       }
-
-      console.log(`[MESSAGE NOTIFICATION DISPATCHING] Sending bundled email to ${current.recipientEmail} (${current.messageCount} new messages from ${current.senderCompany || current.senderName}).`);
 
       await sendNewInAppMessageEmail({
         toEmail: current.recipientEmail,

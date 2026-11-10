@@ -39,30 +39,17 @@ export async function POST(request: NextRequest) {
 
     // 2. Locate user and confirm email in Supabase
     const admin = createAdminClient();
-    let confirmedUserId: string | null = null;
+    let confirmedUserId: string | null = validation.userId || null;
 
     try {
-      // Find user: check companies first (takes ~15ms)
-      const { data: company } = await admin
-        .from('companies')
-        .select('user_id')
-        .eq('contact_email', rawEmail)
-        .maybeSingle();
-
-      if (company?.user_id) {
-        confirmedUserId = company.user_id;
-      } else {
-        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
-          setTimeout(() => resolve({ data: null }), 2000)
-        );
-        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
-        const raceResult = await Promise.race([listPromise, timeoutPromise]);
-        const usersData = (raceResult as any)?.data?.users || [];
-        const targetUser = usersData.find(
-          (u: any) => u.email?.toLowerCase() === rawEmail
-        );
-        if (targetUser) {
-          confirmedUserId = targetUser.id;
+      if (!confirmedUserId) {
+        // Fallback: resolve user ID directly by email using generateLink without listUsers() pagination limits
+        const { data: linkData } = await admin.auth.admin.generateLink({
+          type: 'magiclink',
+          email: rawEmail,
+        });
+        if (linkData?.user?.id) {
+          confirmedUserId = linkData.user.id;
         }
       }
 

@@ -36,7 +36,8 @@ async function run() {
   console.log('Admin login error:', aErr?.message || 'NONE (Success)');
   const adminCookieHeader = Object.entries(adminJar).map(([k, v]) => `${k}=${v}`).join('; ');
 
-  const resAdmin = await fetch('http://localhost:6978/site-admin', {
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  const resAdmin = await fetch(`${BASE_URL}/site-admin`, {
     headers: { Cookie: adminCookieHeader },
     redirect: 'manual',
   });
@@ -77,7 +78,7 @@ async function run() {
   console.log('Regular user login error:', uErr?.message || 'NONE (Success)');
   const userCookieHeader = Object.entries(userJar).map(([k, v]) => `${k}=${v}`).join('; ');
 
-  const resUser = await fetch('http://localhost:6978/site-admin', {
+  const resUser = await fetch(`${BASE_URL}/site-admin`, {
     headers: { Cookie: userCookieHeader },
     redirect: 'manual',
   });
@@ -89,7 +90,7 @@ async function run() {
   await admin.auth.admin.deleteUser(existing.id);
 
   console.log('\n--- TEST 3: UNLOGGED VISITOR ACCESS TO /site-admin ---');
-  const resGuest = await fetch('http://localhost:6978/site-admin', {
+  const resGuest = await fetch(`${BASE_URL}/site-admin`, {
     redirect: 'manual',
   });
   console.log('HTTP Status for Logged-Out Visitor:', resGuest.status);

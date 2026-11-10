@@ -69,6 +69,26 @@ export function UpgradeMembershipModal({
 
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [prorateQuote, setProrateQuote] = useState<{ proratedCharge: number; daysRemaining: number } | null>(null);
+
+  // Fetch prorated quote when upgrading from Silver to Gold
+  useEffect(() => {
+    if (step === 'confirm_payment' && currentTier === 'silver' && selectedTier === 'gold') {
+      fetch('/api/billing/subscription/upgrade')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.quote) {
+            setProrateQuote({
+              proratedCharge: data.quote.proratedCharge,
+              daysRemaining: data.quote.daysRemaining,
+            });
+          }
+        })
+        .catch(() => {});
+    } else {
+      setProrateQuote(null);
+    }
+  }, [step, currentTier, selectedTier]);
 
   // Load saved payment cards
   useEffect(() => {
@@ -173,51 +193,48 @@ export function UpgradeMembershipModal({
     }
 
     try {
-      // 2. Change plan in local billing store and record payment
-      const res = changePlan(company.id, selectedTier, company.name, company.email);
-      if (!res.success) {
-        setStatusMsg({ type: 'error', text: res.error || 'Failed to update plan.' });
+      // 2. Execute server-side subscription activation / prorated upgrade
+      const rawCard = selectedCardId === 'new' ? newCardNumber.replace(/\s+/g, '') : '4242424242424242';
+      const apiRes = await fetch('/api/billing/activate-tier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardNumber: rawCard,
+          tier: selectedTier,
+          cardLast4,
+        }),
+      });
+
+      const apiData = await apiRes.json().catch(() => ({}));
+
+      if (!apiRes.ok || !apiData.success) {
+        setStatusMsg({
+          type: 'error',
+          text: apiData.error || 'Failed to process membership upgrade.',
+        });
         setIsUpgrading(false);
         return;
       }
 
-      // 3. Update company profile and sync with backend Supabase Auth & Companies table
-      await updateProfile({
-        tier: selectedTier,
-        membership_tier: selectedTier,
-      });
+      // 3. Keep local client-side billing store in sync for legacy widgets
+      changePlan(company.id, selectedTier, company.name, company.email);
 
-      // 4. Trigger /api/billing/activate-tier to sync and send official upgrade email
-      if (company.email) {
-        try {
-          await fetch('/api/billing/activate-tier', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              companyId: company.id,
-              email: company.email,
-              tier: selectedTier,
-              companyName: company.name || company.company_name,
-              contactName: company.contact_name,
-              cardLast4,
-            }),
-          });
-        } catch (apiErr) {
-          console.warn('[UPGRADE API SYNC NOTICE]', apiErr);
-        }
-      }
+      // 4. Update auth context profile
+      await refreshProfile();
+
+      const chargedMsg = apiData.chargeAmount
+        ? `Charged €${Number(apiData.chargeAmount).toFixed(2)}.`
+        : '';
 
       setStatusMsg({
         type: 'success',
-        text: `Successfully upgraded to ${selectedTier.toUpperCase()} VIP Tier! Perks are active and receipt sent to ${company.email || 'your email'}.`,
+        text: `Successfully upgraded to ${selectedTier.toUpperCase()} VIP Tier! ${chargedMsg} Perks are active.`,
       });
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('b2b_billing_update'));
         window.dispatchEvent(new CustomEvent('b2b_admin_update'));
       }
-
-      await refreshProfile();
 
       setTimeout(() => {
         onClose();
@@ -478,14 +495,20 @@ export function UpgradeMembershipModal({
                   {planPricing.name}
                 </div>
                 <div className="text-xs text-[#5B6B82]">
-                  {selectedTier === 'gold' ? 'Unlimited broadcasts & unlocks' : '20 unlocks & 50 listings'}
+                  {prorateQuote
+                    ? `Prorated for ${prorateQuote.daysRemaining} days remaining in current cycle`
+                    : selectedTier === 'gold'
+                    ? 'Unlimited broadcasts & unlocks'
+                    : '20 unlocks & 50 listings'}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-2xl font-black text-[#0B1F3A]">
-                  €{planPricing.price}
+                  €{prorateQuote ? prorateQuote.proratedCharge.toFixed(2) : planPricing.price}
                 </div>
-                <div className="text-[11px] text-[#5B6B82] font-medium">per month</div>
+                <div className="text-[11px] text-[#5B6B82] font-medium">
+                  {prorateQuote ? 'prorated today' : 'per month'}
+                </div>
               </div>
             </div>
 
@@ -655,7 +678,10 @@ export function UpgradeMembershipModal({
             <div className="border-t border-[#EAEFF6] pt-4">
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-[#5B6B82]">Due Today:</span>
-                <span className="font-extrabold text-[#0B1F3A]">€{planPricing.price}.00 EUR</span>
+                <span className="font-extrabold text-[#0B1F3A]">
+                  €{prorateQuote ? prorateQuote.proratedCharge.toFixed(2) : `${planPricing.price}.00`} EUR
+                  {prorateQuote && <span className="text-xs text-[#0A6CFF] font-semibold ml-1.5">(Prorated)</span>}
+                </span>
               </div>
               <div className="flex items-center justify-between text-[11px] text-[#8A9BB0] mb-4">
                 <span>VAT Reverse Charge:</span>
@@ -675,7 +701,9 @@ export function UpgradeMembershipModal({
                 ) : (
                   <>
                     <Lock className="w-4 h-4" />
-                    <span>Pay €{planPricing.price}.00 & Upgrade to {selectedTier.toUpperCase()}</span>
+                    <span>
+                      Pay €{prorateQuote ? prorateQuote.proratedCharge.toFixed(2) : `${planPricing.price}.00`} & Upgrade to {selectedTier.toUpperCase()}
+                    </span>
                   </>
                 )}
               </button>

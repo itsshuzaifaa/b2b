@@ -347,7 +347,7 @@ export function PrivacyDocument() {
         </h2>
         <p className="text-[14.5px] text-[#475569] leading-relaxed pl-9">
           B2B LINK uses cookies and similar technologies for purposes including security, authentication, preferences, analytics and website functionality. Further information is available in the{' '}
-          <Link href="/cookies" className="text-[#0A6CFF] font-bold hover:underline" target="_blank" rel="noopener noreferrer">
+          <Link href="/cookie-policy" className="text-[#0A6CFF] font-bold hover:underline" target="_blank" rel="noopener noreferrer">
             B2B LINK Cookie Policy
           </Link>.
         </p>

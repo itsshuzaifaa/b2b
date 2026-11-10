@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       .from('products')
       .select(`
         *,
-        company:companies(id, company_name, name, contact_name, country, role, tier, membership_tier, approval_status, niches, categories, created_at),
+        company:companies(id, company_name, tier, niches, created_at),
         category:categories(id, name, slug)
       `)
       .neq('id', '00000000-0000-4000-a000-000000000001') // exclude system anchor product
@@ -67,13 +67,10 @@ export async function GET(req: NextRequest) {
       company: row.company
         ? {
             id: row.company.id,
-            name: row.company.company_name || row.company.name || 'Verified Supplier',
-            contact_name: row.company.contact_name || 'Sales Representative',
-            email: row.company.contact_email || row.company.email || '',
-            role: row.company.role || 'seller',
-            membership_tier: row.company.tier || row.company.membership_tier || 'gold',
-            approval_status: row.company.approval_status || 'approved',
-            categories: row.company.niches || row.company.categories || [],
+            name: row.company.company_name || 'Verified Supplier',
+            role: 'seller' as const,
+            membership_tier: row.company.tier || 'bronze',
+            categories: row.company.niches || [],
             created_at: row.company.created_at,
           }
         : undefined,
@@ -111,7 +108,7 @@ async function getCategoriesCached(admin: any) {
  * POST /api/products
  * Creates or updates a product.
  * SECURITY:
- * 1. Requires authenticated user session via requireUser().
+ * 1. Requires authenticated user session via requireApprovedUser().
  * 2. Non-admins can only create/update products for their own verified company.
  * 3. Admins can create/update products on behalf of any company.
  */
@@ -307,7 +304,7 @@ export async function POST(req: NextRequest) {
  * PATCH /api/products
  * Updates status of products.
  * SECURITY:
- * 1. Requires authenticated user session via requireUser().
+ * 1. Requires authenticated user session via requireApprovedUser().
  * 2. Non-admins can only update products belonging to their own company.
  */
 export async function PATCH(req: NextRequest) {
@@ -385,13 +382,23 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-export const PUT = POST;
+/**
+ * PUT /api/products
+ * Updates an existing product.
+ * SECURITY:
+ * Requires verified, approved user session via requireApprovedUser().
+ */
+export async function PUT(req: NextRequest) {
+  const auth = await requireApprovedUser();
+  if (auth.errorResponse) return auth.errorResponse;
+  return POST(req);
+}
 
 /**
  * DELETE /api/products
  * Deletes products by ID(s) or company ID.
  * SECURITY:
- * 1. Requires authenticated user session via requireUser().
+ * 1. Requires authenticated user session via requireApprovedUser().
  * 2. Non-admins can only delete products belonging to their own company.
  * 3. Bypassing company_id via query or payload is blocked.
  */

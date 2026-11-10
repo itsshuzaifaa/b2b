@@ -157,6 +157,22 @@ export interface EmailChangeActivationNewEmailProps {
   actionUrl: string;
 }
 
+export interface AccountDeletedConfirmationEmailProps {
+  contactName?: string;
+  companyName?: string;
+  actionUrl?: string;
+}
+
+function escapeHtml(str: string | null | undefined): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function emailWrapper(title: string, badge: string, content: string, ctaUrl: string, ctaText: string): string {
   const logoUrl = 'https://qmosgopkjqrqogsdgwuy.supabase.co/storage/v1/object/public/public-assets/b2b-link-logo-tight.png';
 
@@ -1768,6 +1784,61 @@ export function emailChangeActivationNewEmail(
     ),
   };
 }
+
+export function accountDeletedConfirmationEmail(
+  props: AccountDeletedConfirmationEmailProps
+): { subject: string; html: string } {
+  const subject = 'Your B2B LINK account has been permanently deleted';
+  const safeContact = escapeHtml(props.contactName || 'Member');
+  const safeCompany = escapeHtml(props.companyName || 'your organization');
+  const safeActionUrl = escapeHtml(props.actionUrl || 'https://b2blink.eu');
+
+  const content = `
+    <h1 style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 0 0 16px 0; letter-spacing: -0.02em;">
+      Account Deletion Confirmed
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Dear ${safeContact},
+    </p>
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      As requested, your B2B LINK account and company profile associated with <strong>${safeCompany}</strong> have been permanently deleted from our wholesale platform.
+    </p>
+
+    <div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 14px; padding: 18px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #991B1B; margin-bottom: 8px;">
+        CONFIRMATION OF PERMANENT REMOVAL
+      </div>
+      <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #7F1D1D;">
+        <li>All active and draft inventory listings have been deleted.</li>
+        <li>All WTB requests and quotations have been deleted.</li>
+        <li>Company records and login credentials have been permanently removed.</li>
+        <li>Messages with other traders have been fully anonymized to preserve their trade records without your identity.</li>
+      </ul>
+    </div>
+
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      Thank you for having been part of B2B LINK. If you ever wish to return in the future, you are welcome to apply for a new account at any time.
+    </p>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Privacy & Compliance Desk</strong><br />
+      <span style="font-size: 12px; color: #64748B;">privacy@b2blink.eu</span>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Account Deletion Confirmed',
+      'ACCOUNT DELETED',
+      content,
+      safeActionUrl,
+      'Visit B2B LINK'
+    ),
+  };
+}
+
 
 
 

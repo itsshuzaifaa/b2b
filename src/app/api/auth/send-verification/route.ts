@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     // Register active OTP: valid for 15 minutes, immediately invalidating any prior code
     if (otpCode) {
-      saveVerificationCode(rawEmail, otpCode);
+      saveVerificationCode(rawEmail, otpCode, linkData.user?.id);
     }
 
     // 2. Dispatch branded email via Resend

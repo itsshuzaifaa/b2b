@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const admin = createAdminClient();
     const isAdmin = await isUserAdmin(user);
 
-    // Query companies table with admin client to bypass RLS limitations
+    // Query companies table strictly by user_id
     let companyRow: any = null;
     const { data: byUserId } = await admin
       .from('companies')
@@ -25,18 +25,6 @@ export async function GET(request: NextRequest) {
 
     if (byUserId) {
       companyRow = byUserId;
-    } else if (user.email) {
-      const { data: byEmail } = await admin
-        .from('companies')
-        .select('*')
-        .eq('contact_email', user.email)
-        .maybeSingle();
-      companyRow = byEmail;
-
-      // Link user_id if missing
-      if (companyRow && !companyRow.user_id) {
-        await admin.from('companies').update({ user_id: user.id }).eq('id', companyRow.id);
-      }
     }
 
     const metadata = user.user_metadata || {};
@@ -47,7 +35,7 @@ export async function GET(request: NextRequest) {
     const approvalStatus: ApprovalStatus = (companyRow?.approval_status || (role === 'admin' ? 'approved' : 'pending')) as ApprovalStatus;
 
     if (!companyRow) {
-      // Auto-create company row if missing
+      // Auto-create company row if missing. Non-admins MUST always start with 'pending' approval and 'bronze' tier.
       const companyName = metadata.company_name || metadata.contact_name || user.email?.split('@')[0] || 'Member Account';
       const contactName = metadata.contact_name || `${metadata.first_name || ''} ${metadata.last_name || ''}`.trim() || 'Member';
       
@@ -57,9 +45,9 @@ export async function GET(request: NextRequest) {
         contact_name: contactName,
         contact_email: user.email,
         phone: metadata.phone || null,
-        role,
-        approval_status: approvalStatus,
-        tier: (metadata.membership_tier || 'bronze') as MembershipTier,
+        role: isAdmin ? 'admin' : 'seller',
+        approval_status: isAdmin ? 'approved' : 'pending',
+        tier: 'bronze',
       }).select('*').maybeSingle();
 
       companyRow = newComp;

@@ -98,8 +98,20 @@ function VerifyEmailContent() {
   const [cardZip, setCardZip] = useState('10117');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentDeclineNotice, setPaymentDeclineNotice] = useState<string | null>(null);
+  const [paymentNoticeTitle, setPaymentNoticeTitle] = useState<string>('Card Declined');
   const [declineCount, setDeclineCount] = useState<number>(0);
   const [sampleCardLoaded, setSampleCardLoaded] = useState(false);
+  const [sandboxEnabled, setSandboxEnabled] = useState(false);
+
+  // Check if server payment sandbox mode is active
+  useEffect(() => {
+    fetch('/api/billing/activate-tier')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.sandbox) setSandboxEnabled(true);
+      })
+      .catch(() => {});
+  }, []);
 
   // Update cardholder name when loaded
   useEffect(() => {
@@ -369,9 +381,10 @@ function VerifyEmailContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          cardNumber: cleanCard,
+          tier: selectedTier,
           email,
           companyId,
-          tier: selectedTier,
           companyName: companyName || cardholderName,
           contactName: contactName || cardholderName,
           cardLast4: cleanCard.slice(-4),
@@ -379,13 +392,21 @@ function VerifyEmailContent() {
         }),
       });
 
-      const activateData = await activateRes.json();
+      const activateData = await activateRes.json().catch(() => ({}));
       if (!activateRes.ok) {
         setDeclineCount((prev) => prev + 1);
-        const errorText = activateData.error && !activateData.error.includes('column') && !activateData.error.includes('does not exist')
-          ? activateData.error
-          : 'Your card was declined by your bank or card issuer. Please try a different card.';
-        setPaymentDeclineNotice(errorText);
+        if (activateRes.status === 403 && activateData.code === 'FEATURE_DISABLED') {
+          setPaymentNoticeTitle('Payments Unavailable');
+          setPaymentDeclineNotice('Payments are not enabled yet.');
+        } else if (activateRes.status === 403 && activateData.code === 'ACCOUNT_NOT_APPROVED') {
+          setPaymentNoticeTitle('Account Pending Verification');
+          setPaymentDeclineNotice(activateData.error || 'Your business account is pending verification. Upgrades are available once approved.');
+        } else {
+          setPaymentNoticeTitle('Card Declined');
+          setPaymentDeclineNotice(
+            activateData.error || 'Your card was declined by your bank or card issuer. Please try a different card.'
+          );
+        }
         setProcessingPayment(false);
         return;
       }
@@ -661,40 +682,42 @@ function VerifyEmailContent() {
             </div>
 
             {/* Test Sandbox Notice & Autofill Button */}
-            <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 mb-5">
-              <div className="flex items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[15px]">🧪</span>
-                  <div>
-                    <span className="text-[12px] font-bold text-amber-950 block leading-tight">Test Sandbox Mode</span>
-                    <span className="text-[11px] text-amber-800 leading-none">Demo card available for testing</span>
+            {sandboxEnabled && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 mb-5">
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[15px]">🧪</span>
+                    <div>
+                      <span className="text-[12px] font-bold text-amber-950 block leading-tight">Test Sandbox Mode</span>
+                      <span className="text-[11px] text-amber-800 leading-none">Demo card available for testing</span>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAutofillTestCard}
+                    className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[11px] font-bold transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Autofill Test Card</span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleAutofillTestCard}
-                  className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[11px] font-bold transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Autofill Test Card</span>
-                </button>
+                {sampleCardLoaded && (
+                  <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Sample Visa ending in 4242 loaded</span>
+                  </div>
+                )}
               </div>
-
-              {sampleCardLoaded && (
-                <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Sample Visa ending in 4242 loaded</span>
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Decline Notice Alert */}
             {paymentDeclineNotice && (
               <div className="mb-5 p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 animate-in fade-in">
                 <div className="flex items-start gap-2 text-[13px] font-bold mb-1">
                   <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  <span>Card Declined</span>
+                  <span>{paymentNoticeTitle || 'Card Declined'}</span>
                 </div>
                 <p className="text-[12px] text-red-600 leading-snug">
                   {paymentDeclineNotice}

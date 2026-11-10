@@ -3,9 +3,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import {
-  getCustomerQueries,
-  replyCustomerQuery,
-  deleteCustomerQuery,
   type CustomerQuery,
 } from '@/lib/admin/admin-store';
 import {
@@ -45,12 +42,6 @@ export default function SiteAdminCustomerQueriesPage() {
         if (Array.isArray(data.queries)) {
           setQueries(data.queries);
           setLoadError(null);
-          // Sync into local storage for offline resilience
-          try {
-            localStorage.setItem('b2b_customer_queries_v2', JSON.stringify(data.queries));
-          } catch {
-            // ignore
-          }
           return;
         }
       }
@@ -93,7 +84,7 @@ export default function SiteAdminCustomerQueriesPage() {
     setIsSendingReply(true);
 
     try {
-      // 1. Send via server API to dispatch real email to customer and update server database
+      // Send via server API to dispatch real email to customer and update server database
       const res = await fetch('/api/admin/queries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,9 +98,6 @@ export default function SiteAdminCustomerQueriesPage() {
 
       const data = await res.json();
 
-      // 2. Also update local store
-      replyCustomerQuery(selectedQuery.id, replyText);
-
       if (data.emailSent) {
         showNotice(`Official reply emailed directly to ${selectedQuery.email}!`);
       } else {
@@ -117,8 +105,7 @@ export default function SiteAdminCustomerQueriesPage() {
       }
     } catch (err) {
       console.error('Error dispatching reply:', err);
-      replyCustomerQuery(selectedQuery.id, replyText);
-      showNotice(`Reply recorded for ${selectedQuery.email}`);
+      showNotice(`Failed to record reply for ${selectedQuery.email}`);
     } finally {
       setIsSendingReply(false);
       setSelectedQuery(null);
@@ -126,11 +113,23 @@ export default function SiteAdminCustomerQueriesPage() {
     }
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this customer inquiry?')) {
-      deleteCustomerQuery(id);
-      showNotice('Customer inquiry removed.');
+      try {
+        const res = await fetch('/api/admin/queries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', id }),
+        });
+        if (res.ok) {
+          showNotice('Customer inquiry removed.');
+        } else {
+          showNotice('Failed to delete customer inquiry.');
+        }
+      } catch {
+        showNotice('Network error deleting customer inquiry.');
+      }
       loadData();
     }
   };

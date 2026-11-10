@@ -21,7 +21,7 @@ envContent.split('\n').forEach((line) => {
   }
 });
 
-const BASE_URL = 'http://localhost:6978';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const CRON_SECRET = env.CRON_SECRET || 'b2b-link-cron-secret-2026';
 const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON_KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

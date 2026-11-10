@@ -1,14 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  getAdminPayments,
-  saveAdminPayments,
-  getAdminAccounts,
-  saveAdminAccounts,
-  type AdminPaymentRecord,
-  type AdminClientAccount,
-} from '@/lib/admin/admin-store';
+import type { AdminPaymentRecord } from '@/app/api/admin/payments/route';
+import type { AdminClientAccount } from '@/lib/admin/admin-store';
 import {
   CreditCard,
   Search,
@@ -57,7 +51,6 @@ export default function SiteAdminPaymentsPage() {
         const data = await res.json();
         if (Array.isArray(data.payments)) {
           setPayments(data.payments);
-          saveAdminPayments(data.payments);
         }
       } else {
         hasError = true;
@@ -72,7 +65,6 @@ export default function SiteAdminPaymentsPage() {
         const data = await res.json();
         if (Array.isArray(data.accounts)) {
           setAccounts(data.accounts);
-          saveAdminAccounts(data.accounts);
         }
       } else {
         hasError = true;

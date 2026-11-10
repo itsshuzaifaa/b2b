@@ -1,8 +1,6 @@
 'use client';
 
-import { MOCK_COMPANIES, MOCK_PRODUCTS } from '@/lib/mock-data';
-import { ALL_TRADING_BOARD_ITEMS, type TradingBoardItem } from '@/lib/trading-board-data';
-import type { Company, MembershipTier, ApprovalStatus } from '@/types/database';
+import type { MembershipTier, ApprovalStatus } from '@/types/database';
 import {
   getStoredConversations,
   saveStoredConversations,
@@ -87,69 +85,31 @@ export interface AdminModeratedListing {
 }
 
 // STORAGE KEYS (bumped to v4 for clean testing state)
-const ACCOUNTS_STORAGE_KEY = 'b2b_admin_accounts_v4';
 const PAYMENTS_STORAGE_KEY = 'b2b_admin_payments_v4';
 const LISTINGS_STORAGE_KEY = 'b2b_admin_listings_v5';
-const DELETED_ACCOUNTS_STORAGE_KEY = 'b2b_admin_deleted_accounts_v4';
 
 export function getDeletedAccountIds(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(DELETED_ACCOUNTS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-export function markAccountAsDeleted(idOrEmail?: string | null) {
-  if (typeof window === 'undefined' || !idOrEmail) return;
-  const clean = idOrEmail.trim().toLowerCase();
-  // Admin account cannot be deleted or removed
-  if (clean === 'admin@b2blink.eu' || clean === 'admin_company') return;
-
-  try {
-    const list = getDeletedAccountIds();
-    let changed = false;
-    if (!list.includes(clean)) {
-      list.push(clean);
-      changed = true;
-    }
-    if (!list.includes(idOrEmail)) {
-      list.push(idOrEmail);
-      changed = true;
-    }
-    if (changed) {
-      localStorage.setItem(DELETED_ACCOUNTS_STORAGE_KEY, JSON.stringify(list));
-    }
-  } catch {}
+export function markAccountAsDeleted(_idOrEmail?: string | null) {
+  void _idOrEmail;
+  // No-op: Account deletion is managed authoritatively via the database
 }
 
-export function unmarkAccountAsDeleted(idOrEmail?: string | null) {
-  if (typeof window === 'undefined' || !idOrEmail) return;
-  try {
-    const list = getDeletedAccountIds();
-    const clean = idOrEmail.trim().toLowerCase();
-    const filtered = list.filter((item) => item !== clean && item !== idOrEmail);
-    if (filtered.length !== list.length) {
-      localStorage.setItem(DELETED_ACCOUNTS_STORAGE_KEY, JSON.stringify(filtered));
-    }
-  } catch {}
+export function unmarkAccountAsDeleted(_idOrEmail?: string | null) {
+  void _idOrEmail;
+  // No-op: Account deletion is managed authoritatively via the database
 }
 
-export function isAccountDeleted(id?: string | null, email?: string | null): boolean {
-  if (email && email.trim().toLowerCase() === 'admin@b2blink.eu') return false;
-  const deleted = getDeletedAccountIds();
-  if (!deleted || deleted.length === 0) return false;
-  if (id && deleted.includes(id)) return true;
-  if (email && (deleted.includes(email) || deleted.includes(email.trim().toLowerCase()))) return true;
+export function isAccountDeleted(_id?: string | null, _email?: string | null): boolean {
+  void _id;
+  void _email;
   return false;
 }
 
 // Empty initial seed structures (Hardcoded sample accounts, listings, and payments removed)
-const INITIAL_ACCOUNTS: AdminClientAccount[] = [];
 export const INITIAL_PAYMENTS: AdminPaymentRecord[] = [];
-const INITIAL_LISTINGS: AdminModeratedListing[] = [];
 
 // BROADCAST HELPER
 function broadcastAdminUpdate() {
@@ -162,42 +122,13 @@ function broadcastAdminUpdate() {
 // 1. ACCOUNTS MANAGEMENT
 // ==========================================
 export function getAdminAccounts(): AdminClientAccount[] {
-  const filterClientsOnly = (list: AdminClientAccount[]) =>
-    list.filter(
-      (a) =>
-        !isAccountDeleted(a.id, a.email) &&
-        a.role !== 'admin' &&
-        a.email?.toLowerCase() !== 'admin@b2blink.eu'
-    );
-
-  if (typeof window === 'undefined') return filterClientsOnly(INITIAL_ACCOUNTS);
-  try {
-    const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return filterClientsOnly(parsed);
-      }
-    }
-    const filteredInitial = filterClientsOnly(INITIAL_ACCOUNTS);
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filteredInitial));
-    return filteredInitial;
-  } catch {
-    // ignore
-  }
-  return filterClientsOnly(INITIAL_ACCOUNTS);
+  return [];
 }
 
-export function saveAdminAccounts(accounts: AdminClientAccount[]) {
-  if (typeof window === 'undefined') return;
-  if (!Array.isArray(accounts) || accounts.length === 0) return; // Prevent network blips from wiping cached accounts
-  try {
-    // Only persist non-deleted accounts
-    const filtered = accounts.filter((a) => !isAccountDeleted(a.id, a.email));
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(filtered));
+export function saveAdminAccounts(_accounts: AdminClientAccount[]) {
+  // No-op: Accounts are managed authoritatively via PostgreSQL public.companies and auth.users
+  if (typeof window !== 'undefined') {
     broadcastAdminUpdate();
-  } catch {
-    // ignore
   }
 }
 
@@ -277,7 +208,7 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
         const parsed = JSON.parse(rawAdminListings);
         if (Array.isArray(parsed)) {
           const remaining = parsed.filter(
-            (l: any) =>
+            (l: { company_id?: string; companyId?: string; seller_email?: string; contactEmail?: string }) =>
               l.company_id !== companyId &&
               l.companyId !== companyId &&
               (!effectiveEmail || l.seller_email?.toLowerCase() !== effectiveEmail.toLowerCase()) &&
@@ -293,7 +224,7 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
         const parsed = JSON.parse(rawUserSell);
         if (Array.isArray(parsed)) {
           const remaining = parsed.filter(
-            (l: any) =>
+            (l: { company_id?: string; companyId?: string; seller_email?: string; contactEmail?: string }) =>
               l.company_id !== companyId &&
               l.companyId !== companyId &&
               (!effectiveEmail || l.seller_email?.toLowerCase() !== effectiveEmail.toLowerCase()) &&
@@ -309,7 +240,7 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
         const parsed = JSON.parse(rawUserWtb);
         if (Array.isArray(parsed)) {
           const remaining = parsed.filter(
-            (w: any) =>
+            (w: { company_id?: string; companyId?: string; buyerCompanyId?: string; contactEmail?: string; buyerEmail?: string }) =>
               w.company_id !== companyId &&
               w.companyId !== companyId &&
               w.buyerCompanyId !== companyId &&
@@ -326,7 +257,7 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
         const parsed = JSON.parse(rawPayments);
         if (Array.isArray(parsed)) {
           const remaining = parsed.filter(
-            (p: any) =>
+            (p: { company_id?: string; contact_email?: string }) =>
               p.company_id !== companyId &&
               (!effectiveEmail || p.contact_email?.toLowerCase() !== effectiveEmail.toLowerCase())
           );
@@ -340,7 +271,7 @@ export function deleteAccount(companyId: string, email?: string | null): boolean
         const parsed = JSON.parse(rawInquiries);
         if (Array.isArray(parsed)) {
           const remaining = parsed.filter(
-            (c: any) =>
+            (c: { sellerCompanyId?: string; buyerCompanyId?: string; sellerContactEmail?: string; buyerContactEmail?: string }) =>
               c.sellerCompanyId !== companyId &&
               c.buyerCompanyId !== companyId &&
               (!effectiveEmail || (c.sellerContactEmail?.toLowerCase() !== effectiveEmail.toLowerCase() && c.buyerContactEmail?.toLowerCase() !== effectiveEmail.toLowerCase()))
@@ -502,15 +433,13 @@ export function updateAccountApproval(companyId: string, status: ApprovalStatus,
         }
       }
 
-      // If approved, mark verified and trigger fresh onboarding popup on next dashboard load
+      // If approved, trigger fresh onboarding popup on next dashboard load
       if (status === 'approved' && target) {
         if (target.id) {
-          localStorage.setItem(`b2b_account_verified_${target.id}`, 'true');
           localStorage.removeItem(`b2b_onboarding_completed_${target.id}`);
         }
         if (target.email) {
           const cleanEmail = target.email.toLowerCase().trim();
-          localStorage.setItem(`b2b_account_verified_${cleanEmail}`, 'true');
           localStorage.removeItem(`b2b_onboarding_completed_${cleanEmail}`);
         }
         sessionStorage.setItem('b2b_just_verified', 'true');
@@ -553,35 +482,18 @@ export function reconcilePaymentsWithAccounts(
 }
 
 export function getAdminPayments(): AdminPaymentRecord[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    }
-    return [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-export function saveAdminPayments(payments: AdminPaymentRecord[]) {
-  if (typeof window === 'undefined') return;
-  if (!Array.isArray(payments) || payments.length === 0) return; // Prevent empty payload wipes
-  try {
-    localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(payments));
+export function saveAdminPayments(_payments: AdminPaymentRecord[]) {
+  // No-op: Payments are saved authoritatively via the PostgreSQL payments table
+  if (typeof window !== 'undefined') {
     broadcastAdminUpdate();
-  } catch {
-    // ignore
   }
 }
 
 export function markPaymentCompleted(paymentId: string): boolean {
   const payments = getAdminPayments();
-  const payment = payments.find((p) => p.id === paymentId);
   const now = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const updatedPayments = payments.map((p) =>
@@ -622,112 +534,13 @@ export function deletePayment(paymentId: string): boolean {
 // 3. LISTINGS MODERATION
 // ==========================================
 export function getAdminListings(): AdminModeratedListing[] {
-  if (typeof window === 'undefined') return INITIAL_LISTINGS;
-  try {
-    // Clear out legacy mock and old test keys so they never contaminate the store
-    localStorage.removeItem('b2b_admin_listings_v1');
-    localStorage.removeItem('b2b_admin_listings_v2');
-    localStorage.removeItem('b2b_admin_listings_v3');
-    localStorage.removeItem('b2b_admin_listings_v4');
-    localStorage.removeItem('b2b_seller_listings_v1');
-    localStorage.removeItem('b2b_seller_listings_real_v2');
-    localStorage.removeItem('b2b_user_wtb_requests_v1');
-
-    // 1. Check if we have user-created sell listings or WTBs in localStorage
-    const rawUserListings = localStorage.getItem('b2b_seller_listings_v3');
-    const userSellListings = rawUserListings ? JSON.parse(rawUserListings) : [];
-
-    const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
-    const userWtbListings = rawUserWtbs ? JSON.parse(rawUserWtbs) : [];
-
-    const formattedUserItems: AdminModeratedListing[] = [
-      ...(Array.isArray(userSellListings)
-        ? userSellListings.map((l: any, idx: number) => ({
-            id: l.id || `user-lst-${idx}`,
-            type: 'SELL' as const,
-            company_id: l.company_id || 'user-seller',
-            company_name: l.companyName || 'Verified Supplier',
-            seller_email: l.contactEmail || 'supplier@b2blink.eu',
-            contact_name: l.contactName || 'Trade Desk',
-            contact_phone: l.contactPhone || '',
-            title: l.title || l.description || 'Wholesale Lot',
-            brand: l.brand || 'Wholesale',
-            item_code: l.itemCode || (l.ean && l.ean !== '195949048735' && l.ean !== 'n/a' ? l.ean.slice(0, 8) : 'MDL-2026'),
-            category_slug: (l.category || 'electronics').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-            category_name: l.category || 'Consumer Electronics',
-            ean: (l.ean && l.ean !== '195949048735') ? l.ean : 'n/a',
-            condition: l.condition || 'New',
-            unit_price: Number(l.unitPrice || l.price || 99),
-            currency: l.currency || '€',
-            location: l.location || 'DE',
-            quantity_available: Number(l.available || l.qty || 50),
-            moq: Number(l.moq || 10),
-            barcode_or_sku: l.ean || l.itemCode,
-            is_hot: false,
-            moderation_status: 'active' as const,
-            images: l.images || [],
-            created_at: l.created_at || new Date().toISOString(),
-          }))
-        : []),
-      ...(Array.isArray(userWtbListings)
-        ? userWtbListings.map((w: any) => ({
-            id: w.id,
-            type: 'BUY' as const,
-            company_id: w.company_id || 'user-buyer',
-            company_name: w.companyName || 'Verified Buyer',
-            seller_email: w.contactEmail || 'buyer@b2blink.eu',
-            contact_name: w.contactName || 'Procurement Desk',
-            contact_phone: w.contactPhone || '',
-            title: w.description || w.title || 'Wanted Lot',
-            brand: w.brand || 'Procurement',
-            item_code: w.itemCode || 'WTB-REQ',
-            category_slug: (w.category || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-            category_name: w.category || 'General Wholesale',
-            ean: (w.ean && w.ean !== '8806095087286' && w.ean !== '—') ? w.ean : 'n/a',
-            condition: w.condition || 'New',
-            unit_price: Number(w.price || 0),
-            currency: w.currency || '€',
-            location: w.location || 'EU',
-            quantity_available: Number(w.qty || 100),
-            moq: Number(w.moq || 1),
-            barcode_or_sku: w.ean || w.itemCode,
-            is_hot: false,
-            moderation_status: 'active' as const,
-            images: [],
-            created_at: new Date().toISOString(),
-          }))
-        : []),
-    ];
-
-    const raw = localStorage.getItem(LISTINGS_STORAGE_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const combined = [...parsed, ...formattedUserItems];
-        const unique = Array.from(new Map(combined.map((item) => [item.id, item])).values());
-        return unique.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
-      }
-    }
-
-    const mergedInitial = Array.from(
-      new Map([...formattedUserItems, ...INITIAL_LISTINGS].map((item) => [item.id, item])).values()
-    );
-    const cleanInitial = mergedInitial.filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
-    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(cleanInitial));
-    return cleanInitial;
-  } catch {
-    // ignore
-  }
-  return INITIAL_LISTINGS;
+  return [];
 }
 
-export function saveAdminListings(listings: AdminModeratedListing[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(listings));
+export function saveAdminListings(_listings: AdminModeratedListing[]) {
+  // No-op: Listings are managed authoritatively via PostgreSQL products & wtb_requests tables
+  if (typeof window !== 'undefined') {
     broadcastAdminUpdate();
-  } catch {
-    // ignore
   }
 }
 
@@ -806,14 +619,14 @@ export function deleteListing(productId: string): boolean {
       if (rawUser) {
         const parsed = JSON.parse(rawUser);
         if (Array.isArray(parsed)) {
-          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => p.id !== productId)));
+          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: { id?: string }) => p.id !== productId)));
         }
       }
       const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
       if (rawWtb) {
         const parsed = JSON.parse(rawWtb);
         if (Array.isArray(parsed)) {
-          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: any) => w.id !== productId)));
+          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: { id?: string }) => w.id !== productId)));
         }
       }
       window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
@@ -840,14 +653,14 @@ export function deleteListings(productIds: string[]): boolean {
       if (rawUser) {
         const parsed = JSON.parse(rawUser);
         if (Array.isArray(parsed)) {
-          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: any) => !idSet.has(p.id))));
+          localStorage.setItem('b2b_seller_listings_v3', JSON.stringify(parsed.filter((p: { id?: string }) => !p.id || !idSet.has(p.id))));
         }
       }
       const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
       if (rawWtb) {
         const parsed = JSON.parse(rawWtb);
         if (Array.isArray(parsed)) {
-          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: any) => !idSet.has(w.id))));
+          localStorage.setItem('b2b_user_wtb_requests_v2', JSON.stringify(parsed.filter((w: { id?: string }) => !w.id || !idSet.has(w.id))));
         }
       }
       window.dispatchEvent(new CustomEvent('b2b_listings_updated'));
@@ -884,8 +697,6 @@ export interface AdminSellerThread {
   lastTime: string;
   unreadCount: number;
 }
-
-const ADMIN_CONVERSATIONS_KEY = 'b2b_admin_threads_v1';
 
 export function getAdminSellerThreads(): InquiryConversation[] {
   // Return existing admin desk / compliance threads without auto-injecting mock welcome messages
@@ -944,34 +755,16 @@ export interface CustomerQuery {
   replied_at?: string;
 }
 
-const QUERIES_STORAGE_KEY = 'b2b_customer_queries_v2';
-
-const INITIAL_QUERIES: CustomerQuery[] = [];
-
-
 export function getCustomerQueries(): CustomerQuery[] {
-  if (typeof window === 'undefined') return INITIAL_QUERIES;
-  try {
-    const raw = localStorage.getItem(QUERIES_STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-    localStorage.setItem(QUERIES_STORAGE_KEY, JSON.stringify(INITIAL_QUERIES));
-    return INITIAL_QUERIES;
-  } catch {
-    return INITIAL_QUERIES;
-  }
+  return [];
 }
 
-export function saveCustomerQueries(queries: CustomerQuery[], emitEvents = true) {
+export function saveCustomerQueries(_queries: CustomerQuery[], emitEvents = true) {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(QUERIES_STORAGE_KEY, JSON.stringify(queries));
-    if (emitEvents) {
-      window.dispatchEvent(new CustomEvent('b2b_admin_update'));
-      window.dispatchEvent(new CustomEvent('b2b_queries_update'));
-    }
-  } catch {}
+  if (emitEvents) {
+    window.dispatchEvent(new CustomEvent('b2b_admin_update'));
+    window.dispatchEvent(new CustomEvent('b2b_queries_update'));
+  }
 }
 
 export function syncLocalCustomerQuery(serverQuery: CustomerQuery) {

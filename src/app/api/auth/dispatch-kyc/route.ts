@@ -16,27 +16,25 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch {}
 
-    // Non-admins can ONLY dispatch KYC for their own session email and company.
-    // Untrusted body.email is ignored for non-admins to prevent touching another company.
-    const effectiveEmail = auth.isAdmin && body.email
+    const admin = createAdminClient();
+
+    // 1. Fetch company record for this user strictly by user_id (or companyId if admin)
+    let companyQuery = admin.from('companies').select('*');
+    if (auth.isAdmin && body.companyId) {
+      companyQuery = companyQuery.eq('id', body.companyId);
+    } else {
+      companyQuery = companyQuery.eq('user_id', auth.user.id);
+    }
+
+    const { data: company } = await companyQuery.maybeSingle();
+
+    const effectiveEmail = (auth.isAdmin && body.email
       ? String(body.email).trim().toLowerCase()
-      : (auth.user.email || '').trim().toLowerCase();
+      : (auth.user.email || company?.contact_email || '').trim().toLowerCase());
 
     if (!effectiveEmail || !effectiveEmail.includes('@')) {
       return NextResponse.json({ error: 'Valid corporate email required.' }, { status: 400 });
     }
-
-    const admin = createAdminClient();
-
-    // 1. Fetch company record for this user strictly
-    let companyQuery = admin.from('companies').select('*');
-    if (auth.isAdmin && body.email) {
-      companyQuery = companyQuery.eq('contact_email', effectiveEmail);
-    } else {
-      companyQuery = companyQuery.or(`user_id.eq.${auth.user.id},contact_email.eq.${effectiveEmail}`);
-    }
-
-    const { data: company } = await companyQuery.maybeSingle();
 
     // 2. Fetch auth user
     let user: any = auth.user;

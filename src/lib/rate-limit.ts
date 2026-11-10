@@ -75,6 +75,11 @@ const limiters = {
     limiter: Ratelimit.slidingWindow(10, '10 m'),
     prefix: 'rl:notify_inactivated',
   }),
+  'delete-account': new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(3, '15 m'),
+    prefix: 'rl:delete_account',
+  }),
 };
 
 export type RateLimitedRoute = keyof typeof limiters;
@@ -87,6 +92,7 @@ const AUTH_AND_OTP_ROUTES: Set<RateLimitedRoute> = new Set([
   'verify-code',
   'lookup-username',
   'check-username',
+  'delete-account',
 ]);
 
 /**

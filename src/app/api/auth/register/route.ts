@@ -86,7 +86,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (createError) {
-      if (createError.message.includes('already registered')) {
+      const msg = createError.message.toLowerCase();
+      if (msg.includes('already registered') || msg.includes('already been registered') || msg.includes('already exists')) {
         return NextResponse.json(
           { error: 'An account with this email address already exists. Please sign in.' },
           { status: 409 }
@@ -129,6 +130,7 @@ export async function POST(request: NextRequest) {
       phone: phone || null,
       role: 'seller',
       approval_status: approvalStatus,
+      rejection_reason: null,
       tier: effectiveTier,
       niches: validCategoryUuids.length > 0 ? validCategoryUuids : undefined,
     }).select('id').single();
@@ -180,7 +182,7 @@ export async function POST(request: NextRequest) {
 
     // 4. Dispatch the ONE official branded B2B LINK verification email via Resend
     if (otpCode) {
-      saveVerificationCode(email, otpCode);
+      saveVerificationCode(email, otpCode, userId);
 
       const emailResult = await sendVerificationEmail(email, {
         recipientEmail: email,

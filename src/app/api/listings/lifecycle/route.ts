@@ -184,7 +184,15 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const isAuthorized = await verifyCronOrAdmin(req);
+  if (!isAuthorized) {
+    return NextResponse.json(
+      { error: 'Unauthorized: Invalid cron secret or admin credentials.' },
+      { status: 401 }
+    );
+  }
+
   // Cron / periodic trigger for database-level expiry
   try {
     const admin = createAdminClient();

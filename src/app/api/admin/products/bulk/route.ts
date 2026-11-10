@@ -20,42 +20,58 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    // 1. Resolve target company in Supabase by ID, user_id, contact_email, or company_name
+    // 1. Resolve target company in Supabase by ID only (no ilike)
     let comp: any = null;
 
     if (companyId) {
-      const { data } = await admin
+      const { data: byId } = await admin
         .from('companies')
         .select('id, user_id, approval_status, company_name, tier, contact_email')
-        .or(`id.eq.${companyId},user_id.eq.${companyId}`)
+        .eq('id', companyId)
         .maybeSingle();
-      comp = data;
-    }
+      comp = byId;
 
-    if (!comp && email) {
-      const { data } = await admin
-        .from('companies')
-        .select('id, user_id, approval_status, company_name, tier, contact_email')
-        .ilike('contact_email', email.trim())
-        .maybeSingle();
-      comp = data;
-    }
-
-    if (!comp && companyName) {
-      const { data } = await admin
-        .from('companies')
-        .select('id, user_id, approval_status, company_name, tier, contact_email')
-        .ilike('company_name', companyName.trim())
-        .maybeSingle();
-      comp = data;
+      if (!comp) {
+        const { data: byUserId } = await admin
+          .from('companies')
+          .select('id, user_id, approval_status, company_name, tier, contact_email')
+          .eq('user_id', companyId)
+          .maybeSingle();
+        comp = byUserId;
+      }
     }
 
     // 2. If company still doesn't exist, auto-create it with Gold tier (or specified tier)
     if (!comp) {
       const targetTier = (tier || 'gold').toLowerCase();
+
+      // Resolve user_id: check if companyId is an auth user ID or look up auth user by email
+      let resolvedUserId: string | null = null;
+      if (companyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companyId)) {
+        try {
+          const { data: authUser } = await admin.auth.admin.getUserById(companyId);
+          if (authUser?.user?.id) {
+            resolvedUserId = authUser.user.id;
+          }
+        } catch {}
+      }
+
+      if (!resolvedUserId && email) {
+        try {
+          const { data: linkData } = await admin.auth.admin.generateLink({
+            type: 'magiclink',
+            email: email.trim().toLowerCase(),
+          });
+          if (linkData?.user?.id) {
+            resolvedUserId = linkData.user.id;
+          }
+        } catch {}
+      }
+
       const { data: createdComp, error: createError } = await admin
         .from('companies')
         .insert({
+          user_id: resolvedUserId,
           company_name: companyName || 'Wholesale Supplier',
           contact_email: email || null,
           role: 'seller',

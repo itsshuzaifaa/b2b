@@ -29,7 +29,6 @@ import {
   customerQueryReplyEmail,
   type CustomerQueryReplyEmailProps,
   newInAppMessageEmail,
-  type NewInAppMessageEmailProps,
   buyerWtsMatchEmail,
   sellerWtbMatchEmail,
   type BuyerWtsMatchEmailProps,
@@ -42,6 +41,8 @@ import {
   type EmailChangeNoticeCurrentEmailProps,
   emailChangeActivationNewEmail,
   type EmailChangeActivationNewEmailProps,
+  accountDeletedConfirmationEmail,
+  type AccountDeletedConfirmationEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
@@ -748,7 +749,7 @@ export async function processInactivityReminders(
         companyName: c.company_name || c.name || metaUser?.user_metadata?.company_name || 'Wholesale Member',
         contactName: c.contact_name || metaUser?.user_metadata?.contact_name || 'Commercial Partner',
         role: c.role || 'seller',
-        approvalStatus: c.approval_status || 'approved',
+        approvalStatus: c.approval_status || 'pending',
         lastActiveTimestamp: lastActive || new Date().toISOString(),
         lastInactivityReminderAt: c.last_inactivity_reminder_at || null,
       });
@@ -767,7 +768,7 @@ export async function processInactivityReminders(
           companyName: meta.company_name || 'Wholesale Member',
           contactName: meta.contact_name || `${meta.first_name || ''} ${meta.last_name || ''}`.trim() || 'Commercial Partner',
           role: meta.role || 'seller',
-          approvalStatus: meta.approval_status || 'approved',
+          approvalStatus: meta.approval_status || 'pending',
           lastActiveTimestamp: lastActive || new Date().toISOString(),
           lastInactivityReminderAt: meta.last_inactivity_reminder_at || null,
         });
@@ -928,6 +929,29 @@ export async function processInactivityReminders(
     };
   }
 }
+
+/**
+ * Dispatches an account deletion confirmation email to the user's registered email address.
+ */
+export async function sendAccountDeletionConfirmationEmail(
+  toEmail: string,
+  props: Omit<AccountDeletedConfirmationEmailProps, 'actionUrl'>
+): Promise<SendEmailResult> {
+  const dynamicAppUrl = await getDynamicAppUrl();
+  const actionUrl = sanitizeActionUrl(dynamicAppUrl, '/');
+
+  const { subject, html } = accountDeletedConfirmationEmail({
+    ...props,
+    actionUrl,
+  });
+
+  return sendEmail({
+    to: toEmail,
+    subject,
+    html,
+  });
+}
+
 
 
 

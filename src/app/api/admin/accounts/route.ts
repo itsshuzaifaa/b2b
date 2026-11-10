@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/auth/guards';
 import {
   sendAccountApprovalEmail,
@@ -250,8 +250,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-
     if (action === 'verify' || action === 'approve' || action === 'unsuspend') {
       try {
         const admin = createAdminClient();
@@ -287,22 +285,7 @@ export async function POST(req: Request) {
           if (compByUserId?.user_id) targetUserId = compByUserId.user_id;
         }
 
-        // 2. Update companies table by email if provided
-        if (cleanEmail) {
-          const { data: compByEmail } = await admin
-            .from('companies')
-            .update({
-              approval_status: 'approved',
-              rejection_reason: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('contact_email', cleanEmail)
-            .select('user_id')
-            .maybeSingle();
-          if (compByEmail?.user_id) targetUserId = compByEmail.user_id;
-        }
-
-        // 3. Confirm email and update approval status in Supabase Auth
+        // 2. Confirm email and update approval status in Supabase Auth
         if (targetUserId) {
           await admin.auth.admin.updateUserById(targetUserId, {
             email_confirm: true,
@@ -326,11 +309,13 @@ export async function POST(req: Request) {
                 email_confirm: true,
                 user_metadata: { approval_status: 'approved' },
               });
-              // Link company row with user_id
-              await admin
-                .from('companies')
-                .update({ user_id: targetAuthUser.id, approval_status: 'approved', rejection_reason: null })
-                .eq('contact_email', cleanEmail);
+              // Link company row with user_id by id
+              if (companyId) {
+                await admin
+                  .from('companies')
+                  .update({ user_id: targetAuthUser.id, approval_status: 'approved', rejection_reason: null })
+                  .eq('id', companyId);
+              }
             }
           } catch {
             // ignore
@@ -679,110 +664,15 @@ export async function POST(req: Request) {
     }
 
     if (action === 'delete') {
-      const cleanEmail = (email || '').trim().toLowerCase();
-      if (cleanEmail === 'admin@b2blink.eu') {
-        return NextResponse.json(
-          { error: 'Admin accounts cannot be deleted or removed.' },
-          { status: 403 }
-        );
-      }
-
-      try {
-        const admin = createAdminClient();
-
-        // Guard: Verify target is not an admin account
-        if (companyId) {
-          const { data: targetComp } = await admin
-            .from('companies')
-            .select('role, contact_email')
-            .eq('id', companyId)
-            .maybeSingle();
-
-          if (
-            targetComp?.role === 'admin' ||
-            targetComp?.contact_email?.toLowerCase() === 'admin@b2blink.eu'
-          ) {
-            return NextResponse.json(
-              { error: 'Admin accounts cannot be deleted or removed.' },
-              { status: 403 }
-            );
-          }
-        }
-
-        // 1. Locate all company records matching companyId OR email
-        const targetIds: string[] = [];
-        const userIds: string[] = [];
-
-        if (companyId) {
-          const { data: compById } = await admin
-            .from('companies')
-            .select('id, user_id, role, contact_email')
-            .eq('id', companyId);
-          if (compById && compById.length > 0) {
-            for (const c of compById) {
-              if (c.role === 'admin' || c.contact_email?.toLowerCase() === 'admin@b2blink.eu') {
-                return NextResponse.json(
-                  { error: 'Admin accounts cannot be deleted or removed.' },
-                  { status: 403 }
-                );
-              }
-              targetIds.push(c.id);
-              if (c.user_id) userIds.push(c.user_id);
-            }
-          }
-        }
-
-        if (email) {
-          const cleanEmail = email.trim().toLowerCase();
-          const { data: compByEmail } = await admin
-            .from('companies')
-            .select('id, user_id')
-            .ilike('contact_email', cleanEmail);
-          if (compByEmail && compByEmail.length > 0) {
-            compByEmail.forEach((c) => {
-              if (!targetIds.includes(c.id)) targetIds.push(c.id);
-              if (c.user_id && !userIds.includes(c.user_id)) userIds.push(c.user_id);
-            });
-          }
-        }
-
-        // 2. Cascade delete associated records
-        for (const tId of targetIds) {
-          try { await admin.from('products').delete().eq('company_id', tId); } catch {}
-          try { await admin.from('quotations').delete().eq('seller_company_id', tId); } catch {}
-          try { await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', tId); } catch {}
-          try { await admin.from('product_inquiries').delete().eq('seller_company_id', tId); } catch {}
-          try { await admin.from('companies').delete().eq('id', tId); } catch {}
-        }
-
-        if (email) {
-          const cleanEmail = email.trim().toLowerCase();
-          try { await admin.from('wtb_requests').delete().ilike('buyer_email', cleanEmail); } catch {}
-          try { await admin.from('product_inquiries').delete().ilike('buyer_email', cleanEmail); } catch {}
-          try { await admin.from('companies').delete().ilike('contact_email', cleanEmail); } catch {}
-        }
-
-        // 3. Delete Supabase Auth users
-        for (const uId of userIds) {
-          try {
-            await admin.auth.admin.deleteUser(uId);
-          } catch (authErr) {
-            console.warn('[ADMIN DELETE AUTH WARNING]', authErr);
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[ADMIN DELETE DB WARNING]', dbErr);
-      }
-
-      return NextResponse.json({ success: true, action: 'deleted', companyId, email });
+      return await executeAccountDelete(companyId);
     }
 
     if (action === 'clear_listings' || action === 'clear_lots') {
-      try {
-        const admin = createAdminClient();
-        await admin.from('products').delete().eq('company_id', companyId);
-      } catch (err) {
-        console.warn('[ADMIN CLEAR LISTINGS ERROR]', err);
+      const admin = createAdminClient();
+      const { error: clearErr } = await admin.from('products').delete().eq('company_id', companyId);
+      if (clearErr) {
+        console.error('[ADMIN CLEAR LISTINGS ERROR]', clearErr);
+        return NextResponse.json({ error: clearErr.message || 'Failed to clear listings' }, { status: 500 });
       }
       return NextResponse.json({ success: true, action: 'cleared_listings', companyId });
     }
@@ -794,6 +684,145 @@ export async function POST(req: Request) {
   }
 }
 
+async function executeAccountDelete(companyId: string) {
+  if (!companyId) {
+    return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+
+  // 1. Locate all company records matching id or user_id
+  const { data: targetCompanies, error: fetchErr } = await admin
+    .from('companies')
+    .select('id, user_id, role, contact_email')
+    .or(`id.eq.${companyId},user_id.eq.${companyId}`);
+
+  if (fetchErr) {
+    console.error('[ADMIN DELETE ACCOUNTS FETCH ERROR]', fetchErr);
+    return NextResponse.json({ error: fetchErr.message || 'Failed to locate company' }, { status: 500 });
+  }
+
+  // Guard: Verify target is not an admin account
+  if (
+    targetCompanies?.some(
+      (c) => c.role === 'admin' || c.contact_email?.toLowerCase() === 'admin@b2blink.eu'
+    )
+  ) {
+    return NextResponse.json(
+      { error: 'Admin accounts cannot be deleted or removed.' },
+      { status: 403 }
+    );
+  }
+
+  const targetCompanyIds = new Set<string>();
+  const targetUserIds = new Set<string>();
+
+  if (targetCompanies && targetCompanies.length > 0) {
+    for (const c of targetCompanies) {
+      if (c.id) targetCompanyIds.add(c.id);
+      if (c.user_id) targetUserIds.add(c.user_id);
+    }
+  }
+
+  // If no company record was found with that id or user_id, check if companyId is a Supabase Auth user ID
+  if (targetCompanyIds.size === 0 && targetUserIds.size === 0) {
+    try {
+      const { data: authUserCheck, error: authCheckErr } = await admin.auth.admin.getUserById(companyId);
+      if (authCheckErr) {
+        console.warn('[ADMIN DELETE AUTH LOOKUP NOTICE]', authCheckErr);
+      }
+      if (authUserCheck?.user) {
+        if (
+          authUserCheck.user.email?.toLowerCase() === 'admin@b2blink.eu' ||
+          authUserCheck.user.user_metadata?.role === 'admin'
+        ) {
+          return NextResponse.json(
+            { error: 'Admin accounts cannot be deleted or removed.' },
+            { status: 403 }
+          );
+        }
+        targetUserIds.add(authUserCheck.user.id);
+      }
+    } catch (authLookupErr) {
+      console.warn('[ADMIN DELETE AUTH LOOKUP ERROR]', authLookupErr);
+    }
+  }
+
+  if (targetCompanyIds.size === 0 && targetUserIds.size === 0) {
+    return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+  }
+
+  // 2. Cascade delete records matching company ID
+  for (const tId of targetCompanyIds) {
+    const { error: prodErr } = await admin.from('products').delete().eq('company_id', tId);
+    if (prodErr) {
+      console.error(`[ADMIN DELETE] Error deleting products for company ${tId}:`, prodErr);
+      return NextResponse.json({ error: `Failed to delete products: ${prodErr.message}` }, { status: 500 });
+    }
+
+    const { error: quoteErr } = await admin.from('quotations').delete().eq('seller_company_id', tId);
+    if (quoteErr) {
+      console.error(`[ADMIN DELETE] Error deleting quotations for company ${tId}:`, quoteErr);
+      return NextResponse.json({ error: `Failed to delete quotations: ${quoteErr.message}` }, { status: 500 });
+    }
+
+    const { error: queueErr } = await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', tId);
+    if (queueErr) {
+      console.error(`[ADMIN DELETE] Error deleting notifications for company ${tId}:`, queueErr);
+      return NextResponse.json({ error: `Failed to delete notifications: ${queueErr.message}` }, { status: 500 });
+    }
+
+    const { error: inqSellerErr } = await admin.from('product_inquiries').delete().eq('seller_company_id', tId);
+    if (inqSellerErr) {
+      console.error(`[ADMIN DELETE] Error deleting seller inquiries for company ${tId}:`, inqSellerErr);
+      return NextResponse.json({ error: `Failed to delete seller inquiries: ${inqSellerErr.message}` }, { status: 500 });
+    }
+
+    const { error: payErr } = await admin.from('payments').delete().eq('company_id', tId);
+    if (payErr && !payErr.message?.includes('schema cache') && payErr.code !== '42P01' && payErr.code !== 'PGRST205') {
+      console.error(`[ADMIN DELETE] Error deleting payments for company ${tId}:`, payErr);
+      return NextResponse.json({ error: `Failed to delete payments: ${payErr.message}` }, { status: 500 });
+    }
+
+    const { error: compErr } = await admin.from('companies').delete().eq('id', tId);
+    if (compErr) {
+      console.error(`[ADMIN DELETE] Error deleting company ${tId}:`, compErr);
+      return NextResponse.json({ error: `Failed to delete company: ${compErr.message}` }, { status: 500 });
+    }
+  }
+
+  // 3. Cascade delete records matching user ID
+  for (const uId of targetUserIds) {
+    const { error: wtbUserErr } = await admin.from('wtb_requests').delete().eq('buyer_user_id', uId);
+    if (wtbUserErr) {
+      console.error(`[ADMIN DELETE] Error deleting user WTB requests for ${uId}:`, wtbUserErr);
+      return NextResponse.json({ error: `Failed to delete user WTB requests: ${wtbUserErr.message}` }, { status: 500 });
+    }
+
+    const { error: compUserErr } = await admin.from('companies').delete().eq('user_id', uId);
+    if (compUserErr) {
+      console.error(`[ADMIN DELETE] Error deleting company for user ${uId}:`, compUserErr);
+      return NextResponse.json({ error: `Failed to delete company for user: ${compUserErr.message}` }, { status: 500 });
+    }
+
+    const { error: authDelErr } = await admin.auth.admin.deleteUser(uId);
+    if (authDelErr) {
+      if (!authDelErr.message?.toLowerCase().includes('not found')) {
+        console.error(`[ADMIN DELETE] Error deleting Auth user ${uId}:`, authDelErr);
+        return NextResponse.json({ error: `Failed to delete auth user: ${authDelErr.message}` }, { status: 500 });
+      }
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    action: 'deleted',
+    companyId,
+    deletedCompanyIds: Array.from(targetCompanyIds),
+    deletedUserIds: Array.from(targetUserIds),
+  });
+}
+
 export async function DELETE(req: Request) {
   const auth = await requireAdmin();
   if (auth.errorResponse) return auth.errorResponse;
@@ -801,107 +830,12 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get('id') || searchParams.get('companyId');
-    const email = searchParams.get('email');
 
-    if (!companyId && !email) {
-      return NextResponse.json({ error: 'Company ID or Email is required' }, { status: 400 });
+    if (!companyId) {
+      return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
 
-    const cleanEmail = (email || '').trim().toLowerCase();
-    if (cleanEmail === 'admin@b2blink.eu') {
-      return NextResponse.json(
-        { error: 'Admin accounts cannot be deleted or removed.' },
-        { status: 403 }
-      );
-    }
-
-    try {
-      const admin = createAdminClient();
-
-      // Guard: Verify target is not an admin account
-      if (companyId) {
-        const { data: targetComp } = await admin
-          .from('companies')
-          .select('role, contact_email')
-          .eq('id', companyId)
-          .maybeSingle();
-
-        if (
-          targetComp?.role === 'admin' ||
-          targetComp?.contact_email?.toLowerCase() === 'admin@b2blink.eu'
-        ) {
-          return NextResponse.json(
-            { error: 'Admin accounts cannot be deleted or removed.' },
-            { status: 403 }
-          );
-        }
-      }
-
-      const targetIds: string[] = [];
-      const userIds: string[] = [];
-
-      if (companyId) {
-        const { data: compById } = await admin
-          .from('companies')
-          .select('id, user_id, role, contact_email')
-          .eq('id', companyId);
-        if (compById && compById.length > 0) {
-          for (const c of compById) {
-            if (c.role === 'admin' || c.contact_email?.toLowerCase() === 'admin@b2blink.eu') {
-              return NextResponse.json(
-                { error: 'Admin accounts cannot be deleted or removed.' },
-                { status: 403 }
-              );
-            }
-            targetIds.push(c.id);
-            if (c.user_id) userIds.push(c.user_id);
-          }
-        }
-      }
-
-      if (email) {
-        const cleanEmail = email.trim().toLowerCase();
-        const { data: compByEmail } = await admin
-          .from('companies')
-          .select('id, user_id')
-          .ilike('contact_email', cleanEmail);
-        if (compByEmail && compByEmail.length > 0) {
-          compByEmail.forEach((c) => {
-            if (!targetIds.includes(c.id)) targetIds.push(c.id);
-            if (c.user_id && !userIds.includes(c.user_id)) userIds.push(c.user_id);
-          });
-        }
-      }
-
-      for (const tId of targetIds) {
-        try { await admin.from('products').delete().eq('company_id', tId); } catch {}
-        try { await admin.from('quotations').delete().eq('seller_company_id', tId); } catch {}
-        try { await admin.from('wtb_notifications_queue').delete().eq('seller_company_id', tId); } catch {}
-        try { await admin.from('wtb_requests').delete().eq('buyer_company_id', tId); } catch {}
-        try { await admin.from('product_inquiries').delete().eq('seller_company_id', tId); } catch {}
-        try { await admin.from('product_inquiries').delete().eq('buyer_company_id', tId); } catch {}
-        try { await admin.from('companies').delete().eq('id', tId); } catch {}
-      }
-
-      if (email) {
-        const cleanEmail = email.trim().toLowerCase();
-        try { await admin.from('wtb_requests').delete().ilike('buyer_email', cleanEmail); } catch {}
-        try { await admin.from('product_inquiries').delete().ilike('buyer_email', cleanEmail); } catch {}
-        try { await admin.from('companies').delete().ilike('contact_email', cleanEmail); } catch {}
-      }
-
-      for (const uId of userIds) {
-        try {
-          await admin.auth.admin.deleteUser(uId);
-        } catch (authErr) {
-          console.warn('[ADMIN DELETE AUTH WARNING]', authErr);
-        }
-      }
-    } catch (dbErr) {
-      console.warn('[ADMIN DELETE DB WARNING]', dbErr);
-    }
-
-    return NextResponse.json({ success: true, action: 'deleted', companyId, email });
+    return await executeAccountDelete(companyId);
   } catch (err: any) {
     console.error('Error in /api/admin/accounts DELETE:', err);
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });

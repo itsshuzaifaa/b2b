@@ -12,7 +12,7 @@ export async function GET() {
   if (auth.errorResponse) return auth.errorResponse;
 
   try {
-    const queries = getServerCustomerQueries();
+    const queries = await getServerCustomerQueries();
     return NextResponse.json({ success: true, queries });
   } catch (err) {
     console.error('Error fetching queries:', err);
@@ -28,20 +28,32 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, company, email, phone, topic, message } = body;
 
-    if (!email || !message) {
+    const trimmedEmail = (email || '').trim().toLowerCase();
+    const trimmedMessage = (message || '').trim();
+
+    if (!trimmedEmail || !trimmedMessage) {
       return NextResponse.json(
         { error: 'Email and message are required.' },
         { status: 400 }
       );
     }
 
-    const { query, isDuplicate } = addServerCustomerQuery({
-      name: name || 'Wholesale Member',
-      company: company || 'Trading Enterprise',
-      email: email.trim(),
-      phone: phone || '',
-      topic: topic || 'general',
-      message: message.trim(),
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return NextResponse.json(
+        { error: 'A valid email address is required.' },
+        { status: 400 }
+      );
+    }
+
+    const { query, isDuplicate } = await addServerCustomerQuery({
+      name: (name || '').trim().slice(0, 100) || 'Wholesale Member',
+      company: (company || '').trim().slice(0, 100) || 'Trading Enterprise',
+      email: trimmedEmail,
+      phone: (phone || '').trim().slice(0, 50) || '',
+      topic: (topic || 'general').trim().slice(0, 50),
+      message: trimmedMessage.slice(0, 5000),
     });
 
     if (isDuplicate) {

@@ -78,7 +78,7 @@ export function Footer() {
             </h5>
             <ul className="space-y-2.5 text-[14px]">
               <li>
-                <Link href="/about" className="text-[#D3DEEE] hover:text-white transition-colors">
+                <Link href="/about-us" className="text-[#D3DEEE] hover:text-white transition-colors">
                   About the network
                 </Link>
               </li>
@@ -88,17 +88,17 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/terms" className="text-[#D3DEEE] hover:text-white transition-colors">
+                <Link href="/terms-and-conditions" className="text-[#D3DEEE] hover:text-white transition-colors">
                   Terms &amp; Conditions
                 </Link>
               </li>
               <li>
-                <Link href="/privacy" className="text-[#D3DEEE] hover:text-white transition-colors">
+                <Link href="/privacy-policy" className="text-[#D3DEEE] hover:text-white transition-colors">
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="/cookies" className="text-[#D3DEEE] hover:text-white transition-colors">
+                <Link href="/cookie-policy" className="text-[#D3DEEE] hover:text-white transition-colors">
                   Cookie Policy
                 </Link>
               </li>
@@ -125,15 +125,15 @@ export function Footer() {
             &copy; 2026 B2B LINK OÜ. The verified global wholesale trading and Want-To-Buy demand network. 0% transaction commission.
           </p>
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-[12px] text-[#8A9BB0]">
-            <Link href="/terms" className="hover:text-white transition-colors">
+            <Link href="/terms-and-conditions" className="hover:text-white transition-colors">
               Terms &amp; Conditions
             </Link>
             <span>&bull;</span>
-            <Link href="/privacy" className="hover:text-white transition-colors">
+            <Link href="/privacy-policy" className="hover:text-white transition-colors">
               Privacy Policy
             </Link>
             <span>&bull;</span>
-            <Link href="/cookies" className="hover:text-white transition-colors">
+            <Link href="/cookie-policy" className="hover:text-white transition-colors">
               Cookie Policy
             </Link>
             <span>&bull;</span>

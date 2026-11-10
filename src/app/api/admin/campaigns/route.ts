@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCampaignLeadsFromDatabase, recordNewCampaignLead } from '@/lib/campaigns/campaign-store';
 import { requireAdmin } from '@/lib/auth/guards';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const auth = await requireAdmin();
   if (auth.errorResponse) return auth.errorResponse;
 

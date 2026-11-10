@@ -19,6 +19,7 @@ export interface StoredOtpRecord {
   used: boolean;
   createdAt: number;
   expiresAt: number;
+  userId?: string | null;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -26,7 +27,6 @@ const MAX_ATTEMPTS = 5;
 
 // Global in-memory fallback for local environments or if Redis is unreachable
 declare global {
-  // eslint-disable-next-line no-var
   var __b2b_otp_fallback_store: Map<string, StoredOtpRecord> | undefined;
 }
 
@@ -50,7 +50,8 @@ export async function saveHashedOtp(
   type: 'signup' | 'recovery',
   email: string,
   code: string,
-  ttlMs = FIFTEEN_MINUTES_MS
+  ttlMs = FIFTEEN_MINUTES_MS,
+  userId?: string | null
 ): Promise<void> {
   const key = getStoreKey(type, email);
   const now = Date.now();
@@ -61,6 +62,7 @@ export async function saveHashedOtp(
     used: false,
     createdAt: now,
     expiresAt: now + ttlMs,
+    userId: userId || null,
   };
 
   memoryStore.set(key, record);
@@ -88,7 +90,7 @@ export async function verifyHashedOtp(
   type: 'signup' | 'recovery',
   email: string,
   code: string
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; userId?: string | null }> {
   const normalizedEmail = (email || '').trim().toLowerCase();
   const cleanCode = (code || '').trim().replace(/\s+/g, '');
 
@@ -191,7 +193,7 @@ export async function verifyHashedOtp(
     await getRedis().set(key, JSON.stringify(record), { ex: 300 });
   } catch {}
 
-  return { valid: true };
+  return { valid: true, userId: record.userId || null };
 }
 
 /**

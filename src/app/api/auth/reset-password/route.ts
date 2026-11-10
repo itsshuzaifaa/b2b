@@ -26,44 +26,46 @@ export async function POST(request: NextRequest) {
     // ACTION 1: SEND VERIFICATION CODE TO EMAIL
     // ========================================================
     if (action === 'send_code') {
+      let targetUserId: string | null = null;
+      let contactName: string | undefined;
+
+      // Locate user directly in Supabase Auth by email without pagination limits or listUsers()
+      try {
+        const { data: linkData } = await admin.auth.admin.generateLink({
+          type: 'recovery',
+          email: rawEmail,
+        });
+        if (linkData?.user) {
+          targetUserId = linkData.user.id;
+          contactName = linkData.user.user_metadata?.contact_name || linkData.user.user_metadata?.company_name;
+        }
+      } catch (genErr) {
+        // Suppress error to preserve account enumeration protection
+      }
+
       // 1. Generate 6-digit numeric OTP code
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       
-      // Store hashed OTP in Redis/database with 15-min expiry and max 5 attempts
-      await saveHashedOtp('recovery', rawEmail, otpCode);
+      // Store hashed OTP in Redis/database with 15-min expiry, max 5 attempts, and bound targetUserId
+      await saveHashedOtp('recovery', rawEmail, otpCode, undefined, targetUserId);
 
-      // 2. Fetch contact name if exists
-      let contactName: string | undefined;
-      try {
-        const { data: comp } = await admin
-          .from('companies')
-          .select('contact_name, company_name')
-          .ilike('contact_email', rawEmail)
-          .maybeSingle();
+      // 2. Dispatch branded verification code email ONLY if account exists
+      if (targetUserId) {
+        const emailResult = await sendPasswordResetOtpEmail(rawEmail, {
+          recipientEmail: rawEmail,
+          otpCode,
+          contactName,
+        });
 
-        if (comp) {
-          contactName = comp.contact_name || comp.company_name;
+        if (!emailResult.success) {
+          console.warn('[RESET PASSWORD OTP DISPATCH NOTICE]', emailResult.error);
         }
-      } catch {
-        // ignore
       }
 
-      // 3. Dispatch branded verification code email
-      const emailResult = await sendPasswordResetOtpEmail(rawEmail, {
-        recipientEmail: rawEmail,
-        otpCode,
-        contactName,
-      });
-
-      if (!emailResult.success) {
-        console.warn('[RESET PASSWORD OTP DISPATCH NOTICE]', emailResult.error);
-      }
-
-      // CRITICAL SECURITY MANDATE: Password reset response is identical whether or not email exists
+      // CRITICAL SECURITY MANDATE: Password reset response is strictly identical whether or not email exists
       return NextResponse.json({
         success: true,
         message: `If an account exists with this email, a 6-digit verification code has been dispatched to your inbox.`,
-        ...(process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_OTP === 'true' ? { devOtp: otpCode } : {}),
       });
     }
 
@@ -97,29 +99,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Code is valid! Find user: check companies first (takes ~15ms)
-      let targetUserId: string | null = null;
-      const { data: comp } = await admin
-        .from('companies')
-        .select('user_id')
-        .eq('contact_email', rawEmail)
-        .maybeSingle();
-
-      if (comp?.user_id) {
-        targetUserId = comp.user_id;
-      } else {
-        const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
-          setTimeout(() => resolve({ data: null }), 2000)
-        );
-        const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
-        const raceResult = await Promise.race([listPromise, timeoutPromise]);
-        const usersData = (raceResult as any)?.data?.users || [];
-        const found = usersData.find(
-          (u: any) => u.email?.toLowerCase() === rawEmail
-        );
-        if (found) {
-          targetUserId = found.id;
-        }
+      // User ID was securely bound to the OTP at creation time
+      let targetUserId: string | null = otpValidation.userId || null;
+      if (!targetUserId) {
+        try {
+          const { data: linkData } = await admin.auth.admin.generateLink({
+            type: 'recovery',
+            email: rawEmail,
+          });
+          if (linkData?.user?.id) {
+            targetUserId = linkData.user.id;
+          }
+        } catch {}
       }
 
       if (!targetUserId) {

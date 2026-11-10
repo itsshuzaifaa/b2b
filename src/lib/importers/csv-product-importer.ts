@@ -3,7 +3,7 @@
 import Papa from 'papaparse';
 import { createAdminClient } from '@/lib/supabase/server';
 import { requireApprovedUser } from '@/lib/auth/guards';
-import type { Product, MembershipTier, ProductStatus } from '@/types/database';
+import type { MembershipTier, ProductStatus } from '@/types/database';
 import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
 export interface CsvRowError {

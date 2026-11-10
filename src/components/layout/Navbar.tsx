@@ -41,7 +41,7 @@ export function Navbar() {
   const navLinks = [
     { label: 'Marketplace', href: isDashboardUser ? '/dashboard/marketplace' : '/marketplace' },
     { label: 'Buyer requests', href: isDashboardUser ? '/dashboard/requests' : '/requests' },
-    { label: 'About us', href: '/about' },
+    { label: 'About us', href: '/about-us' },
     { label: 'Membership', href: '/membership' },
     { label: 'Contact', href: '/contact' },
   ];

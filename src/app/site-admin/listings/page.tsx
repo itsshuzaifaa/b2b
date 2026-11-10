@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  getAdminListings,
   suspendListing,
   suspendListings,
   reinstateListing,
   deleteListing,
   deleteListings,
-  isAccountDeleted,
   type AdminModeratedListing,
 } from '@/lib/admin/admin-store';
 import { WHOLESALE_CATEGORIES } from '@/lib/constants/wholesale-categories';
@@ -55,7 +53,6 @@ export default function SiteAdminListingsPage() {
   const [bulkSuspendReason, setBulkSuspendReason] = useState('Suspended pending EAN authenticity check and commercial invoice audit.');
 
   const loadData = async () => {
-    const local = getAdminListings();
     let dbItems: AdminModeratedListing[] = [];
     let wtbItems: AdminModeratedListing[] = [];
     let hasError = false;
@@ -142,52 +139,11 @@ export default function SiteAdminListingsPage() {
       setLoadError(null);
     }
 
-    // 3. User local WTB requests
-    try {
-      const rawUserWtbs = localStorage.getItem('b2b_user_wtb_requests_v2');
-      if (rawUserWtbs) {
-        const parsed = JSON.parse(rawUserWtbs);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((w: any) => {
-            if (!wtbItems.some((item) => item.id === w.id)) {
-              wtbItems.push({
-                id: w.id,
-                type: 'BUY' as const,
-                company_id: w.companyId || w.company_id || '',
-                company_name: w.companyName || 'Verified Procurement Partner',
-                seller_email: w.contactEmail || '',
-                contact_name: w.contactName || 'Buyer',
-                contact_phone: w.contactPhone || '',
-                title: w.description || w.product_name || 'Procurement Request',
-                brand: w.brand || 'Procurement',
-                item_code: w.itemCode || 'WTB-REQ',
-                category_slug: w.category ? w.category.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'general',
-                category_name: w.category || 'General Wholesale',
-                ean: w.ean || 'n/a',
-                condition: w.condition || 'New',
-                unit_price: Number(w.price || w.target_price) || 0,
-                currency: '€',
-                location: w.location || 'EU',
-                quantity_available: Number(w.qty || w.target_quantity) || 50,
-                moq: 1,
-                barcode_or_sku: w.ean,
-                is_hot: false,
-                moderation_status: 'active',
-                images: [],
-                created_at: new Date().toISOString(),
-              });
-            }
-          });
-        }
-      }
-    } catch {}
-
     const map = new Map<string, AdminModeratedListing>();
-    local.forEach((l) => map.set(l.id, l));
     dbItems.forEach((d) => map.set(d.id, d));
     wtbItems.forEach((w) => map.set(w.id, w));
 
-    const merged = Array.from(map.values()).filter((l) => !isAccountDeleted(l.company_id, l.seller_email));
+    const merged = Array.from(map.values());
     setListings(merged);
     setSelectedIds((prev) => prev.filter((id) => map.has(id)));
   };

@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { MOCK_COMPANIES } from '@/lib/mock-data';
-import { isAccountDeleted } from '@/lib/admin/admin-store';
 import type { Company, UserRole, MembershipTier, ApprovalStatus } from '@/types/database';
 
 export type DemoRoleType = 'guest' | 'buyer' | 'seller' | 'seller_pending' | 'seller_approved' | 'admin';
@@ -111,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('b2b_live_inquiries_real_v2');
       localStorage.removeItem('b2b_live_inquiries_real_v1');
       localStorage.removeItem('b2b_pending_signup_email');
+      localStorage.removeItem('b2b_admin_deleted_accounts_v4');
       sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_buyer');
       sessionStorage.removeItem('b2b_buyer_welcome_modal_seen_guest');
 
@@ -158,14 +158,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem('b2b_demo_role');
           }
           const resolvedCompany: Company = data.company;
-          if (isAccountDeleted(resolvedCompany.id, resolvedCompany.email)) {
-            await signOut();
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login?deleted=true';
-            }
-            return;
-          }
-
           setCompany(resolvedCompany);
           if (typeof window !== 'undefined') {
             localStorage.setItem('b2b_cached_company', JSON.stringify(resolvedCompany));
@@ -181,13 +173,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        if (isAccountDeleted(user.id, user.email)) {
-          await signOut();
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login?deleted=true';
-          }
-          return;
-        }
         if (typeof window !== 'undefined') {
           localStorage.removeItem('b2b_demo_role');
         }
@@ -334,27 +319,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadSession, setAuthenticatedUser]);
 
-  // Real-time account deletion guard: Immediately logs out a user if their account is purged by admin
+  // Real-time synchronization with server database on admin updates
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const checkDeleted = () => {
-      if (company && isAccountDeleted(company.id, company.email)) {
-        void signOut().then(() => {
-          window.location.href = '/login?deleted=true';
-        });
-      }
+    const handleServerSync = () => {
+      void loadSession();
     };
 
-    window.addEventListener('b2b_admin_update', checkDeleted);
-    window.addEventListener('storage', checkDeleted);
-    const interval = setInterval(checkDeleted, 3000);
+    window.addEventListener('b2b_admin_update', handleServerSync);
     return () => {
-      window.removeEventListener('b2b_admin_update', checkDeleted);
-      window.removeEventListener('storage', checkDeleted);
-      clearInterval(interval);
+      window.removeEventListener('b2b_admin_update', handleServerSync);
     };
-  }, [company, signOut]);
+  }, [loadSession]);
 
   // Presence heartbeat: tracks online status to suppress email notifications while user is active
   useEffect(() => {

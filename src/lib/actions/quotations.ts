@@ -117,23 +117,18 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
       const { data: byId } = await admin
         .from('companies')
         .select('id, user_id, company_name, contact_name, contact_email, phone, approval_status, tier')
-        .or(`id.eq.${effectiveSellerCompanyId},user_id.eq.${effectiveSellerCompanyId}`)
+        .eq('id', effectiveSellerCompanyId)
         .maybeSingle();
 
       if (byId) {
         sellerRow = byId;
-      }
-    }
-
-    if (!sellerRow && data.sellerEmail) {
-      const { data: byEmail } = await admin
-        .from('companies')
-        .select('id, user_id, company_name, contact_name, contact_email, phone, approval_status, tier')
-        .ilike('contact_email', data.sellerEmail.trim().toLowerCase())
-        .maybeSingle();
-
-      if (byEmail) {
-        sellerRow = byEmail;
+      } else {
+        const { data: byUserId } = await admin
+          .from('companies')
+          .select('id, user_id, company_name, contact_name, contact_email, phone, approval_status, tier')
+          .eq('user_id', auth.user.id)
+          .maybeSingle();
+        if (byUserId) sellerRow = byUserId;
       }
     }
 
@@ -165,7 +160,7 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
         seller = {
           id: mockSeller.id,
           name: mockSeller.name || (mockSeller as any).company_name || 'Verified Supplier',
-          contact_name: mockSeller.contact_name,
+          contact_name: mockSeller.contact_name || 'Seller Representative',
           email: mockSeller.email || (mockSeller as any).contact_email || '',
           approval_status: mockSeller.approval_status || 'approved',
           membership_tier: (mockSeller.membership_tier || (mockSeller as any).tier || 'silver') as MembershipTier,
@@ -290,7 +285,8 @@ export async function getListingQuotations(wtbRequestId: string): Promise<any[]>
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
     const status = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.', code);
   }
 
   const admin = createAdminClient();
@@ -346,7 +342,8 @@ export async function getCompanyQuotations(companyId?: string): Promise<any[]> {
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
     const status = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.', code);
   }
 
   const effectiveCompanyId = auth.isAdmin && companyId ? companyId : auth.company?.id;
@@ -375,11 +372,23 @@ export async function getCompanyQuotations(companyId?: string): Promise<any[]> {
 export async function updateQuotationStatus(
   quotationId: string,
   status: 'accepted' | 'rejected' | 'withdrawn'
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; code?: string }> {
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
-    const statusVal = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(statusVal, statusVal === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const statusVal = auth.errorResponse?.status || 401;
+    let code = statusVal === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    let errorMsg = statusVal === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.';
+    try {
+      const cloned = auth.errorResponse?.clone();
+      const errJson = await cloned?.json();
+      if (errJson?.code) code = errJson.code;
+      if (errJson?.error) errorMsg = errJson.error;
+    } catch {}
+    return {
+      success: false,
+      error: errorMsg,
+      code,
+    };
   }
 
   const admin = createAdminClient();

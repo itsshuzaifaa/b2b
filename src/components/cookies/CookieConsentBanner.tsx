@@ -106,7 +106,7 @@ export function CookieConsentBanner() {
                 </p>
                 <div className="pt-1">
                   <Link
-                    href="/cookies"
+                    href="/cookie-policy"
                     className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#0A6CFF] hover:underline"
                   >
                     <span>Read our full Cookie Policy</span>
@@ -264,7 +264,7 @@ export function CookieConsentBanner() {
             {/* Footer Buttons */}
             <div className="p-5 sm:p-6 border-t border-slate-100 bg-[#F8FAFC] flex flex-col sm:flex-row items-center justify-between gap-3">
               <Link
-                href="/cookies"
+                href="/cookie-policy"
                 onClick={() => setShowPreferences(false)}
                 className="text-[12.5px] font-semibold text-[#5B6B82] hover:text-[#0A6CFF] flex items-center gap-1"
               >

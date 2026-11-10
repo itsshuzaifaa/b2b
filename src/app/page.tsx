@@ -1,14 +1,51 @@
 'use client';
 
-import React from 'react';
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
+import { CheckCircle2, X } from 'lucide-react';
 import { LiveTradingBoard } from '@/components/landing/LiveTradingBoard';
 import { PricingSection } from '@/components/landing/PricingSection';
+
+function DeletedNoticeBanner() {
+  const searchParams = useSearchParams();
+  const isDeleted = searchParams.get('deleted') === 'true';
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!isDeleted || dismissed) return null;
+
+  return (
+    <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 animate-in fade-in slide-in-from-top-4 duration-200">
+      <div className="bg-white border border-emerald-200 rounded-2xl p-4 shadow-xl flex items-start gap-3">
+        <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <CheckCircle2 className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[14px] font-bold text-[#0B1F3A]">Account Deleted</h4>
+          <p className="text-[12px] text-[#5B6B82] mt-0.5">
+            Your account has been permanently deleted. A confirmation email has been dispatched to your address.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="text-[#8A9BB0] hover:text-[#0B1F3A] p-1 rounded-lg transition cursor-pointer"
+          title="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
   return (
     <div className="flex flex-col min-h-screen bg-white">
+      <Suspense fallback={null}>
+        <DeletedNoticeBanner />
+      </Suspense>
       {/* 1. HERO SECTION */}
       <section className="relative text-white pt-36 sm:pt-40 lg:pt-44 pb-20 sm:pb-24 lg:pb-28 overflow-hidden rounded-b-[32px] lg:rounded-b-[56px] shadow-xl">
         {/* Full-width warehouse photo */}

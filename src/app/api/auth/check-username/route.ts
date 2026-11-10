@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       .limit(100);
 
     if (companies && companies.length > 0) {
-      const matchInCompanies = companies.some((c: any) => {
+      const matchInCompanies = companies.some((c) => {
         const cName = (c.contact_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const compName = (c.company_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return cName === normalizedUsername || compName === normalizedUsername;
@@ -97,14 +97,15 @@ export async function GET(request: NextRequest) {
 
     // 2. Auth listUsers fallback with strict 1.5s timeout
     try {
-      const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
+      type ListedUser = { email_confirmed_at?: string | null; user_metadata?: Record<string, unknown> };
+      const timeoutPromise = new Promise<{ data: { users: ListedUser[] } | null }>((resolve) =>
         setTimeout(() => resolve({ data: null }), 1500)
       );
       const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
       const raceResult = await Promise.race([listPromise, timeoutPromise]);
-      const users = (raceResult as any)?.data?.users || [];
+      const users: ListedUser[] = (raceResult as { data?: { users?: ListedUser[] } })?.data?.users || [];
 
-      const isTaken = users.some((u: any) => {
+      const isTaken = users.some((u) => {
         if (!u.email_confirmed_at) return false;
         const existing = (u.user_metadata?.username as string | undefined)?.toLowerCase();
         return existing === username;
@@ -124,8 +125,8 @@ export async function GET(request: NextRequest) {
       available: true,
       message: 'Username is available!',
     });
-  } catch (err: any) {
-    if (err?.digest?.startsWith('NEXT_')) {
+  } catch (err: unknown) {
+    if (typeof (err as { digest?: unknown })?.digest === 'string') {
       throw err;
     }
     console.error('[CHECK USERNAME EXCEPTION]', err);

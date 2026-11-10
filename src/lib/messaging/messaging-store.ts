@@ -2,7 +2,7 @@
 
 import type { Product, Company, WtbRequest } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
-import { isAccountDeleted, getAdminAccounts } from '@/lib/admin/admin-store';
+import { getAdminAccounts } from '@/lib/admin/admin-store';
 
 export interface ChatMessage {
   id: string;
@@ -850,7 +850,7 @@ export async function fetchAllSellersForAdmin(): Promise<any[]> {
     }
 
     const all = Array.from(new Set(map.values()));
-    return all.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
+    return all;
   } catch {
     // fallback
   }

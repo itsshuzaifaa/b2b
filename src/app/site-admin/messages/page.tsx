@@ -15,7 +15,6 @@ import {
   type InquiryConversation,
   type ChatMessage,
 } from '@/lib/messaging/messaging-store';
-import { isAccountDeleted, markAccountAsDeleted } from '@/lib/admin/admin-store';
 import { MessageTime } from '@/components/admin/MessageTime';
 import {
   MessageSquare,
@@ -219,8 +218,7 @@ function SiteAdminMessagesContent() {
     setDirectMsgError(null);
     setDirectMsgSuccess(null);
     const sellers = await fetchAllSellersForAdmin();
-    const cleanSellers = sellers.filter((s: any) => !isAccountDeleted(s.id, s.contact_email));
-    setRegisteredSellers(cleanSellers);
+    setRegisteredSellers(sellers);
     setLoadingSellers(false);
   };
 
@@ -310,15 +308,12 @@ function SiteAdminMessagesContent() {
       const err = result.error || 'Failed to send private message. Please check connection and try again.';
       setDirectMsgError(err);
       if (err.includes('deleted') || err.includes('no longer exists')) {
-        markAccountAsDeleted(selectedSeller.id);
-        if (selectedSeller.contact_email) markAccountAsDeleted(selectedSeller.contact_email);
         setRegisteredSellers((prev) => prev.filter((s) => s.id !== selectedSeller.id));
       }
     }
   };
 
   const filteredSellersInModal = registeredSellers.filter((s) => {
-    if (isAccountDeleted(s.id, s.contact_email)) return false;
     const q = sellerSearch.toLowerCase().trim();
     if (!q) return true;
     return (

@@ -1,6 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendBuyerWtsMatchEmail, sendSellerWtbMatchEmail } from '@/lib/email/dispatcher';
-import type { Product, WtbRequest, Company } from '@/types/database';
 
 export * from './match-types';
 import {

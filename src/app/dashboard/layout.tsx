@@ -5,7 +5,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
-import { isAccountDeleted } from '@/lib/admin/admin-store';
 import { DashboardSkeleton } from '@/components/skeletons/DashboardSkeleton';
 import type { Company, ApprovalStatus } from '@/types/database';
 import { getUnreadInquiriesCountForUser, syncWithSupabase } from '@/lib/messaging/messaging-store';
@@ -50,9 +49,14 @@ function PendingVerificationScreen({
     <div className="py-6 sm:py-10 max-w-3xl mx-auto space-y-6 animate-fade-in text-[#0B1F3A]">
       {/* Top Status Header */}
       <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider">
+        <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider flex-wrap justify-center">
           <Lock className="w-3.5 h-3.5 text-amber-600" />
           <span>Account Status · Pending Business Verification</span>
+          {company.tier && company.tier !== 'bronze' && (
+            <span className="bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded text-[10px] font-black">
+              {company.tier.toUpperCase()} PACKAGE PAID
+            </span>
+          )}
         </div>
         <h2 className="text-[26px] sm:text-[32px] font-black text-[#0B1F3A] tracking-tight leading-tight">
           Business Verification In Progress

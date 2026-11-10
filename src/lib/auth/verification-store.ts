@@ -12,9 +12,9 @@ const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
  * Saves an active signup verification code.
  * Stores code as a secure SHA-256 hash in Redis/database with 15-minute expiration and max 5 attempts.
  */
-export function saveVerificationCode(email: string, code: string): StoredVerification {
+export function saveVerificationCode(email: string, code: string, userId?: string | null): StoredVerification {
   const now = Date.now();
-  void saveHashedOtp('signup', email, code, FIFTEEN_MINUTES_MS);
+  void saveHashedOtp('signup', email, code, FIFTEEN_MINUTES_MS, userId);
   return {
     code: code.trim(),
     createdAt: now,
@@ -33,7 +33,7 @@ export function saveVerificationCode(email: string, code: string): StoredVerific
 export async function validateVerificationCode(
   email: string,
   code: string
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; userId?: string | null }> {
   return verifyHashedOtp('signup', email, code);
 }
 

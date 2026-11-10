@@ -21,10 +21,14 @@ envContent.split('\n').forEach((line) => {
 const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function inspectSchema() {
-  const { data, error } = await supabase.from('quotations').select('*').limit(1);
-  console.log('quotations select:', { data, error });
-  const { error: insErr } = await supabase.from('quotations').insert({});
-  console.log('quotations insert error:', insErr);
+  const { data: inq } = await supabase.from('product_inquiries').select('*').limit(1);
+  console.log('product_inquiries keys:', inq && inq[0] ? Object.keys(inq[0]) : 'empty');
+  const { data: wtb } = await supabase.from('wtb_requests').select('*').limit(1);
+  console.log('wtb_requests keys:', wtb && wtb[0] ? Object.keys(wtb[0]) : 'empty');
+  const { data: pay } = await supabase.from('payments').select('*').limit(1);
+  console.log('payments keys:', pay && pay[0] ? Object.keys(pay[0]) : 'empty');
+  const { data: comp } = await supabase.from('companies').select('*').limit(1);
+  console.log('companies keys:', comp && comp[0] ? Object.keys(comp[0]) : 'empty');
 }
 
 inspectSchema().catch(console.error);

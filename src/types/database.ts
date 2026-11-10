@@ -21,6 +21,7 @@ export type WtbStatus = 'open' | 'fulfilled' | 'closed' | 'expired';
 export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'withdrawn';
 export type NotificationType = 'niche_alert' | 'barcode_match';
 export type QueueStatus = 'pending' | 'sent' | 'failed';
+export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'expired' | 'free';
 
 export type TierConfig = {
   maxActiveProducts: number;
@@ -61,14 +62,14 @@ export type Company = {
   company_name?: string;
   company_number?: string | null;
   vat_number?: string | null;
-  contact_name: string;
-  email: string;
+  contact_name?: string;
+  email?: string;
   contact_email?: string;
   phone?: string | null;
   role: UserRole;
   membership_tier: MembershipTier;
   tier?: MembershipTier;
-  approval_status: ApprovalStatus;
+  approval_status?: ApprovalStatus;
   rejection_reason?: string | null;
   categories: string[];
   niches?: string[];
@@ -189,6 +190,47 @@ export type WtbNotificationQueue = {
   seller_company?: Company;
 };
 
+export type Payment = {
+  id: string;
+  company_id: string | null;
+  subscription_id?: string | null;
+  company_name: string;
+  contact_email: string;
+  plan_or_service: string;
+  amount_gbp: number;
+  payment_method: string;
+  wise_reference?: string | null;
+  transaction_id?: string | null;
+  status: 'Completed' | 'Pending Verification' | 'Failed' | 'Refunded';
+  invoice_number: string;
+  notes?: string | null;
+  recorded_by?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+  updated_at?: string;
+};
+
+export type Subscription = {
+  id: string;
+  company_id: string;
+  tier: 'silver' | 'gold';
+  status: SubscriptionStatus;
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  canceled_at?: string | null;
+  retry_count: number;
+  last_retry_at?: string | null;
+  next_retry_at?: string | null;
+  last_failure_reason?: string | null;
+  payment_method: string;
+  gateway_customer_id?: string | null;
+  gateway_subscription_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  company?: Company;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -242,6 +284,70 @@ export type Database = {
         Insert: Partial<WtbNotificationQueue> &
           Pick<WtbNotificationQueue, 'wtb_request_id' | 'seller_company_id' | 'notification_type'>;
         Update: Partial<WtbNotificationQueue>;
+        Relationships: [];
+      };
+      customer_queries: {
+        Row: {
+          id: string;
+          name: string;
+          company: string;
+          email: string;
+          phone: string | null;
+          topic: string;
+          message: string;
+          status: 'new' | 'replied';
+          reply_text: string | null;
+          replied_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          company: string;
+          email: string;
+          phone?: string | null;
+          topic?: string;
+          message: string;
+          status?: 'new' | 'replied';
+          reply_text?: string | null;
+          replied_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          company?: string;
+          email?: string;
+          phone?: string | null;
+          topic?: string;
+          message?: string;
+          status?: 'new' | 'replied';
+          reply_text?: string | null;
+          replied_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payments: {
+        Row: Payment;
+        Insert: Omit<Payment, 'created_at' | 'updated_at'> & {
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Payment>;
+        Relationships: [];
+      };
+      subscriptions: {
+        Row: Subscription;
+        Insert: Omit<Subscription, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Subscription>;
         Relationships: [];
       };
     };

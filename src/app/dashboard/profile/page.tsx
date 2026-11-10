@@ -18,6 +18,10 @@ import {
   AlertCircle,
   Send,
   RefreshCw,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+  X,
 } from 'lucide-react';
 
 const PRESET_LOGOS = [
@@ -28,7 +32,7 @@ const PRESET_LOGOS = [
 
 export default function DashboardProfilePage() {
   const router = useRouter();
-  const { company, role, demoRole, updateProfile } = useAuth();
+  const { company, role, demoRole, updateProfile, signOut } = useAuth();
   const isBuyer = role === 'buyer' || company?.role === 'buyer' || demoRole === 'buyer';
 
   // Form states
@@ -43,6 +47,49 @@ export default function DashboardProfilePage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+
+  // Delete Account states
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [showDeletePwd, setShowDeletePwd] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE' || !deletePassword || isDeleting) return;
+    setDeleteError(null);
+    setIsDeleting(true);
+
+    try {
+      const res = await fetch('/api/auth/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        setDeleteError(
+          data.error || 'Failed to delete account. Please verify your password and try again.'
+        );
+        setIsDeleting(false);
+        return;
+      }
+
+      try {
+        await signOut();
+      } catch {
+        // ignore
+      }
+
+      window.location.href = '/?deleted=true';
+    } catch (err: any) {
+      setDeleteError(err?.message || 'An unexpected error occurred while deleting your account.');
+      setIsDeleting(false);
+    }
+  };
 
   // Password Reset states
   const [pwdMode, setPwdMode] = useState<'old_password' | 'code'>('old_password');
@@ -880,6 +927,33 @@ export default function DashboardProfilePage() {
               )}
             </form>
           </div>
+
+          {/* Danger Zone: Delete Account */}
+          <div className="bg-white rounded-[28px] border border-red-200 p-8 shadow-[0_4px_20px_rgba(239,68,68,0.04)] mt-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-[17px] font-bold text-red-600 flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-red-600 shrink-0" />
+                  <span>Delete Account</span>
+                </h2>
+                <p className="text-[13px] text-[#5B6B82] mt-1 max-w-xl">
+                  Permanently delete your account, company profile, and active listings from B2B LINK. This action cannot be undone.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(true);
+                  setDeletePassword('');
+                  setDeleteConfirmText('');
+                  setDeleteError(null);
+                }}
+                className="px-5 py-2.5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 font-bold text-[13px] transition cursor-pointer shrink-0"
+              >
+                Delete account...
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* RIGHT COLUMN: Live Preview Card (4 Cols) */}
@@ -993,6 +1067,148 @@ export default function DashboardProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog Modal for Account Deletion */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[28px] border border-[#EAEFF6] max-w-lg w-full p-6 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!isDeleting) {
+                  setShowDeleteModal(false);
+                  setDeletePassword('');
+                  setDeleteConfirmText('');
+                  setDeleteError(null);
+                }
+              }}
+              disabled={isDeleting}
+              className="absolute right-5 top-5 p-2 rounded-full text-[#8A9BB0] hover:text-[#0B1F3A] hover:bg-[#F3F6FB] transition cursor-pointer disabled:opacity-50"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-start gap-3.5 mb-5">
+              <div className="w-11 h-11 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-[20px] font-extrabold text-[#0B1F3A] leading-tight">
+                  Permanently Delete Account
+                </h3>
+                <p className="text-[13px] text-red-600 font-semibold mt-1">
+                  This action is permanent and cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {/* Explanatory Warning Box */}
+            <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-2xl p-4 mb-6">
+              <div className="text-[12px] font-bold text-[#991B1B] uppercase tracking-wider mb-2">
+                What will be deleted:
+              </div>
+              <ul className="text-[12px] text-[#7F1D1D] space-y-1.5 list-disc pl-4 leading-relaxed font-medium">
+                <li>Your company profile and business details</li>
+                <li>All your active inventory listings and product drafts</li>
+                <li>All your WTB sourcing requests and submitted quotations</li>
+                <li>Your login access and authentication credentials</li>
+              </ul>
+              <div className="mt-3 pt-2.5 border-t border-red-200/60 text-[11px] text-[#991B1B] leading-relaxed">
+                <strong>Audit preservation:</strong> Messages and inquiries in conversations with other traders are retained for their compliance records, but all your personal and company information on them is replaced with <em>&ldquo;Deleted user&rdquo;</em>.
+              </div>
+            </div>
+
+            {/* Error Notification */}
+            {deleteError && (
+              <div className="p-3.5 mb-5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-[13px] flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span className="font-medium">{deleteError}</span>
+              </div>
+            )}
+
+            {/* Form Inputs */}
+            <div className="space-y-4 mb-6">
+              {/* Password Re-entry */}
+              <div>
+                <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                  Confirm your password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showDeletePwd ? 'text' : 'password'}
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    disabled={isDeleting}
+                    placeholder="Enter your current password"
+                    className="w-full px-4 py-2.5 pr-11 text-[14px] bg-[#F8FAFC] border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:bg-white focus:outline-none focus:border-red-500 transition font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDeletePwd(!showDeletePwd)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A9BB0] hover:text-[#0B1F3A] transition p-1 cursor-pointer"
+                    title={showDeletePwd ? 'Hide' : 'Show'}
+                  >
+                    {showDeletePwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirmation Phrase */}
+              <div>
+                <label className="block text-[13px] font-bold text-[#0B1F3A] mb-1.5">
+                  Type <span className="font-mono text-red-600 font-extrabold">DELETE</span> to confirm <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  disabled={isDeleting}
+                  placeholder="DELETE"
+                  className="w-full px-4 py-2.5 text-[14px] font-mono tracking-wider bg-[#F8FAFC] border border-[#EAEFF6] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:bg-white focus:outline-none focus:border-red-500 transition"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#F1F5F9]">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletePassword('');
+                  setDeleteConfirmText('');
+                  setDeleteError(null);
+                }}
+                disabled={isDeleting}
+                className="px-5 py-2.5 rounded-full text-[13px] font-bold text-[#5B6B82] hover:bg-[#F3F6FB] transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== 'DELETE' || !deletePassword || isDeleting}
+                className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed transition cursor-pointer flex items-center gap-2 shadow-xs"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting account...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Permanently Delete Account</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

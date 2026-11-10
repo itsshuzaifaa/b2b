@@ -18,7 +18,7 @@ envContent.split('\n').forEach((line) => {
 });
 
 const admin = createAdminClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-const BASE_URL = 'http://localhost:6978';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 async function createCookieSession(email, password) {
   const cookieJar = {};
@@ -43,7 +43,10 @@ async function createCookieSession(email, password) {
 }
 
 async function invokeAction(action, params = {}, cookieHeader = null) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-test-harness': 'b2b-test-suite',
+  };
   if (cookieHeader) headers['Cookie'] = cookieHeader;
   // Use unique random client IP to avoid rate limit conflicts in local test suite
   headers['x-forwarded-for'] = `192.168.100.${Math.floor(Math.random() * 200 + 10)}`;

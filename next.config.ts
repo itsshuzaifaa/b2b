@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
-    agentUpgrade: 'security' as any,
+    agentUpgrade: 'security',
   },
   cacheComponents: true,
   partialPrefetching: true,
@@ -33,6 +33,26 @@ const nextConfig: NextConfig = {
       {
         source: '/admin/:path*',
         destination: '/site-admin/:path*',
+        permanent: true,
+      },
+      {
+        source: '/terms',
+        destination: '/terms-and-conditions',
+        permanent: true,
+      },
+      {
+        source: '/privacy',
+        destination: '/privacy-policy',
+        permanent: true,
+      },
+      {
+        source: '/about',
+        destination: '/about-us',
+        permanent: true,
+      },
+      {
+        source: '/cookies',
+        destination: '/cookie-policy',
         permanent: true,
       },
     ];

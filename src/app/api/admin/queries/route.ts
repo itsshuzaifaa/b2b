@@ -14,7 +14,7 @@ export async function GET() {
   if (auth.errorResponse) return auth.errorResponse;
 
   try {
-    const queries = getServerCustomerQueries();
+    const queries = await getServerCustomerQueries();
     return NextResponse.json({ success: true, queries });
   } catch (err) {
     console.error('Error in GET /api/admin/queries:', err);
@@ -42,14 +42,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Reply text cannot be empty' }, { status: 400 });
       }
 
-      const queries = getServerCustomerQueries();
+      const queries = await getServerCustomerQueries();
       const target = queries.find((q) => q.id === id);
       if (!target) {
         return NextResponse.json({ error: 'Query not found' }, { status: 404 });
       }
 
       // 1. Update record in server database
-      const updated = replyServerCustomerQuery(id, replyText);
+      const updated = await replyServerCustomerQuery(id, replyText);
 
       // 2. Dispatch real email directly to customer
       let emailResult: { success: boolean; error?: string } = { success: false };
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'delete') {
-      const deleted = deleteServerCustomerQuery(id);
+      const deleted = await deleteServerCustomerQuery(id);
       return NextResponse.json({ success: deleted });
     }
 

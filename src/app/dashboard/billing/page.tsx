@@ -85,13 +85,56 @@ function BillingContent() {
   // Change Plan State
   const [selectedTier, setSelectedTier] = useState<MembershipTier>('silver');
 
-  const loadData = () => {
+  const loadData = async () => {
     const cList = getCompanyCards(companyId, contactEmail, company?.id);
     const sub = getCompanySubscription(companyId, contactEmail, effectiveCompanyTier);
     setCards(cList);
     setSubscription(sub);
 
-    // Filter relevant payments
+    try {
+      const res = await fetch('/api/billing/subscription');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.subscription) {
+          setSubscription({
+            companyId,
+            tier: data.subscription.tier,
+            status: data.subscription.status,
+            amountGbp: data.subscription.tier === 'gold' ? 179 : 79,
+            interval: 'month',
+            currentPeriodStart: new Date(data.subscription.current_period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            currentPeriodEnd: new Date(data.subscription.current_period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            cancelAtPeriodEnd: data.subscription.cancel_at_period_end,
+            canceledAt: data.subscription.canceled_at,
+          });
+        }
+        if (data.success && Array.isArray(data.invoices) && data.invoices.length > 0) {
+          setPayments(
+            data.invoices.map((p: any) => ({
+              id: p.id,
+              company_id: p.company_id,
+              company_name: p.company_name,
+              contact_email: p.contact_email,
+              plan_or_service: p.plan_or_service,
+              amount_gbp: Number(p.amount_gbp) || 0,
+              payment_method: p.payment_method,
+              wise_reference: p.wise_reference || '',
+              transaction_id: p.transaction_id || p.id,
+              status: p.status,
+              created_at: new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+              completed_at: p.completed_at ? new Date(p.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null,
+              invoice_number: p.invoice_number,
+              notes: p.notes,
+            }))
+          );
+          return;
+        }
+      }
+    } catch {
+      // fallback to local store if offline
+    }
+
+    // Filter relevant payments fallback
     const allPay = getAdminPayments();
     const myPay = allPay.filter(
       (p) =>
@@ -227,6 +270,20 @@ function BillingContent() {
   };
 
   const handleConfirmCancelSubscription = async () => {
+    try {
+      const res = await fetch('/api/billing/subscription/cancel', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        showNotification(
+          'success',
+          `Auto-renewal canceled. Your ${TIER_PRICING[currentTier].name} benefits remain fully active until ${data.currentPeriodEnd ? new Date(data.currentPeriodEnd).toLocaleDateString('en-GB') : subscription?.currentPeriodEnd}. You will not be charged again.`
+        );
+        setShowCancelModal(false);
+        loadData();
+        return;
+      }
+    } catch {}
+
     // End subscription once the 30 days are over; do NOT demote immediately
     const res = cancelSubscription(companyId, false);
     if (res.success) {
@@ -241,7 +298,19 @@ function BillingContent() {
     }
   };
 
-  const handleReactivateRenewal = () => {
+  const handleReactivateRenewal = async () => {
+    try {
+      const res = await fetch('/api/billing/subscription/reactivate', { method: 'POST' });
+      if (res.ok) {
+        showNotification(
+          'success',
+          `Auto-renewal reactivated! Your ${TIER_PRICING[currentTier].name} will renew automatically each month.`
+        );
+        loadData();
+        return;
+      }
+    } catch {}
+
     const res = reactivateSubscription(companyId);
     if (res.success) {
       showNotification(
@@ -272,9 +341,10 @@ function BillingContent() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            cardNumber: '4242424242424242',
+            tier: selectedTier,
             companyId,
             email: contactEmail,
-            tier: selectedTier,
             companyName,
             contactName: company?.contact_name,
             cardLast4: cards[0]?.last4 || '4242',

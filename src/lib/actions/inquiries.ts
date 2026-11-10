@@ -174,7 +174,8 @@ export async function getInquiryDetails(inquiryId: string): Promise<any> {
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
     const status = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.', code);
   }
 
   const admin = createAdminClient();
@@ -212,7 +213,8 @@ export async function getBuyerInquiries(buyerCompanyId?: string): Promise<any[]>
   const auth = await requireApprovedUser();
   if (auth.errorResponse || !auth.user) {
     const status = auth.errorResponse?.status === 401 ? 401 : 403;
-    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.');
+    const code = status === 401 ? 'UNAUTHORIZED' : 'ACCOUNT_NOT_APPROVED';
+    throw new AuthError(status, status === 401 ? 'Unauthorized: Authentication required.' : 'Forbidden: Account not approved.', code);
   }
 
   const admin = createAdminClient();
