@@ -102,7 +102,7 @@ function QuotationDialogContent({
           // ignore
         }
 
-        // Dispatch official quotation and seller company info to Buyer Dashboard
+        // Optimistically record in local messaging store
         const conversation = dispatchWtbLeadToBuyerDashboard({
           wtbRequest,
           sellerCompany: company,
@@ -116,7 +116,8 @@ function QuotationDialogContent({
           },
         });
 
-        const targetConvId = conversation?.id || `conv-wtb-${wtbRequest.id}-${company.id}`;
+        // Use authoritative Supabase inquiry ID if available
+        const targetConvId = res.inquiryId || conversation?.id || `conv-wtb-${wtbRequest.id}-${company.id}`;
         setRedirectConvId(targetConvId);
         setIsSuccess(true);
         if (onSuccess) onSuccess();

@@ -116,6 +116,18 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
     }
 
     // 3. Insert inquiry into database
+    const initialChatMessage = [
+      {
+        id: `msg-${Date.now()}`,
+        senderId: effectiveBuyerEmail,
+        senderName: effectiveBuyerName,
+        senderRole: 'buyer',
+        text: data.message.trim(),
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      },
+    ];
+
     const { data: insertedInquiry, error: insertError } = await admin
       .from('product_inquiries')
       .insert({
@@ -127,7 +139,7 @@ export async function createProductInquiry(data: InquiryInput): Promise<InquiryA
         buyer_company: effectiveBuyerCompany,
         requested_quantity: data.targetQuantity,
         target_price: data.offeredPrice ?? 0,
-        message: data.message.trim(),
+        message: JSON.stringify(initialChatMessage),
         status: 'new',
       } as any)
       .select('id')

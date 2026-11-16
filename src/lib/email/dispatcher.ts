@@ -857,7 +857,7 @@ export async function processInactivityReminders(
           const convId = `inactivity-reminder-${cand.id}`;
           const newChatMsg = {
             id: `msg-inactivity-${Date.now()}`,
-            senderId: 'facbb93f-080f-480f-b54b-8ef26664da86',
+            senderId: 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6',
             senderName: 'B2B LINK Trading Support',
             senderRole: 'admin',
             text: reminderMsgText,

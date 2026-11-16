@@ -40,6 +40,8 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 
+const ADMIN_COMPANY_ID = 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6';
+
 function SiteAdminMessagesContent() {
   const searchParams = useSearchParams();
   const targetId = searchParams.get('id') || searchParams.get('to');
@@ -228,7 +230,7 @@ function SiteAdminMessagesContent() {
 
     const senderRole = 'admin';
     const senderName = 'Platform Administrator (Executive Desk)';
-    const senderId = 'facbb93f-080f-480f-b54b-8ef26664da86';
+    const senderId = ADMIN_COMPANY_ID;
 
     const textToSend = replyText.trim();
     setReplyText('');
@@ -246,7 +248,7 @@ function SiteAdminMessagesContent() {
       broadcastText.trim(),
       broadcastTarget,
       'Platform Administrator (Executive Desk)',
-      'facbb93f-080f-480f-b54b-8ef26664da86'
+      ADMIN_COMPANY_ID
     );
 
     setIsBroadcasting(false);
@@ -283,7 +285,7 @@ function SiteAdminMessagesContent() {
       selectedSeller.id,
       directMsgText.trim(),
       'Platform Administrator (Executive Desk)',
-      'facbb93f-080f-480f-b54b-8ef26664da86',
+      ADMIN_COMPANY_ID,
       selectedSeller
     );
 
@@ -526,7 +528,7 @@ function SiteAdminMessagesContent() {
                         <span className="font-black text-xs text-slate-900 truncate">
                           {isTrade
                             ? conv.buyerCompanyName
-                            : conv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                            : conv.sellerCompanyId === ADMIN_COMPANY_ID
                             ? `${conv.buyerCompanyName} (${conv.buyerContactName || conv.buyerEmail})`
                             : `${conv.sellerCompanyName} (${conv.sellerContactName || conv.sellerContactEmail})`}
                         </span>
@@ -608,7 +610,7 @@ function SiteAdminMessagesContent() {
                           <span>
                             Member:{' '}
                             <strong className="text-slate-800">
-                              {activeConv.sellerCompanyId === 'facbb93f-080f-480f-b54b-8ef26664da86'
+                              {activeConv.sellerCompanyId === ADMIN_COMPANY_ID
                                 ? `${activeConv.buyerCompanyName} (${activeConv.buyerContactName || activeConv.buyerEmail})`
                                 : `${activeConv.sellerCompanyName} (${activeConv.sellerContactName || activeConv.sellerContactEmail})`}
                             </strong>

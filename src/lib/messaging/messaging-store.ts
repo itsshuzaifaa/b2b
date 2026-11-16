@@ -513,6 +513,47 @@ export async function sendInquiryMessageAsync(
   return conv;
 }
 
+// Fork reply to a broadcast, creating or continuing a private 1-on-1 thread between replier and broadcast creator
+export async function forkBroadcastReplyAsync(params: {
+  broadcastId: string;
+  messageText: string;
+  targetOwnerCompanyId?: string;
+  targetOwnerEmail?: string;
+  broadcastKind?: string;
+  broadcastTitle?: string;
+}): Promise<InquiryConversation | null> {
+  try {
+    const res = await fetch('/api/inquiries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'fork_broadcast_reply',
+        ...params,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.conversation) {
+        const currentAll = getStoredConversations();
+        const idx = currentAll.findIndex((c) => c.id === data.conversation.id);
+        let updated: InquiryConversation[];
+        if (idx !== -1) {
+          updated = [...currentAll];
+          updated[idx] = data.conversation;
+        } else {
+          updated = [data.conversation, ...currentAll];
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent('b2b_inquiries_updated'));
+        return data.conversation;
+      }
+    }
+  } catch (err) {
+    console.warn('[FORK BROADCAST REPLY ERROR]', err);
+  }
+  return null;
+}
+
 // Broadcast an official message to Sellers or Buyers from Admin (Jeff)
 export async function broadcastToTargetAudience(
   title: string,
@@ -712,7 +753,7 @@ export async function sendAdminDirectMessage(
   sellerCompanyId: string,
   text: string,
   adminName: string = 'Platform Administrator (Executive Desk)',
-  adminId: string = 'facbb93f-080f-480f-b54b-8ef26664da86',
+  adminId: string = 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6',
   sellerInfo?: { company_name?: string; contact_name?: string; contact_email?: string }
 ): Promise<SendAdminDirectResult> {
   try {
@@ -1408,31 +1449,6 @@ export function dispatchWtbLeadToBuyerDashboard({
       // ignore
     }
   }
-
-  // Background persist to Supabase via /api/inquiries
-  void (async () => {
-    try {
-      await fetch('/api/inquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create_inquiry',
-          productId: `wtb-${wtbRequest.id}`,
-          sellerCompanyId: sellerCompany.id,
-          buyerCompanyId: wtbRequest.buyer_company_id || undefined,
-          buyerName: wtbRequest.buyer_name,
-          buyerEmail: cleanBuyerEmail,
-          buyerPhone: wtbRequest.buyer_phone,
-          buyerCompany: (wtbRequest as any).buyer_company || wtbRequest.buyer_name,
-          requestedQuantity: resolvedQty,
-          targetPrice: resolvedPrice,
-          initialMessage: messageText,
-        }),
-      });
-    } catch {
-      // offline/silent
-    }
-  })();
 
   return existing;
 }

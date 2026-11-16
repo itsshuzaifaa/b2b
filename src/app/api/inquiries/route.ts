@@ -63,12 +63,12 @@ function parseMessagesFromRow(rawMessage: string, row: RawInquiryRow): ChatMessa
   return [
     {
       id: `msg-init-${row.id}`,
-      senderId: isB || isA ? 'facbb93f-080f-480f-b54b-8ef26664da86' : row.buyer_email || 'buyer',
+      senderId: isB || isA ? 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6' : row.buyer_email || 'buyer',
       senderName: isB || isA ? 'Jeff Vetting Director (B2B LINK Desk)' : row.buyer_name || 'Buyer',
       senderRole: isB || isA ? 'admin' : 'buyer',
       text: rawMessage || 'Inquiry initiated',
       timestamp: row.created_at,
-      isRead: true,
+      isRead: false,
       isBroadcast: isB,
     },
   ];
@@ -135,7 +135,7 @@ function rowToConversation(
   let buyerEmail = row.buyer_email;
 
   if (isAdminDesk) {
-    const isSellerAdmin = sellerCompId === 'facbb93f-080f-480f-b54b-8ef26664da86' || sellerContEmail === 'admin@b2blink.eu';
+    const isSellerAdmin = sellerCompId === 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6' || sellerContEmail === 'admin@b2blink.eu' || sellerCompName?.includes('B2B LINK');
     if (isSellerAdmin) {
       // Seller is Platform Admin, Buyer is the Member
       sellerCompName = 'B2B LINK OÜ (Platform Desk)';
@@ -146,7 +146,7 @@ function rowToConversation(
       buyerContName = matchedBuyerComp?.contact_name || row.buyer_name || 'Valued Member';
     } else {
       // Seller is the Member, Buyer is Platform Admin
-      buyerCompId = 'facbb93f-080f-480f-b54b-8ef26664da86';
+      buyerCompId = 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6';
       buyerCompName = 'B2B LINK OÜ (Platform Desk)';
       buyerContName = 'Jeff Vetting Director';
       buyerEmail = 'admin@b2blink.eu';
@@ -241,11 +241,26 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const role = searchParams.get('role');
-    const email = searchParams.get('email')?.toLowerCase();
-    const companyId = searchParams.get('companyId');
 
     const supabase = createAdminClient();
-    const { data: rows, error } = await supabase
+
+    let authUser: any = null;
+    let authCompany: any = null;
+    let isAdmin = false;
+
+    if (role === 'admin') {
+      const auth = await requireAdmin();
+      if (auth.errorResponse) return auth.errorResponse;
+      isAdmin = true;
+    } else {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+      authUser = auth.user;
+      authCompany = auth.company;
+      isAdmin = auth.isAdmin;
+    }
+
+    let inqQuery = supabase
       .from('product_inquiries')
       .select(`
         id,
@@ -263,7 +278,24 @@ export async function GET(req: NextRequest) {
         products:products(id, title, unit_price, moq, image_urls, category_id),
         seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email, phone)
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    // Optimized SQL-level filtering for member queries to protect database resources
+    if (!isAdmin) {
+      const sessionEmail = (authCompany?.contact_email || authUser?.email || '').toLowerCase().trim();
+      const sessionCompanyId = authCompany?.id;
+
+      if (sessionCompanyId && sessionEmail) {
+        inqQuery = inqQuery.or(`seller_company_id.eq.${sessionCompanyId},buyer_email.ilike.${sessionEmail},status.ilike.broadcast%`);
+      } else if (sessionCompanyId) {
+        inqQuery = inqQuery.or(`seller_company_id.eq.${sessionCompanyId},status.ilike.broadcast%`);
+      } else if (sessionEmail) {
+        inqQuery = inqQuery.or(`buyer_email.ilike.${sessionEmail},status.ilike.broadcast%`);
+      }
+    }
+
+    const { data: rows, error } = await inqQuery;
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -287,30 +319,22 @@ export async function GET(req: NextRequest) {
     const companyLookup = { byEmail, byId };
     let conversations = (rows as unknown as RawInquiryRow[]).map((r) => rowToConversation(r, companyLookup));
 
-    // Filter strictly to preserve commercial confidentiality:
-    if (role === 'admin') {
-      const auth = await requireAdmin();
-      if (auth.errorResponse) return auth.errorResponse;
+    // Admin has full oversight: admin desk, broadcasts, and marketplace trade chats for mediation
+    if (isAdmin) {
+      return NextResponse.json({
+        success: true,
+        conversations,
+      });
+    }
 
-      // Admin only sees:
-      // 1) Messages sent to or by admin (seller_admin desk)
-      // 2) Platform broadcasts sent by admin
-      conversations = conversations.filter(
-        (c) => c.type === 'seller_admin' || c.type === 'broadcast'
-      );
-    } else {
-      // SECURITY MANDATE: Require approved authenticated session.
-      // NEVER allow unauthenticated or pending access, and NEVER trust ?email= from query parameters.
-      const auth = await requireApprovedUser();
-      if (auth.errorResponse) return auth.errorResponse;
+    // Filter strictly for member security & confidentiality:
+    const sessionEmail = (authCompany?.contact_email || authUser?.email || '').toLowerCase().trim();
+    const sessionCompanyId = authCompany?.id;
+    const sessionTier = ((authCompany?.tier || (authCompany as any)?.membership_tier || 'bronze') as string).toLowerCase();
 
-      const sessionEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
-      const sessionCompanyId = auth.company?.id;
-      const sessionTier = ((auth.company?.tier || (auth.company as any)?.membership_tier || 'bronze') as string).toLowerCase();
-
-      // Determine user account registration time to prevent showing past broadcasts
-      const companyCreatedAt = auth.company?.created_at;
-      const accountCreatedTime = companyCreatedAt ? new Date(companyCreatedAt).getTime() : 0;
+    // Determine user account registration time to prevent showing past broadcasts
+    const companyCreatedAt = authCompany?.created_at;
+    const accountCreatedTime = companyCreatedAt ? new Date(companyCreatedAt).getTime() : 0;
 
       conversations = conversations.filter((c) => {
         // 1. Broadcasts - strictly respect member package tiers and account creation date
@@ -361,7 +385,6 @@ export async function GET(req: NextRequest) {
 
         return isMySellerInquiry || isMyBuyerInquiry;
       });
-    }
 
     return NextResponse.json({
       success: true,
@@ -375,6 +398,26 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const DEFAULT_ADMIN_COMPANY_ID = 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6';
+
+async function getAdminCompanyId(supabase: any): Promise<string> {
+  try {
+    const { data: adminComp } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('contact_email', 'admin@b2blink.eu')
+      .maybeSingle();
+
+    if (adminComp?.id) return adminComp.id;
+
+    const { data: anyComp } = await supabase.from('companies').select('id').limit(1).maybeSingle();
+    if (anyComp?.id) return anyComp.id;
+  } catch (err) {
+    console.warn('[getAdminCompanyId error]', err);
+  }
+  return DEFAULT_ADMIN_COMPANY_ID;
+}
+
 async function getSystemProductId(supabase: any): Promise<string> {
   const SYSTEM_PROD_ID = '00000000-0000-4000-a000-000000000001';
   try {
@@ -386,22 +429,17 @@ async function getSystemProductId(supabase: any): Promise<string> {
 
     if (sysProd?.id) return sysProd.id;
 
-    const { data: anyProd } = await supabase
-      .from('products')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-
-    if (anyProd?.id) return anyProd.id;
-
-    // Create system product for admin desk communications
+    // Dynamically resolve real admin company ID to satisfy foreign key constraint
+    const adminCompId = await getAdminCompanyId(supabase);
     const { data: cat } = await supabase.from('categories').select('id').limit(1).maybeSingle();
+
     await supabase.from('products').upsert({
       id: SYSTEM_PROD_ID,
-      company_id: 'facbb93f-080f-480f-b54b-8ef26664da86',
+      company_id: adminCompId,
       category_id: cat?.id || null,
-      title: 'B2B LINK Admin Desk Communication',
-      barcode_or_sku: 'SYS-ADMIN-DESK',
+      title: 'B2B LINK System Communication Desk',
+      description: 'System anchor product for platform broadcasts, admin communications, and trade desk support.',
+      barcode_or_sku: 'SYS-DESK-001',
       unit_price: 0,
       quantity_available: 1,
       moq: 1,
@@ -436,7 +474,7 @@ async function notifyInAppMessageRecipient({
     const isSenderAdmin =
       message.senderRole === 'admin' ||
       message.senderId === 'admin-desk' ||
-      message.senderId === 'facbb93f-080f-480f-b54b-8ef26664da86';
+      message.senderId === 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6';
 
     // 1. Fetch seller company details
     let sellerEmail = threadRow.seller_company?.contact_email || threadRow.seller_company?.email;
@@ -546,21 +584,18 @@ async function notifyInAppMessageRecipient({
       // Ensure sender is not receiving their own email notification and don't email admin when admin is sender
       const isSendingToAdmin = cleanTarget === 'admin@b2blink.eu';
       if (cleanTarget !== cleanSenderId && !(isSenderAdmin && isSendingToAdmin)) {
-        // Enqueue bundled notification:
-        // - Checks if recipient is online -> suppresses email if active
-        // - If inactive, bundles rapid messages (3-4 messages into 1 email)
-        // - Cooldown prevents email spamming
-        // - Never sends message body context
-        enqueueMessageNotification({
-          recipientEmail: cleanTarget,
+        // Dispatch in-app message email alert directly to ensure guaranteed delivery across serverless environments
+        void sendNewInAppMessageEmail({
+          toEmail: cleanTarget,
           recipientName: targetName,
-          recipientUserId: threadRow.seller_company_id || threadRow.buyer_company_id || null,
           senderName,
           senderCompany,
           senderRole: message.senderRole,
           subjectOrProduct,
           conversationId,
           isAdmin: targetIsAdmin,
+        }).catch((sendErr) => {
+          console.warn('[IN-APP MESSAGE EMAIL NOTICE]', cleanTarget, sendErr);
         });
       }
     }
@@ -769,7 +804,7 @@ export async function POST(req: NextRequest) {
 
       const newChatMessage: ChatMessage = {
         id: `msg-admin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        senderId: adminId || 'facbb93f-080f-480f-b54b-8ef26664da86',
+        senderId: adminId || 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6',
         senderName: adminName || 'Jeff (B2B LINK Desk)',
         senderRole: 'admin',
         text: text.trim(),
@@ -778,8 +813,8 @@ export async function POST(req: NextRequest) {
         isBroadcast: false,
       };
 
-      // Check for existing thread by seller_company_id OR buyer_email
-      const { data: existingRows } = await supabase
+      // Check for existing thread by seller_company_id OR buyer_email safely
+      let threadQuery = supabase
         .from('product_inquiries')
         .select(`
           id,
@@ -797,8 +832,15 @@ export async function POST(req: NextRequest) {
           products:products(id, title, unit_price, moq, image_urls),
           seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
         `)
-        .eq('status', 'admin_desk')
-        .or(`seller_company_id.eq.${targetCompanyId},buyer_email.ilike.${targetCompanyEmail}`)
+        .eq('status', 'admin_desk');
+
+      if (targetCompanyEmail && targetCompanyEmail.includes('@')) {
+        threadQuery = threadQuery.or(`seller_company_id.eq.${targetCompanyId},buyer_email.ilike.${targetCompanyEmail}`);
+      } else {
+        threadQuery = threadQuery.eq('seller_company_id', targetCompanyId);
+      }
+
+      const { data: existingRows } = await threadQuery
         .order('created_at', { ascending: false })
         .limit(1);
 
@@ -837,8 +879,8 @@ export async function POST(req: NextRequest) {
           product_id: productId,
           seller_company_id: targetCompanyId,
           buyer_name: sellerComp.contact_name || contactName || 'Valued Member',
-          buyer_email: targetCompanyEmail,
-          buyer_phone: '+372 612 3456',
+          buyer_email: targetCompanyEmail || 'member@b2blink.eu',
+          buyer_phone: sellerComp.phone || '+372 612 3456',
           buyer_company: sellerComp.company_name || companyName || 'Member Organization',
           requested_quantity: 1,
           target_price: 0,
@@ -1104,7 +1146,7 @@ export async function POST(req: NextRequest) {
 
       const broadcastMessage: ChatMessage = {
         id: `broadcast-${Date.now()}`,
-        senderId: adminId || 'facbb93f-080f-480f-b54b-8ef26664da86',
+        senderId: adminId || 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6',
         senderName: adminName || 'Jeff (B2B LINK Desk)',
         senderRole: 'admin',
         text: text.trim(),
@@ -1178,7 +1220,7 @@ export async function POST(req: NextRequest) {
         const { data: anyComp } = await supabase.from('companies').select('id').neq('role', 'admin').limit(1).maybeSingle();
 
         const productId = await getSystemProductId(supabase);
-        const sellerCompanyId = adminComp?.id || anyComp?.id || 'facbb93f-080f-480f-b54b-8ef26664da86';
+        const sellerCompanyId = adminComp?.id || anyComp?.id || (await getAdminCompanyId(supabase));
 
         const { data: newRow, error: insertErr } = await supabase
           .from('product_inquiries')
@@ -1287,21 +1329,30 @@ export async function POST(req: NextRequest) {
         }
 
         const broadcastSubject = targetTitle ? `[B2B LINK] ${targetTitle}` : 'Official Announcement from B2B LINK Platform Desk';
-        for (const r of recipients.values()) {
-          try {
-            void sendNewInAppMessageEmail({
-              toEmail: r.email,
-              recipientName: r.name,
-              senderName: adminName || 'Jeff (B2B LINK Desk)',
-              senderCompany: 'B2B LINK Platform Desk',
-              senderRole: 'admin',
-              messageText: text.trim(),
-              subjectOrProduct: broadcastSubject,
-              conversationId: finalRow.id,
-              isAdmin: false,
-            });
-          } catch (sendErr) {
-            console.warn('[BROADCAST EMAIL ERROR]', r.email, sendErr);
+        const recipientList = Array.from(recipients.values());
+
+        // Batch email dispatches in chunks of 3 with short pauses to protect Resend rate limits
+        for (let i = 0; i < recipientList.length; i += 3) {
+          const batch = recipientList.slice(i, i + 3);
+          await Promise.allSettled(
+            batch.map((r) =>
+              sendNewInAppMessageEmail({
+                toEmail: r.email,
+                recipientName: r.name,
+                senderName: adminName || 'Jeff (B2B LINK Desk)',
+                senderCompany: 'B2B LINK Platform Desk',
+                senderRole: 'admin',
+                messageText: text.trim(),
+                subjectOrProduct: broadcastSubject,
+                conversationId: finalRow.id,
+                isAdmin: false,
+              }).catch((sendErr) => {
+                console.warn('[BROADCAST EMAIL ERROR]', r.email, sendErr);
+              })
+            )
+          );
+          if (i + 3 < recipientList.length) {
+            await new Promise((res) => setTimeout(res, 200));
           }
         }
       } catch (notifyErr) {
@@ -1458,6 +1509,178 @@ export async function POST(req: NextRequest) {
           broadcastKind: kind,
           broadcastDetails,
         },
+      });
+    }
+
+    // 4.2 Fork Broadcast Reply (creates private 1-on-1 thread between replier and broadcast creator)
+    if (action === 'fork_broadcast_reply') {
+      const auth = await requireApprovedUser();
+      if (auth.errorResponse) return auth.errorResponse;
+
+      const {
+        broadcastId,
+        messageText,
+        targetOwnerCompanyId,
+        targetOwnerEmail,
+        broadcastKind,
+        broadcastTitle,
+      } = body;
+
+      if (!broadcastId || !messageText?.trim()) {
+        return NextResponse.json({ success: false, error: 'Broadcast ID and message text required' }, { status: 400 });
+      }
+
+      const callerCompId = auth.company?.id;
+      const callerEmail = (auth.company?.contact_email || auth.user.email || '').toLowerCase().trim();
+      const callerName = auth.company?.contact_name || 'Trading Member';
+      const callerCompanyName = auth.company?.company_name || 'Commercial Member';
+      const callerPhone = auth.company?.phone || null;
+
+      // Resolve broadcast owner details
+      let ownerCompId = targetOwnerCompanyId;
+      let ownerEmail = (targetOwnerEmail || '').toLowerCase().trim();
+
+      if (!ownerCompId || !ownerEmail) {
+        const { data: bcastRow } = await supabase
+          .from('product_inquiries')
+          .select('seller_company_id, buyer_email, buyer_name, buyer_company, message, status')
+          .eq('id', broadcastId)
+          .maybeSingle();
+
+        if (bcastRow) {
+          const bcastMsgs = parseMessagesFromRow(bcastRow.message, bcastRow as unknown as RawInquiryRow);
+          const firstMsg = bcastMsgs[0];
+          ownerCompId = ownerCompId || firstMsg?.broadcastDetails?.ownerCompanyId || bcastRow.seller_company_id;
+          ownerEmail = ownerEmail || (firstMsg?.broadcastDetails?.ownerEmail || bcastRow.buyer_email || '').toLowerCase().trim();
+        }
+      }
+
+      if (!ownerCompId) {
+        ownerCompId = await getAdminCompanyId(supabase);
+      }
+
+      const systemProductId = await getSystemProductId(supabase);
+      const itemTitle = broadcastTitle || 'Broadcast Opportunity';
+
+      // Check if a private 1-on-1 thread already exists between these counterparties
+      const { data: existingThreads } = await supabase
+        .from('product_inquiries')
+        .select(`
+          id,
+          product_id,
+          seller_company_id,
+          buyer_name,
+          buyer_email,
+          buyer_phone,
+          buyer_company,
+          requested_quantity,
+          target_price,
+          message,
+          status,
+          created_at,
+          products:products(id, title, unit_price, moq, image_urls),
+          seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+        `)
+        .eq('seller_company_id', ownerCompId)
+        .ilike('buyer_email', callerEmail)
+        .ilike('buyer_company', `%${itemTitle.slice(0, 20)}%`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const replyChatMessage: ChatMessage = {
+        id: `msg-reply-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        senderId: callerCompId || callerEmail,
+        senderName: callerName,
+        senderRole: 'buyer',
+        text: messageText.trim(),
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      };
+
+      if (existingThreads && existingThreads.length > 0) {
+        const thread = existingThreads[0];
+        const msgs = parseMessagesFromRow(thread.message, thread as unknown as RawInquiryRow);
+        msgs.push(replyChatMessage);
+
+        await supabase
+          .from('product_inquiries')
+          .update({ message: JSON.stringify(msgs) })
+          .eq('id', thread.id);
+
+        const updatedRow = { ...thread, message: JSON.stringify(msgs) };
+
+        void notifyInAppMessageRecipient({
+          supabase,
+          threadRow: updatedRow,
+          message: replyChatMessage,
+          conversationId: thread.id,
+        });
+
+        return NextResponse.json({
+          success: true,
+          conversation: rowToConversation(updatedRow as unknown as RawInquiryRow),
+        });
+      }
+
+      // Create new private 1-on-1 trade inquiry
+      const initialMsgs = [
+        {
+          id: `msg-init-${Date.now()}`,
+          senderId: callerCompId || callerEmail,
+          senderName: callerName,
+          senderRole: 'buyer',
+          text: `💬 Private Trade Negotiation initiated regarding ${itemTitle}:\n\n${messageText.trim()}`,
+          timestamp: new Date().toISOString(),
+          isRead: false,
+        },
+      ];
+
+      const { data: newRow, error: insertErr } = await supabase
+        .from('product_inquiries')
+        .insert({
+          product_id: systemProductId,
+          seller_company_id: ownerCompId,
+          buyer_name: callerName,
+          buyer_email: callerEmail,
+          buyer_phone: callerPhone,
+          buyer_company: `${callerCompanyName} [Re: ${itemTitle}]`,
+          requested_quantity: 1,
+          target_price: 0,
+          message: JSON.stringify(initialMsgs),
+          status: 'new',
+        })
+        .select(`
+          id,
+          product_id,
+          seller_company_id,
+          buyer_name,
+          buyer_email,
+          buyer_phone,
+          buyer_company,
+          requested_quantity,
+          target_price,
+          message,
+          status,
+          created_at,
+          products:products(id, title, unit_price, moq, image_urls),
+          seller_company:companies!seller_company_id(id, company_name, contact_name, contact_email)
+        `)
+        .single();
+
+      if (insertErr || !newRow) {
+        return NextResponse.json({ success: false, error: insertErr?.message || 'Failed to fork broadcast conversation' }, { status: 500 });
+      }
+
+      void notifyInAppMessageRecipient({
+        supabase,
+        threadRow: newRow,
+        message: replyChatMessage,
+        conversationId: newRow.id,
+      });
+
+      return NextResponse.json({
+        success: true,
+        conversation: rowToConversation(newRow as unknown as RawInquiryRow),
       });
     }
 

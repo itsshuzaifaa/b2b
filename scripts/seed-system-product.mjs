@@ -19,7 +19,7 @@ envContent.split('\n').forEach((line) => {
 const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 const SYSTEM_PROD_ID = '00000000-0000-4000-a000-000000000001';
-const ADMIN_COMPANY_ID = 'facbb93f-080f-480f-b54b-8ef26664da86';
+const ADMIN_COMPANY_ID = 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6';
 
 async function seedSystemProduct() {
   const { data: cat } = await admin.from('categories').select('id').limit(1).single();

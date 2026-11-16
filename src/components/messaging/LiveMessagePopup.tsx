@@ -124,7 +124,7 @@ export function LiveMessagePopup() {
 
     const myRole = (role as 'buyer' | 'seller' | 'admin') || 'buyer';
     const senderName = company?.contact_name || (myRole === 'admin' ? 'Jeff Vetting' : 'Marcus Wright');
-    const senderId = company?.id || (myRole === 'admin' ? 'facbb93f-080f-480f-b54b-8ef26664da86' : 'b7d02afe-f080-4ac5-94d6-9f058f2d2b4b');
+    const senderId = company?.id || (myRole === 'admin' ? 'ae387ff9-9c5a-4cb5-a74c-cb7d68baebc6' : 'b7d02afe-f080-4ac5-94d6-9f058f2d2b4b');
 
     sendInquiryMessage(conversation.id, myRole, senderName, senderId, quickReplyText.trim());
 

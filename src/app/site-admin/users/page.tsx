@@ -561,7 +561,7 @@ export default function SiteAdminUsersPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
+          <div suppressHydrationWarning className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-bold px-3.5 py-1.5 rounded-full">
             {loading ? '...' : `${clientAccounts.length} active clients`}
           </div>
         </div>
@@ -608,7 +608,7 @@ export default function SiteAdminUsersPage() {
                 : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50'
             }`}
           >
-            <span>Pending ({loading ? '...' : pendingCount})</span>
+            <span suppressHydrationWarning>Pending ({loading ? '...' : pendingCount})</span>
           </button>
           <button
             type="button"
@@ -620,7 +620,7 @@ export default function SiteAdminUsersPage() {
             }`}
           >
             <Ban className="w-3.5 h-3.5" />
-            <span>Suspended ({loading ? '...' : suspendedCount})</span>
+            <span suppressHydrationWarning>Suspended ({loading ? '...' : suspendedCount})</span>
           </button>
         </div>
 

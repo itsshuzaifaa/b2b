@@ -1237,10 +1237,16 @@ export function newInAppMessageEmail(props: NewInAppMessageEmailProps): {
     : props.senderName || 'Trade Partner';
 
   const count = props.messageCount && props.messageCount > 1 ? props.messageCount : 1;
-  const subject =
-    count > 1
-      ? `You have ${count} new messages waiting from ${senderDisplay}`
-      : `You have a new message waiting from ${senderDisplay}`;
+  const isBroadcast =
+    props.subjectOrProduct?.startsWith('[B2B LINK') ||
+    props.subjectOrProduct?.includes('Broadcast') ||
+    (props.senderRole === 'admin' && Boolean(props.subjectOrProduct?.includes('Announcement')));
+
+  const subject = isBroadcast
+    ? `[B2B LINK Announcement] ${props.subjectOrProduct || 'New Platform Broadcast'}`
+    : count > 1
+    ? `[B2B LINK] You have ${count} new messages from ${senderDisplay}`
+    : `[B2B LINK] New message from ${senderDisplay}${props.subjectOrProduct ? `: ${props.subjectOrProduct}` : ''}`;
 
   const nameGreeting = props.recipientName ? `Hello ${props.recipientName},` : 'Hello,';
 

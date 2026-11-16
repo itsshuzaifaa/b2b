@@ -8,6 +8,7 @@ import {
   getConversationsForUser,
   sendInquiryMessage,
   sendInquiryMessageAsync,
+  forkBroadcastReplyAsync,
   markConversationAsRead,
   syncWithSupabase,
   isMessageSentByMe,
@@ -103,8 +104,11 @@ function InquiriesContent() {
       if (isMounted) refresh();
     });
 
-    // Realtime polling while active in chat (every 2.5s) to guarantee instantaneous message receipt without page refresh
+    // Realtime polling while active in chat (every 4.5s) to guarantee fast message receipt without flooding database
     const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return; // Pause polling when tab is inactive
+      }
       void syncWithSupabase(
         role || undefined,
         companyId,
@@ -114,7 +118,7 @@ function InquiriesContent() {
       ).then(() => {
         if (isMounted) refresh();
       });
-    }, 2500);
+    }, 4500);
 
     const handleUpdate = () => refresh();
     const handleUnlockEvent = () => setUnlockTrigger((prev) => prev + 1);
@@ -143,7 +147,7 @@ function InquiriesContent() {
     setFilterTab(newTab);
     const inTab = conversations.filter((c) => {
       if (newTab === 'buyers') return c.type === 'buyer_seller' && !c.broadcastKind;
-      if (newTab === 'admin') return (c.type === 'seller_admin' || c.type === 'broadcast') && !c.broadcastKind;
+      if (newTab === 'admin') return (c.type === 'seller_admin' || c.status === 'admin_desk') && c.type !== 'broadcast';
       if (newTab === 'broadcast') return c.type === 'broadcast' || Boolean(c.broadcastKind);
       return true;
     });
@@ -166,7 +170,7 @@ function InquiriesContent() {
   const filteredConversations = conversations.filter((c) => {
     // Tab filter
     if (filterTab === 'buyers' && (c.type !== 'buyer_seller' || Boolean(c.broadcastKind))) return false;
-    if (filterTab === 'admin' && ((c.type !== 'seller_admin' && c.type !== 'broadcast') || Boolean(c.broadcastKind))) return false;
+    if (filterTab === 'admin' && (c.type === 'broadcast' || (c.type !== 'seller_admin' && c.status !== 'admin_desk'))) return false;
     if (filterTab === 'broadcast' && c.type !== 'broadcast' && !c.broadcastKind) return false;
 
     // Search filter
@@ -270,6 +274,24 @@ function InquiriesContent() {
     const textToSend = replyText.trim();
     setReplyText('');
 
+    if (isMemberBroadcast && !isBroadcastOwner) {
+      const forked = await forkBroadcastReplyAsync({
+        broadcastId: activeConv.id,
+        messageText: textToSend,
+        targetOwnerCompanyId: activeConv.broadcastDetails?.ownerCompanyId || activeConv.sellerCompanyId,
+        targetOwnerEmail: activeConv.broadcastDetails?.ownerEmail || activeConv.buyerEmail,
+        broadcastKind: broadcastKind || undefined,
+        broadcastTitle: activeConv.broadcastDetails?.title || activeConv.productTitle,
+      });
+
+      if (forked) {
+        setActiveConversationId(forked.id);
+        setFilterTab('all');
+      }
+      setConversations(getConversationsForUser(company));
+      return;
+    }
+
     await sendInquiryMessageAsync(
       activeConv.id,
       senderRole,
@@ -322,7 +344,7 @@ function InquiriesContent() {
   const allCount = conversations.length;
   const buyersCount = conversations.filter((c) => c.type === 'buyer_seller' && !c.broadcastKind).length;
   const broadcastCount = conversations.filter((c) => c.type === 'broadcast' || Boolean(c.broadcastKind)).length;
-  const adminCount = conversations.filter((c) => (c.type === 'seller_admin' || c.type === 'broadcast') && !c.broadcastKind).length;
+  const adminCount = conversations.filter((c) => (c.type === 'seller_admin' || c.status === 'admin_desk') && c.type !== 'broadcast').length;
 
   const recipientName = activeConv
     ? isMemberBroadcast

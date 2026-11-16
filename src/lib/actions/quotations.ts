@@ -20,6 +20,7 @@ export interface QuotationInput {
 export interface QuotationActionResult {
   success: boolean;
   quotationId?: string;
+  inquiryId?: string;
   error?: string;
   code?: string;
 }
@@ -243,6 +244,73 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
 
     const quotationId = insertedQuote?.id || `quote-${Date.now()}`;
 
+    // 4.1 Ensure System Communication Product exists for foreign key constraint
+    const SYSTEM_PROD_ID = '00000000-0000-4000-a000-000000000001';
+    const systemProdId = SYSTEM_PROD_ID;
+    try {
+      const { data: existingProd } = await admin.from('products').select('id').eq('id', SYSTEM_PROD_ID).maybeSingle();
+      if (!existingProd?.id) {
+        const { data: adminComp } = await admin.from('companies').select('id').eq('contact_email', 'admin@b2blink.eu').maybeSingle();
+        const fallbackCompId = adminComp?.id || seller.id;
+        const { data: cat } = await admin.from('categories').select('id').limit(1).maybeSingle();
+        await admin.from('products').upsert({
+          id: SYSTEM_PROD_ID,
+          company_id: fallbackCompId,
+          category_id: cat?.id || null,
+          title: 'B2B LINK System Communication Desk',
+          description: 'System anchor product for platform broadcasts, admin communications, and trade desk support.',
+          barcode_or_sku: 'SYS-DESK-001',
+          unit_price: 0,
+          quantity_available: 1,
+          moq: 1,
+          status: 'draft',
+          is_hot: false,
+        });
+      }
+    } catch (prodErr) {
+      console.warn('[SYSTEM PROD RESOLUTION WARNING]', prodErr);
+    }
+
+    // 4.2 Record official 1-on-1 thread in product_inquiries so Buyer & Seller see it in /dashboard/inquiries
+    let createdInquiryId: string | undefined;
+    try {
+      const quoteChatMessage = {
+        id: `msg-quote-${Date.now()}`,
+        senderId: seller.id,
+        senderName: seller.name,
+        senderRole: 'seller',
+        text: `📝 OFFICIAL WHOLESALE QUOTATION\nProduct: ${wtb.product_name}\nOffered Unit Price: €${data.unitPrice.toFixed(2)}\nOffered Quantity: ${data.quantityOffered} units\nTotal Order Value: €${totalPrice.toLocaleString()}\nEstimated Lead Time: ${data.leadTimeDays ?? 3} days\n${data.notes ? `Supplier Notes: ${data.notes}\n` : ''}\nProforma invoice and dispatch logistics ready upon trade confirmation.`,
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      };
+
+      const cleanBuyerEmail = (wtb.buyer_email || '').toLowerCase().trim();
+      const { data: newInquiry, error: inquiryErr } = await admin
+        .from('product_inquiries')
+        .insert({
+          product_id: systemProdId,
+          seller_company_id: seller.id,
+          buyer_name: wtb.buyer_name,
+          buyer_email: cleanBuyerEmail,
+          buyer_phone: null,
+          buyer_company: `${wtb.buyer_name} (Procurement Lead: ${wtb.product_name})`,
+          requested_quantity: data.quantityOffered,
+          target_price: data.unitPrice,
+          message: JSON.stringify([quoteChatMessage]),
+          status: 'new',
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (inquiryErr) {
+        console.warn('[WTB INQUIRY CREATION NOTICE]', inquiryErr.message);
+      } else if (newInquiry?.id) {
+        createdInquiryId = newInquiry.id;
+      }
+    } catch (inqErr) {
+      console.warn('[WTB INQUIRY CREATION ERROR]', inqErr);
+    }
+
     // 5. Send Notification Email to Buyer asynchronously (non-blocking for immediate UI feedback)
     if (wtb.buyer_email) {
       void sendQuoteReceivedEmail(wtb.buyer_email, {
@@ -264,6 +332,7 @@ export async function submitQuotation(data: QuotationInput): Promise<QuotationAc
     return {
       success: true,
       quotationId,
+      inquiryId: createdInquiryId,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error submitting quotation.';
