@@ -119,6 +119,24 @@ export interface SellerWtbMatchEmailProps {
   actionUrl: string;
 }
 
+export interface MatchedStockItem {
+  name: string;
+  barcodeOrSku?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  targetPrice?: number | null;
+  condition?: string | null;
+  category?: string | null;
+  matchType?: string | null;
+}
+
+export interface ConsolidatedStockMatchEmailProps {
+  recipientType: 'buyer' | 'seller';
+  recipientName: string;
+  items: MatchedStockItem[];
+  actionUrl: string;
+}
+
 export interface InactivityReminderEmailProps {
   recipientEmail: string;
   contactName?: string;
@@ -1473,6 +1491,135 @@ export function sellerWtbMatchEmail(props: SellerWtbMatchEmailProps): { subject:
       content,
       props.actionUrl,
       'Review Buyer Request & Quote'
+    ),
+  };
+}
+
+/**
+ * Dispatches a single consolidated alert to a buyer or seller when multiple items match.
+ * Eliminates receiving 100 individual emails by summarizing all matched stock items in one clean table
+ * and prompting the user to log in to the trading dashboard for full commercial details.
+ */
+export function consolidatedStockMatchEmail(props: ConsolidatedStockMatchEmailProps): { subject: string; html: string } {
+  const isBuyer = props.recipientType === 'buyer';
+  const count = props.items.length;
+
+  const subject = count === 1
+    ? (isBuyer
+        ? `[MATCH FOUND] Stock Available: ${props.items[0].name}`
+        : `[BUYER DEMAND] Immediate Buyer Demand: ${props.items[0].name}`)
+    : (isBuyer
+        ? `[MATCH ALERT] ${count} Matching Stock Items Available for Your Procurement Requests`
+        : `[BUYER ALERT] ${count} Matching Buyer Demands Found for Your Inventory`);
+
+  const badgeText = count === 1 ? '1 STOCK MATCH' : `${count} STOCK MATCHES`;
+  const badgeColor = isBuyer ? '#059669' : '#0A6CFF';
+  const badgeBg = isBuyer ? '#ecfdf5' : '#eff6ff';
+  const badgeBorder = isBuyer ? '#a7f3d0' : '#bfdbfe';
+
+  const rowsHtml = props.items
+    .map((item, idx) => {
+      const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const cleanName = escapeHtml(item.name || 'Wholesale Item');
+      const cleanBarcode = item.barcodeOrSku ? escapeHtml(item.barcodeOrSku) : '—';
+      const qtyText = item.quantity && item.quantity > 0 ? `${item.quantity.toLocaleString()} units` : '1+';
+      const conditionBadge =
+        item.condition && item.condition.toLowerCase() !== 'new'
+          ? `<span style="display: inline-block; font-size: 10px; font-weight: 700; background-color: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${escapeHtml(item.condition)}</span>`
+          : '';
+
+      return `
+        <tr style="background-color: ${bg}; border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 9px 8px; color: #64748b; font-weight: 700; font-size: 12px; text-align: center; vertical-align: top; width: 34px;">
+            ${idx + 1}
+          </td>
+          <td style="padding: 9px 8px; color: #0b1f3a; font-weight: 700; font-size: 13px; line-height: 1.4; vertical-align: top;">
+            ${cleanName}${conditionBadge}
+          </td>
+          <td style="padding: 9px 8px; color: #059669; font-weight: 700; font-size: 13px; text-align: right; white-space: nowrap; vertical-align: top; width: 85px;">
+            ${qtyText}
+          </td>
+          <td style="padding: 9px 8px; color: #64748b; font-family: monospace; font-size: 11px; vertical-align: top; white-space: nowrap; width: 110px;">
+            ${cleanBarcode}
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const headerNotice = isBuyer
+    ? `A verified supplier has listed wholesale inventory matching your active procurement requests on B2B LINK.`
+    : `Qualified buyers have active procurement requests matching your available wholesale listings on B2B LINK.`;
+
+  const content = `
+    <div style="background-color: ${badgeBg}; border: 1px solid ${badgeBorder}; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+      <span style="font-weight: 800; color: ${badgeColor}; font-size: 14px;">
+        ⚡ ${count} Stock ${count === 1 ? 'Match' : 'Matches'} Identified
+      </span>
+      <p style="font-size: 13px; color: #334155; margin: 4px 0 0 0;">
+        ${headerNotice}
+      </p>
+    </div>
+
+    <h2 style="font-size: 20px; font-weight: 800; color: #0b1f3a; margin: 0 0 12px 0;">Hello ${escapeHtml(props.recipientName)},</h2>
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      ${
+        isBuyer
+          ? `Good news! We have identified <strong>${count} matching wholesale ${count === 1 ? 'stock lot' : 'stock lots'}</strong> corresponding to your Want-To-Buy (WTB) procurement requests on B2B LINK.`
+          : `Good news! We have identified <strong>${count} active buyer procurement ${count === 1 ? 'request' : 'requests'}</strong> seeking items matching your wholesale inventory on B2B LINK.`
+      }
+    </p>
+
+    <!-- Important Login & Privacy Callout -->
+    <div style="background-color: #f8fafc; border-left: 4px solid #0A6CFF; padding: 14px 18px; border-radius: 8px; margin: 18px 0 20px 0;">
+      <p style="font-size: 13px; color: #1e293b; margin: 0; line-height: 1.5; font-weight: 600;">
+        🔒 <strong>Commercial Details Protected:</strong> To preserve confidential trading terms, counterparty company identities, and wholesale pricing, full details are exclusively accessible inside your secure portal. Please log in to your B2B LINK account to view full match specifications, unlock supplier contacts, and initiate direct trade negotiations.
+      </p>
+    </div>
+
+    <!-- Stock Matches Table -->
+    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 24px 0 8px 0;">
+      MATCHED STOCK LIST (${count} ${count === 1 ? 'ITEM' : 'ITEMS'})
+    </div>
+    <div style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 20px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background-color: #f1f5f9; border-bottom: 2px solid #e2e8f0; text-align: left;">
+            <th style="padding: 10px 8px; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; width: 34px; text-align: center;">#</th>
+            <th style="padding: 10px 8px; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase;">Stock Item / Model</th>
+            <th style="padding: 10px 8px; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; text-align: right; width: 85px;">Volume</th>
+            <th style="padding: 10px 8px; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; width: 110px;">Barcode / SKU</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="background-color: #F3F6FB; border-radius: 12px; padding: 16px; margin: 20px 0; text-align: center;">
+      <p style="font-size: 13.5px; font-weight: 700; color: #0b1f3a; margin: 0 0 4px 0;">
+        Ready to review all ${count} matches and connect with counterparties?
+      </p>
+      <p style="font-size: 12.5px; color: #5B6B82; margin: 0; line-height: 1.5;">
+        Log in to your B2B LINK Trading Workspace to unlock full pricing, request quotes, or message suppliers directly.
+      </p>
+    </div>
+
+    <div style="margin-top: 24px; font-size: 14px; line-height: 1.6; color: #334155;">
+      Kind regards,<br />
+      <strong>B2B LINK Trading Desk</strong>
+    </div>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      subject,
+      badgeText,
+      content,
+      props.actionUrl,
+      count === 1 ? 'Log In & View Match Details' : `Log In & View All ${count} Matches`
     ),
   };
 }

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { processMatchesForNewProduct, processMatchesForNewWtb } from '@/lib/matching/match-service';
+import {
+  processMatchesForNewProduct,
+  processMatchesForNewWtb,
+  processBatchMatchesForProducts,
+  processBatchMatchesForWtbs,
+} from '@/lib/matching/match-service';
 import { requireAdmin } from '@/lib/auth/guards';
 
 export async function POST(req: NextRequest) {
@@ -204,10 +209,10 @@ export async function POST(req: NextRequest) {
 
       insertedSellCount = inserted ? inserted.length : preparedRows.length;
 
-      // Trigger automatic matching with open WTB requests
+      // Trigger automatic batch matching with open WTB requests (consolidated emails)
       try {
-        for (const row of preparedRows) {
-          void processMatchesForNewProduct({
+        void processBatchMatchesForProducts(
+          preparedRows.map((row) => ({
             company_id: row.company_id,
             title: row.title,
             barcode_or_sku: row.barcode_or_sku,
@@ -215,8 +220,8 @@ export async function POST(req: NextRequest) {
             quantity_available: row.quantity_available,
             condition: 'New',
             description: row.description,
-          });
-        }
+          }))
+        );
       } catch (mErr) {
         console.warn('[ADMIN BULK MATCH SELL NOTICE]', mErr);
       }
@@ -285,10 +290,10 @@ export async function POST(req: NextRequest) {
 
       insertedBuyCount = insertResult.data ? insertResult.data.length : preparedWtbRows.length;
 
-      // Trigger automatic matching with active WTS inventory
+      // Trigger automatic batch matching with active WTS inventory (consolidated emails)
       try {
-        for (const row of preparedWtbRows) {
-          void processMatchesForNewWtb({
+        void processBatchMatchesForWtbs(
+          preparedWtbRows.map((row) => ({
             buyer_user_id: row.buyer_user_id,
             buyer_company: row.buyer_company,
             buyer_name: row.buyer_name,
@@ -299,8 +304,8 @@ export async function POST(req: NextRequest) {
             target_price: row.target_price,
             barcode_or_sku: row.barcode_or_sku,
             notes: row.notes,
-          });
-        }
+          }))
+        );
       } catch (mErr) {
         console.warn('[ADMIN BULK MATCH BUY NOTICE]', mErr);
       }

@@ -31,8 +31,11 @@ import {
   newInAppMessageEmail,
   buyerWtsMatchEmail,
   sellerWtbMatchEmail,
+  consolidatedStockMatchEmail,
   type BuyerWtsMatchEmailProps,
   type SellerWtbMatchEmailProps,
+  type ConsolidatedStockMatchEmailProps,
+  type MatchedStockItem,
   listingInactivatedEmail,
   type ListingInactivatedEmailProps,
   inactivityReminderEmail,
@@ -154,29 +157,70 @@ export async function sendExactBarcodeMatchEmail(
 }
 
 /**
- * Dispatches an immediate alert to a buyer when a seller lists stock matching their WTB request.
+ * Dispatches a consolidated stock match alert (1 email containing all matched items).
+ * Solves the critical issue where 100 matching products generated 100 individual emails.
  */
-export async function sendBuyerWtsMatchEmail(
+export async function sendConsolidatedMatchEmail(
   toEmail: string,
-  props: Omit<BuyerWtsMatchEmailProps, 'actionUrl'> & { matchId?: string; wtbId?: string; productId?: string }
+  props: ConsolidatedStockMatchEmailProps
 ): Promise<SendEmailResult> {
   const baseUrl = await getDynamicAppUrl();
-  const actionUrl = `${baseUrl}/dashboard?matchTab=true${props.matchId ? `&matchId=${props.matchId}` : ''}`;
-  const { subject, html } = buyerWtsMatchEmail({ ...props, actionUrl });
+  const actionUrl = props.actionUrl || `${baseUrl}/dashboard?matchTab=true`;
+  const { subject, html } = consolidatedStockMatchEmail({ ...props, actionUrl });
   return sendEmail({ to: toEmail, subject, html, replyTo: 'trading@b2blink.eu' });
 }
 
 /**
- * Dispatches an immediate alert to a seller when a buyer posts a WTB matching their active WTS listing.
+ * Dispatches an alert to a buyer when a seller lists stock matching their WTB request.
+ * Automatically delegates to the consolidated match format.
+ */
+export async function sendBuyerWtsMatchEmail(
+  toEmail: string,
+  props: Omit<BuyerWtsMatchEmailProps, 'actionUrl'> & { matchId?: string; wtbId?: string; productId?: string; actionUrl?: string }
+): Promise<SendEmailResult> {
+  const baseUrl = await getDynamicAppUrl();
+  const actionUrl = props.actionUrl || `${baseUrl}/dashboard?matchTab=true${props.matchId ? `&matchId=${props.matchId}` : ''}`;
+  return sendConsolidatedMatchEmail(toEmail, {
+    recipientType: 'buyer',
+    recipientName: props.buyerName,
+    items: [
+      {
+        name: props.listingTitle || props.wtbProductName,
+        barcodeOrSku: props.barcodeOrSku,
+        quantity: props.quantityAvailable || props.targetQuantity,
+        unitPrice: props.unitPrice,
+        targetPrice: props.targetPrice,
+        condition: props.condition,
+      },
+    ],
+    actionUrl,
+  });
+}
+
+/**
+ * Dispatches an alert to a seller when a buyer posts a WTB matching their active WTS listing.
+ * Automatically delegates to the consolidated match format.
  */
 export async function sendSellerWtbMatchEmail(
   toEmail: string,
-  props: Omit<SellerWtbMatchEmailProps, 'actionUrl'> & { matchId?: string; wtbId?: string; productId?: string }
+  props: Omit<SellerWtbMatchEmailProps, 'actionUrl'> & { matchId?: string; wtbId?: string; productId?: string; actionUrl?: string }
 ): Promise<SendEmailResult> {
   const baseUrl = await getDynamicAppUrl();
-  const actionUrl = `${baseUrl}/dashboard?matchTab=true${props.matchId ? `&matchId=${props.matchId}` : ''}`;
-  const { subject, html } = sellerWtbMatchEmail({ ...props, actionUrl });
-  return sendEmail({ to: toEmail, subject, html, replyTo: 'trading@b2blink.eu' });
+  const actionUrl = props.actionUrl || `${baseUrl}/dashboard?matchTab=true${props.matchId ? `&matchId=${props.matchId}` : ''}`;
+  return sendConsolidatedMatchEmail(toEmail, {
+    recipientType: 'seller',
+    recipientName: props.sellerName,
+    items: [
+      {
+        name: props.wtbProductName || props.listingTitle,
+        barcodeOrSku: props.barcodeOrSku,
+        quantity: props.targetQuantity,
+        unitPrice: props.listingPrice,
+        targetPrice: props.targetPrice,
+      },
+    ],
+    actionUrl,
+  });
 }
 
 /**

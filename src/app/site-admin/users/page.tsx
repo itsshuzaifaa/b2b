@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   updateAccountTier,
-  updateAccountBasicInfo,
   type AdminClientAccount,
 } from '@/lib/admin/admin-store';
 import type { MembershipTier } from '@/types/database';
@@ -93,6 +92,18 @@ export default function SiteAdminUsersPage() {
       window.removeEventListener('resize', closeMenu);
     };
   }, [activeMenuAccount]);
+
+  // Close edit modal on Escape key
+  useEffect(() => {
+    if (!editingInfoAccount) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !editLoading) {
+        setEditingInfoAccount(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [editingInfoAccount, editLoading]);
 
   const handleOpenMenu = (e: React.MouseEvent<HTMLButtonElement>, acc: AdminClientAccount) => {
     e.stopPropagation();
@@ -394,10 +405,12 @@ export default function SiteAdminUsersPage() {
 
   const handleOpenEditInfo = (acc: AdminClientAccount) => {
     setOpenMenuId(null);
+    setActiveMenuAccount(null);
+    setMenuCoords(null);
     setEditingInfoAccount(acc);
     setEditForm({
       contact_name: acc.contact_name || '',
-      company_name: acc.name || '',
+      company_name: acc.name || (acc as any).company_name || '',
       email: acc.email || '',
       phone: acc.phone || '',
       address: acc.address || '',
@@ -415,6 +428,11 @@ export default function SiteAdminUsersPage() {
     const trimmedContact = editForm.contact_name.trim();
     const trimmedCompany = editForm.company_name.trim();
     const trimmedEmail = editForm.email.trim().toLowerCase();
+    const trimmedPhone = editForm.phone.trim();
+    const trimmedAddress = editForm.address.trim();
+    const trimmedCountry = editForm.country.trim();
+    const trimmedCompanyNumber = editForm.company_number.trim();
+    const trimmedVatNumber = editForm.vat_number.trim();
 
     if (!trimmedContact) {
       setEditError('Contact representative name is required.');
@@ -446,11 +464,11 @@ export default function SiteAdminUsersPage() {
           companyName: trimmedCompany,
           email: trimmedEmail,
           currentEmail,
-          phone: editForm.phone.trim() || null,
-          address: editForm.address.trim() || null,
-          country: editForm.country.trim() || null,
-          companyNumber: editForm.company_number.trim() || null,
-          vatNumber: editForm.vat_number.trim() || null,
+          phone: trimmedPhone || null,
+          address: trimmedAddress || null,
+          country: trimmedCountry || null,
+          companyNumber: trimmedCompanyNumber || null,
+          vatNumber: trimmedVatNumber || null,
         }),
       });
 
@@ -469,29 +487,38 @@ export default function SiteAdminUsersPage() {
             ? {
                 ...a,
                 name: trimmedCompany,
+                company_name: trimmedCompany,
                 contact_name: trimmedContact,
                 email: trimmedEmail,
-                phone: editForm.phone.trim() || null,
-                address: editForm.address.trim() || null,
-                country: editForm.country.trim() || a.country,
-                company_number: editForm.company_number.trim() || null,
-                vat_number: editForm.vat_number.trim() || null,
+                phone: trimmedPhone || null,
+                address: trimmedAddress || null,
+                country: trimmedCountry || a.country,
+                company_number: trimmedCompanyNumber || null,
+                vat_number: trimmedVatNumber || null,
               }
             : a
         )
       );
 
-      // Also update local storage cache helper
-      updateAccountBasicInfo(editingInfoAccount.id, {
-        name: trimmedCompany,
-        contact_name: trimmedContact,
-        email: trimmedEmail,
-        phone: editForm.phone.trim() || null,
-        address: editForm.address.trim() || null,
-        country: editForm.country.trim() || editingInfoAccount.country,
-        company_number: editForm.company_number.trim() || null,
-        vat_number: editForm.vat_number.trim() || null,
-      });
+      // Keep dossier modal in sync if open for this member
+      if (selectedDossier?.id === editingInfoAccount.id) {
+        setSelectedDossier((prev) =>
+          prev
+            ? {
+                ...prev,
+                name: trimmedCompany,
+                company_name: trimmedCompany,
+                contact_name: trimmedContact,
+                email: trimmedEmail,
+                phone: trimmedPhone || null,
+                address: trimmedAddress || null,
+                country: trimmedCountry || prev.country,
+                company_number: trimmedCompanyNumber || null,
+                vat_number: trimmedVatNumber || null,
+              }
+            : null
+        );
+      }
 
       if (isEmailChanging) {
         showNotice(
@@ -1380,10 +1407,11 @@ export default function SiteAdminUsersPage() {
                   <input
                     type="text"
                     required
+                    disabled={editLoading}
                     value={editForm.contact_name}
                     onChange={(e) => setEditForm({ ...editForm, contact_name: e.target.value })}
                     placeholder="e.g. John Doe"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1394,10 +1422,11 @@ export default function SiteAdminUsersPage() {
                   <input
                     type="text"
                     required
+                    disabled={editLoading}
                     value={editForm.company_name}
                     onChange={(e) => setEditForm({ ...editForm, company_name: e.target.value })}
                     placeholder="e.g. Nordic Electro Ltd"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -1411,10 +1440,11 @@ export default function SiteAdminUsersPage() {
                   <input
                     type="email"
                     required
+                    disabled={editLoading}
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                     placeholder="e.g. contact@company.eu"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1424,10 +1454,11 @@ export default function SiteAdminUsersPage() {
                   </label>
                   <input
                     type="tel"
+                    disabled={editLoading}
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                     placeholder="e.g. +372 555 1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -1462,10 +1493,11 @@ export default function SiteAdminUsersPage() {
                 </label>
                 <input
                   type="text"
+                  disabled={editLoading}
                   value={editForm.address}
                   onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
                   placeholder="e.g. Narva mnt 5, 10117 Tallinn, Estonia"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1477,10 +1509,11 @@ export default function SiteAdminUsersPage() {
                   </label>
                   <input
                     type="text"
+                    disabled={editLoading}
                     value={editForm.country}
                     onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
                     placeholder="e.g. Estonia"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1490,10 +1523,11 @@ export default function SiteAdminUsersPage() {
                   </label>
                   <input
                     type="text"
+                    disabled={editLoading}
                     value={editForm.company_number}
                     onChange={(e) => setEditForm({ ...editForm, company_number: e.target.value })}
                     placeholder="e.g. 14892341"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -1503,10 +1537,11 @@ export default function SiteAdminUsersPage() {
                   </label>
                   <input
                     type="text"
+                    disabled={editLoading}
                     value={editForm.vat_number}
                     onChange={(e) => setEditForm({ ...editForm, vat_number: e.target.value })}
                     placeholder="e.g. EE102219482"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold font-mono focus:outline-none focus:border-[#0A6CFF] focus:ring-2 focus:ring-[#0A6CFF]/10 transition disabled:bg-slate-50 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>

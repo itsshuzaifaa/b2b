@@ -13,6 +13,7 @@ export type AccountStatus = 'active' | 'suspended' | 'pending';
 export interface AdminClientAccount {
   id: string;
   name: string;
+  company_name?: string;
   contact_name: string;
   email: string;
   phone?: string | null;

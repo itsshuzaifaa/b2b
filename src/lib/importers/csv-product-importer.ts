@@ -4,7 +4,10 @@ import Papa from 'papaparse';
 import { createAdminClient } from '@/lib/supabase/server';
 import { requireApprovedUser } from '@/lib/auth/guards';
 import type { MembershipTier, ProductStatus } from '@/types/database';
-import { processMatchesForNewProduct } from '@/lib/matching/match-service';
+import {
+  processMatchesForNewProduct,
+  processBatchMatchesForProducts,
+} from '@/lib/matching/match-service';
 
 export interface CsvRowError {
   row: number;
@@ -397,10 +400,10 @@ export async function importProductsFromCsv({
 
   const insertedCount = insertedData ? insertedData.length : validProductsToInsert.length;
 
-  // 9. Trigger automatic matching for newly imported products
+  // 9. Trigger automatic batch matching for newly imported products (consolidated single email)
   try {
-    for (const prod of validProductsToInsert) {
-      void processMatchesForNewProduct({
+    void processBatchMatchesForProducts(
+      validProductsToInsert.map((prod) => ({
         company_id: prod.company_id,
         title: prod.title,
         brand: (prod as any).brand || null,
@@ -409,8 +412,8 @@ export async function importProductsFromCsv({
         quantity_available: prod.quantity_available,
         condition: (prod as any).condition || 'New',
         description: prod.description,
-      });
-    }
+      }))
+    );
   } catch (mErr) {
     console.warn('[CSV MATCH NOTICE]', mErr);
   }

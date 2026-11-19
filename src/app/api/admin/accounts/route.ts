@@ -524,7 +524,7 @@ export async function POST(req: Request) {
       const effectiveNewEmail = (inputEmail || comp.contact_email || '').toLowerCase().trim();
       const emailChanged = effectiveNewEmail !== '' && effectiveNewEmail !== effectiveOldEmail;
 
-      // If email is changing, ensure new email is not already registered to a different account
+      // If email is changing, ensure new email is not already registered to a different account in companies
       if (emailChanged) {
         const { data: duplicateComp } = await admin
           .from('companies')
@@ -543,47 +543,112 @@ export async function POST(req: Request) {
 
       const finalContactName = (contactName || comp.contact_name || '').trim();
       const finalCompanyName = (newCompanyName || comp.company_name || comp.name || '').trim();
+      const finalPhone = phone !== undefined ? (phone ? String(phone).trim() : null) : comp.phone;
+      const finalAddress = address !== undefined ? (address ? String(address).trim() : null) : comp.address || null;
+      const finalCountry = country !== undefined ? (country ? String(country).trim() : null) : comp.country || null;
+      const finalCompanyNumber = companyNumber !== undefined ? (companyNumber ? String(companyNumber).trim() : null) : comp.company_number;
+      const finalVatNumber = vatNumber !== undefined ? (vatNumber ? String(vatNumber).trim() : null) : comp.vat_number;
 
-      // 1. Update companies table
-      const updatePayload: Record<string, any> = {
+      // 1. If email is changing and user has an auth record, verify auth email update first to avoid split-brain
+      const userId = comp.user_id;
+      let existingAuthUser: any = null;
+      if (userId) {
+        try {
+          const { data: userRes, error: fetchUserErr } = await admin.auth.admin.getUserById(userId);
+          if (!fetchUserErr && userRes?.user) {
+            existingAuthUser = userRes.user;
+          }
+        } catch (fetchErr) {
+          console.warn('[ADMIN FETCH AUTH USER NOTICE]', fetchErr);
+        }
+      }
+
+      if (emailChanged && userId) {
+        try {
+          const { error: testEmailErr } = await admin.auth.admin.updateUserById(userId, {
+            email: effectiveNewEmail,
+            email_confirm: true,
+          });
+          if (testEmailErr) {
+            console.error('[ADMIN AUTH EMAIL UPDATE ERROR]', testEmailErr);
+            return NextResponse.json(
+              { error: testEmailErr.message || `Cannot update email to "${effectiveNewEmail}". It may already be in use.` },
+              { status: 400 }
+            );
+          }
+        } catch (authErr: any) {
+          return NextResponse.json(
+            { error: authErr?.message || `Failed to update authentication email to "${effectiveNewEmail}".` },
+            { status: 400 }
+          );
+        }
+      }
+
+      // 2. Update companies table safely (defensive against missing address/country columns)
+      const basePayload: Record<string, any> = {
         company_name: finalCompanyName,
-        name: finalCompanyName,
         contact_name: finalContactName,
         contact_email: effectiveNewEmail || comp.contact_email,
-        phone: phone !== undefined ? (phone ? String(phone).trim() : null) : comp.phone,
-        address: address !== undefined ? (address ? String(address).trim() : null) : comp.address,
-        company_number: companyNumber !== undefined ? (companyNumber ? String(companyNumber).trim() : null) : comp.company_number,
-        vat_number: vatNumber !== undefined ? (vatNumber ? String(vatNumber).trim() : null) : comp.vat_number,
+        phone: finalPhone,
+        company_number: finalCompanyNumber,
+        vat_number: finalVatNumber,
         updated_at: new Date().toISOString(),
       };
 
-      const { data: updatedComp, error: updateErr } = await admin
+      const fullPayload = {
+        ...basePayload,
+        address: finalAddress,
+        country: finalCountry,
+      };
+
+      let updatedComp: any = null;
+      let updateErr: any = null;
+
+      // Try updating full payload first
+      const firstAttempt = await admin
         .from('companies')
-        .update(updatePayload)
+        .update(fullPayload)
         .eq('id', companyId)
         .select('*')
         .maybeSingle();
+
+      if (firstAttempt.error && firstAttempt.error.code === 'PGRST204') {
+        // Fallback to basePayload if address or country column does not yet exist in companies
+        console.warn('[ADMIN UPDATE COMPANIES WARNING] Address/country columns missing from companies table. Falling back to base columns.');
+        const fallbackAttempt = await admin
+          .from('companies')
+          .update(basePayload)
+          .eq('id', companyId)
+          .select('*')
+          .maybeSingle();
+        updatedComp = fallbackAttempt.data;
+        updateErr = fallbackAttempt.error;
+      } else {
+        updatedComp = firstAttempt.data;
+        updateErr = firstAttempt.error;
+      }
 
       if (updateErr) {
         console.error('[ADMIN UPDATE INFO DB ERROR]', updateErr);
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      // 2. Update Supabase Auth user if available
-      const userId = comp.user_id;
+      // 3. Update Supabase Auth user metadata (safely merging with existing user_metadata)
       if (userId) {
         try {
+          const currentMeta = existingAuthUser?.user_metadata || {};
           const authUpdatePayload: any = {
             user_metadata: {
+              ...currentMeta,
               company_name: finalCompanyName,
               contact_name: finalContactName,
-              phone: updatePayload.phone,
-              address: updatePayload.address,
-              company_number: updatePayload.company_number,
-              regNumber: updatePayload.company_number,
-              vat_number: updatePayload.vat_number,
-              vatNumber: updatePayload.vat_number,
-              country: country || undefined,
+              phone: finalPhone,
+              address: finalAddress || currentMeta.address || null,
+              country: finalCountry || currentMeta.country || null,
+              company_number: finalCompanyNumber,
+              regNumber: finalCompanyNumber,
+              vat_number: finalVatNumber,
+              vatNumber: finalVatNumber,
             },
           };
           if (emailChanged) {
@@ -595,7 +660,7 @@ export async function POST(req: Request) {
           console.warn('[ADMIN UPDATE AUTH USER WARNING]', authErr);
         }
       } else if (emailChanged && effectiveOldEmail) {
-        // Try finding user by old email with timeout
+        // Fallback: try finding user by old email with timeout
         try {
           const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
             setTimeout(() => resolve({ data: null }), 2000)
@@ -614,23 +679,24 @@ export async function POST(req: Request) {
                 ...targetUser.user_metadata,
                 company_name: finalCompanyName,
                 contact_name: finalContactName,
-                phone: updatePayload.phone,
-                address: updatePayload.address,
-                company_number: updatePayload.company_number,
-                vat_number: updatePayload.vat_number,
+                phone: finalPhone,
+                address: finalAddress || targetUser.user_metadata?.address || null,
+                country: finalCountry || targetUser.user_metadata?.country || null,
+                company_number: finalCompanyNumber,
+                vat_number: finalVatNumber,
               },
             });
+            // Link user_id to company record
+            await admin.from('companies').update({ user_id: targetUser.id }).eq('id', companyId);
           }
         } catch (authErr) {
           console.warn('[ADMIN LOOKUP AUTH USER WARNING]', authErr);
         }
       }
 
-      // 3. Email notifications if email was changed:
-      // "changing an email should send an email to the curent about the change and the new one to login to activate the change."
+      // 4. Email notifications if email was changed:
       if (emailChanged && effectiveOldEmail && effectiveNewEmail) {
         try {
-          // Email to current (old) email about the update
           await sendEmailChangeNoticeCurrentEmail(effectiveOldEmail, {
             contactName: finalContactName || 'Valued Member',
             companyName: finalCompanyName || 'Wholesale Partner',
@@ -642,7 +708,6 @@ export async function POST(req: Request) {
         }
 
         try {
-          // Email to new email to login & activate the change
           await sendEmailChangeActivationNewEmail(effectiveNewEmail, {
             contactName: finalContactName || 'Valued Member',
             companyName: finalCompanyName || 'Wholesale Partner',
@@ -659,7 +724,11 @@ export async function POST(req: Request) {
         message: emailChanged
           ? 'Member details updated. Change notices sent to current and new emails.'
           : 'Member details updated successfully.',
-        company: updatedComp,
+        company: {
+          ...updatedComp,
+          address: finalAddress,
+          country: finalCountry,
+        },
       });
     }
 
