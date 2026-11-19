@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
-  processMatchesForNewProduct,
-  processMatchesForNewWtb,
   processBatchMatchesForProducts,
   processBatchMatchesForWtbs,
 } from '@/lib/matching/match-service';
@@ -102,15 +100,14 @@ export async function POST(req: NextRequest) {
 
     const effectiveCompanyId = comp.id;
 
-    // 3. Ensure company is approved & sync tier to Gold if account is Gold
-    const targetTier = (tier || comp.tier || 'gold').toLowerCase();
+    // 3. Ensure company is approved & has Gold tier permissions (allowing unlimited listings for admin operations)
     const updates: Record<string, any> = {};
 
     if (comp.approval_status !== 'approved') {
       updates.approval_status = 'approved';
     }
-    // If the account being uploaded to is Gold, or if uploading > 50 products, ensure company row reflects Gold to satisfy tier quota trigger
-    if ((targetTier === 'gold' || products.length > 50) && comp.tier !== 'gold') {
+    // Automatically grant Gold tier on admin upload so account has unlimited listings with zero quota limitations
+    if (comp.tier !== 'gold') {
       updates.tier = 'gold';
     }
 
@@ -197,17 +194,22 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      const { data: inserted, error: insertError } = await admin
-        .from('products')
-        .upsert(preparedRows as any, { onConflict: 'company_id,barcode_or_sku' })
-        .select('id');
+      // Insert in safe batches of 100 to support unlimited listings without payload limits
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < preparedRows.length; i += CHUNK_SIZE) {
+        const chunk = preparedRows.slice(i, i + CHUNK_SIZE);
+        const { data: inserted, error: insertError } = await admin
+          .from('products')
+          .upsert(chunk as any, { onConflict: 'company_id,barcode_or_sku' })
+          .select('id');
 
-      if (insertError) {
-        console.error('[ADMIN BULK CSV SELL INSERT ERROR]', insertError.message);
-        return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+        if (insertError) {
+          console.error('[ADMIN BULK CSV SELL INSERT ERROR]', insertError.message);
+          return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+        }
+
+        insertedSellCount += inserted ? inserted.length : chunk.length;
       }
-
-      insertedSellCount = inserted ? inserted.length : preparedRows.length;
 
       // Trigger automatic batch matching with open WTB requests (consolidated emails)
       try {
@@ -269,26 +271,31 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      let insertResult = await admin
-        .from('wtb_requests')
-        .insert(preparedWtbRows as any)
-        .select('id');
-
-      if (insertResult.error && (insertResult.error.message?.includes('buyer_user_id') || (insertResult.error as any).code === '23503')) {
-        // Fallback without buyer_user_id in case user_id is not present in auth.users
-        const sanitizedRows = preparedWtbRows.map((r: any) => ({ ...r, buyer_user_id: null }));
-        insertResult = await admin
+      // Insert in safe batches of 100 to support unlimited WTB listings without payload limits
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < preparedWtbRows.length; i += CHUNK_SIZE) {
+        const chunk = preparedWtbRows.slice(i, i + CHUNK_SIZE);
+        let insertResult = await admin
           .from('wtb_requests')
-          .insert(sanitizedRows as any)
+          .insert(chunk as any)
           .select('id');
-      }
 
-      if (insertResult.error) {
-        console.error('[ADMIN BULK CSV BUY INSERT ERROR]', insertResult.error.message);
-        return NextResponse.json({ success: false, error: insertResult.error.message }, { status: 500 });
-      }
+        if (insertResult.error && (insertResult.error.message?.includes('buyer_user_id') || (insertResult.error as any).code === '23503')) {
+          // Fallback without buyer_user_id in case user_id is not present in auth.users
+          const sanitizedRows = chunk.map((r: any) => ({ ...r, buyer_user_id: null }));
+          insertResult = await admin
+            .from('wtb_requests')
+            .insert(sanitizedRows as any)
+            .select('id');
+        }
 
-      insertedBuyCount = insertResult.data ? insertResult.data.length : preparedWtbRows.length;
+        if (insertResult.error) {
+          console.error('[ADMIN BULK CSV BUY INSERT ERROR]', insertResult.error.message);
+          return NextResponse.json({ success: false, error: insertResult.error.message }, { status: 500 });
+        }
+
+        insertedBuyCount += insertResult.data ? insertResult.data.length : chunk.length;
+      }
 
       // Trigger automatic batch matching with active WTS inventory (consolidated emails)
       try {

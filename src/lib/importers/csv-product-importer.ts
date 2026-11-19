@@ -5,7 +5,6 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { requireApprovedUser } from '@/lib/auth/guards';
 import type { MembershipTier, ProductStatus } from '@/types/database';
 import {
-  processMatchesForNewProduct,
   processBatchMatchesForProducts,
 } from '@/lib/matching/match-service';
 
@@ -147,9 +146,9 @@ export async function importProductsFromCsv({
     };
   }
 
-  // 2. Verify Membership Tier Permissions
+  // 2. Verify Membership Tier Permissions (Administrators bypass all tier restrictions)
   const tier: MembershipTier = ((company as any).tier || (company as any).membership_tier || 'bronze') as MembershipTier;
-  if (tier === 'bronze') {
+  if (!auth.isAdmin && tier === 'bronze') {
     return {
       success: false,
       totalProcessed: 0,
@@ -198,8 +197,8 @@ export async function importProductsFromCsv({
     };
   }
 
-  // 5. Tier Quota Check for Silver
-  if (tier === 'silver') {
+  // 5. Tier Quota Check for Silver (Administrators bypass listing count quotas)
+  if (!auth.isAdmin && tier === 'silver') {
     const { count: activeCount, error: countError } = await admin
       .from('products')
       .select('*', { count: 'exact', head: true })
@@ -383,22 +382,26 @@ export async function importProductsFromCsv({
     };
   }
 
-  // 8. Insert valid products into Supabase
-  const { data: insertedData, error: insertError } = await admin
-    .from('products')
-    .insert(validProductsToInsert as any)
-    .select('id');
+  // 8. Insert valid products into Supabase (chunked in batches of 100 to support unlimited volume without payload limits)
+  let insertedCount = 0;
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < validProductsToInsert.length; i += CHUNK_SIZE) {
+    const chunk = validProductsToInsert.slice(i, i + CHUNK_SIZE);
+    const { data: insertedData, error: insertError } = await admin
+      .from('products')
+      .insert(chunk as any)
+      .select('id');
 
-  if (insertError) {
-    return {
-      success: false,
-      totalProcessed,
-      insertedCount: 0,
-      errors: [{ row: 0, message: `Database insert failed: ${insertError.message}` }],
-    };
+    if (insertError) {
+      return {
+        success: false,
+        totalProcessed,
+        insertedCount,
+        errors: [{ row: 0, message: `Database insert failed: ${insertError.message}` }],
+      };
+    }
+    insertedCount += insertedData ? insertedData.length : chunk.length;
   }
-
-  const insertedCount = insertedData ? insertedData.length : validProductsToInsert.length;
 
   // 9. Trigger automatic batch matching for newly imported products (consolidated single email)
   try {

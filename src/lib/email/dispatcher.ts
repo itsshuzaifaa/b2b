@@ -29,8 +29,6 @@ import {
   customerQueryReplyEmail,
   type CustomerQueryReplyEmailProps,
   newInAppMessageEmail,
-  buyerWtsMatchEmail,
-  sellerWtbMatchEmail,
   consolidatedStockMatchEmail,
   type BuyerWtsMatchEmailProps,
   type SellerWtbMatchEmailProps,
@@ -470,8 +468,17 @@ export async function processWtbNotificationQueue(limit = 25): Promise<{
   let failedCount = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
+  // Group queue items by seller email to guarantee 1 consolidated email per recipient
+  const sellerGroups = new Map<string, {
+    sellerName: string;
+    items: Array<{
+      queueId: string;
+      item: QueueItemWithRelations;
+    }>;
+  }>();
+
   for (const item of queueItems as unknown as QueueItemWithRelations[]) {
-    const { id, notification_type, wtb_request, seller_company } = item;
+    const { id, wtb_request, seller_company } = item;
 
     if (!wtb_request || !seller_company || !seller_company.email) {
       const errorMsg = 'Missing related WTB request, seller company, or seller email';
@@ -488,25 +495,57 @@ export async function processWtbNotificationQueue(limit = 25): Promise<{
       continue;
     }
 
-    let dispatchResult: SendEmailResult;
+    const emailKey = seller_company.email.toLowerCase().trim();
+    const existing = sellerGroups.get(emailKey) || {
+      sellerName: seller_company.contact_name || seller_company.name || 'Verified Supplier',
+      items: [],
+    };
+    existing.items.push({ queueId: id, item });
+    sellerGroups.set(emailKey, existing);
+  }
 
-    if (notification_type === 'barcode_match' && wtb_request.barcode_or_sku) {
-      dispatchResult = await sendExactBarcodeMatchEmail(seller_company.email, {
-        sellerName: seller_company.contact_name || seller_company.name,
-        productName: wtb_request.product_name,
-        barcodeOrSku: wtb_request.barcode_or_sku,
-        targetQuantity: wtb_request.target_quantity,
-        targetPrice: wtb_request.target_price,
-        wtbRequestId: wtb_request.id,
-      });
+  for (const [sellerEmail, group] of sellerGroups) {
+    let dispatchResult: SendEmailResult;
+    const queueIds = group.items.map((x) => x.queueId);
+
+    if (group.items.length === 1) {
+      const single = group.items[0].item;
+      const { notification_type, wtb_request } = single;
+
+      if (notification_type === 'barcode_match' && wtb_request.barcode_or_sku) {
+        dispatchResult = await sendExactBarcodeMatchEmail(sellerEmail, {
+          sellerName: group.sellerName,
+          productName: wtb_request.product_name,
+          barcodeOrSku: wtb_request.barcode_or_sku,
+          targetQuantity: wtb_request.target_quantity,
+          targetPrice: wtb_request.target_price,
+          wtbRequestId: wtb_request.id,
+        });
+      } else {
+        dispatchResult = await sendNicheWtbAlertEmail(sellerEmail, {
+          sellerName: group.sellerName,
+          productName: wtb_request.product_name,
+          categoryName: wtb_request.category_slug,
+          targetQuantity: wtb_request.target_quantity,
+          targetPrice: wtb_request.target_price,
+          wtbRequestId: wtb_request.id,
+        });
+      }
     } else {
-      dispatchResult = await sendNicheWtbAlertEmail(seller_company.email, {
-        sellerName: seller_company.contact_name || seller_company.name,
-        productName: wtb_request.product_name,
-        categoryName: wtb_request.category_slug,
-        targetQuantity: wtb_request.target_quantity,
-        targetPrice: wtb_request.target_price,
-        wtbRequestId: wtb_request.id,
+      // Multiple WTB alerts for the same seller: send EXACTLY ONE consolidated email!
+      const matchedStockList: MatchedStockItem[] = group.items.map(({ item }) => ({
+        name: item.wtb_request.product_name,
+        barcodeOrSku: item.wtb_request.barcode_or_sku || null,
+        quantity: item.wtb_request.target_quantity,
+        targetPrice: item.wtb_request.target_price,
+        matchType: item.notification_type === 'barcode_match' ? 'exact_sku' : 'category_match',
+      }));
+
+      dispatchResult = await sendConsolidatedMatchEmail(sellerEmail, {
+        recipientType: 'seller',
+        recipientName: group.sellerName,
+        items: matchedStockList,
+        actionUrl: '',
       });
     }
 
@@ -518,9 +557,9 @@ export async function processWtbNotificationQueue(limit = 25): Promise<{
           sent_at: new Date().toISOString(),
           error_message: null,
         })
-        .eq('id', id);
+        .in('id', queueIds);
 
-      sentCount++;
+      sentCount += queueIds.length;
     } else {
       const errorMsg = dispatchResult.error || 'Failed to dispatch email';
       await adminClient
@@ -529,10 +568,10 @@ export async function processWtbNotificationQueue(limit = 25): Promise<{
           status: 'failed',
           error_message: errorMsg,
         })
-        .eq('id', id);
+        .in('id', queueIds);
 
-      failedCount++;
-      errors.push({ id, error: errorMsg });
+      failedCount += queueIds.length;
+      queueIds.forEach((qid) => errors.push({ id: qid, error: errorMsg }));
     }
   }
 

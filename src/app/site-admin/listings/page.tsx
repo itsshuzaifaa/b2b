@@ -30,7 +30,10 @@ import {
   Phone,
   Layers,
   CheckSquare,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
+import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 
 export default function SiteAdminListingsPage() {
   const [listings, setListings] = useState<AdminModeratedListing[]>([]);
@@ -51,6 +54,10 @@ export default function SiteAdminListingsPage() {
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState('Suspended pending EAN authenticity check and commercial invoice audit.');
+
+  // Admin Bulk CSV Modal State
+  const [isBulkCsvOpen, setIsBulkCsvOpen] = useState(false);
+  const [bulkCsvMode, setBulkCsvMode] = useState<'WTS' | 'WTB'>('WTS');
 
   const loadData = async () => {
     let dbItems: AdminModeratedListing[] = [];
@@ -157,6 +164,12 @@ export default function SiteAdminListingsPage() {
   const showNotice = (msg: string) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3000);
+  };
+
+  const handleBulkCsvSuccess = (count: number) => {
+    showNotice(`Successfully uploaded and published ${count} listings to marketplace catalog.`);
+    loadData();
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('b2b_admin_update'));
   };
 
   const handleConfirmSuspend = (e: React.FormEvent) => {
@@ -298,6 +311,28 @@ export default function SiteAdminListingsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setBulkCsvMode('WTS');
+              setIsBulkCsvOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-extrabold text-[12px] rounded-full transition cursor-pointer shadow-xs"
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Upload WTS CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setBulkCsvMode('WTB');
+              setIsBulkCsvOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#16A34A] hover:bg-emerald-700 text-white font-extrabold text-[12px] rounded-full transition cursor-pointer shadow-xs"
+          >
+            <ArrowDownLeft className="w-3.5 h-3.5" />
+            <span>Upload WTB CSV</span>
+          </button>
           <div className="bg-[#EBF3FF] text-[#0A6CFF] text-[12px] font-extrabold px-3.5 py-1.5 rounded-full border border-[#D0E2FF]">
             {totalCount} total lots
           </div>
@@ -1124,6 +1159,14 @@ export default function SiteAdminListingsPage() {
           </div>
         </div>
       )}
+
+      {/* ADMIN BULK CSV DISPATCH MODAL */}
+      <AdminBulkCsvModal
+        isOpen={isBulkCsvOpen}
+        onClose={() => setIsBulkCsvOpen(false)}
+        initialMode={bulkCsvMode}
+        onSuccess={handleBulkCsvSuccess}
+      />
     </>
   );
 }

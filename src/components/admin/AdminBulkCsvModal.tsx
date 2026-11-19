@@ -43,10 +43,27 @@ export interface ParsedCsvProduct {
   errors: string[];
 }
 
+const DEFAULT_TRADE_DESK_ACCOUNT: AdminClientAccount = {
+  id: '00000000-0000-4000-a000-000000000001',
+  name: 'B2B LINK Official Trade Desk',
+  company_name: 'B2B LINK OÜ',
+  contact_name: 'Platform Operations Desk',
+  email: 'trading@b2blink.eu',
+  role: 'admin',
+  membership_tier: 'gold',
+  approval_status: 'approved',
+  account_status: 'active',
+  created_at: '2026-01-01T00:00:00.000Z',
+  listings_count: 0,
+  total_spend_or_sales: '€0',
+  verified_documents: true,
+};
+
 interface AdminBulkCsvModalProps {
   isOpen: boolean;
   onClose: () => void;
-  account: AdminClientAccount | null;
+  account?: AdminClientAccount | null;
+  accounts?: AdminClientAccount[];
   initialMode?: 'WTS' | 'WTB';
   onSuccess?: (insertedCount: number) => void;
 }
@@ -140,9 +157,43 @@ export function AdminBulkCsvModal({
   isOpen,
   onClose,
   account,
+  accounts,
   initialMode = 'WTS',
   onSuccess,
 }: AdminBulkCsvModalProps) {
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [allAccounts, setAllAccounts] = useState<AdminClientAccount[]>(accounts || []);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (account) {
+        setSelectedAccountId(account.id);
+      } else {
+        if (!accounts || accounts.length === 0) {
+          fetch('/api/admin/accounts')
+            .then((res) => res.json())
+            .then((data) => {
+              if (Array.isArray(data.accounts)) {
+                setAllAccounts(data.accounts);
+                if (data.accounts.length > 0) {
+                  setSelectedAccountId((prev) => prev || data.accounts[0].id);
+                }
+              }
+            })
+            .catch(() => {});
+        } else if (accounts.length > 0) {
+          setSelectedAccountId((prev) => prev || accounts[0].id);
+        }
+      }
+    }
+  }, [isOpen, account, accounts]);
+
+  const activeAccount: AdminClientAccount = useMemo(() => {
+    if (account) return account;
+    const found = allAccounts.find((a) => a.id === selectedAccountId);
+    return found || allAccounts[0] || DEFAULT_TRADE_DESK_ACCOUNT;
+  }, [account, selectedAccountId, allAccounts]);
+
   // Step 1: Upload & Field Configuration | Step 2: Full-screen Table Preview & Publish
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [file, setFile] = useState<File | null>(null);
@@ -370,7 +421,7 @@ export function AdminBulkCsvModal({
   }, [displayedRows, currentPage, pageSize, totalFiltered]);
 
   const handleConfirmPublish = async () => {
-    if (!account || validRows.length === 0) return;
+    if (!activeAccount || validRows.length === 0) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -381,10 +432,10 @@ export function AdminBulkCsvModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: account.id,
-          email: account.email,
-          companyName: account.name,
-          tier: account.membership_tier,
+          companyId: activeAccount.id,
+          email: activeAccount.email,
+          companyName: activeAccount.name,
+          tier: activeAccount.membership_tier,
           products: validRows,
         }),
       });
@@ -401,8 +452,8 @@ export function AdminBulkCsvModal({
           const existingListings = rawLocal ? JSON.parse(rawLocal) : [];
           const newLocalListings = sellRows.map((item, idx) => ({
             id: `admin_imported_${Date.now()}_${idx}`,
-            company_id: account.id,
-            seller_id: account.id,
+            company_id: activeAccount.id,
+            seller_id: activeAccount.id,
             title: item.title,
             brand: item.brand,
             itemCode: item.itemCode || (item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : `SKU-${Date.now()}-${idx}`),
@@ -415,7 +466,7 @@ export function AdminBulkCsvModal({
             moq: item.moq,
             location: item.location,
             status: 'Active',
-            contact_email: account.email,
+            contact_email: activeAccount.email,
             images: item.images.length > 0 ? item.images : ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800'],
           }));
 
@@ -434,11 +485,11 @@ export function AdminBulkCsvModal({
           const newLocalWtbs = buyRows.map((item, idx) => ({
             id: `admin_wtb_imported_${Date.now()}_${idx}`,
             type: 'BUY' as const,
-            company_id: account.id,
-            companyName: account.name,
-            contactEmail: account.email,
-            contactName: account.contact_name,
-            contactPhone: account.phone || '',
+            company_id: activeAccount.id,
+            companyName: activeAccount.name,
+            contactEmail: activeAccount.email,
+            contactName: activeAccount.contact_name,
+            contactPhone: activeAccount.phone || '',
             category: item.category,
             brand: item.brand,
             itemCode: item.itemCode || (item.barcodeOrSku !== 'n/a' ? item.barcodeOrSku : `WTB-${Date.now()}-${idx}`),
@@ -491,7 +542,7 @@ export function AdminBulkCsvModal({
     }
   };
 
-  if (!isOpen || !account) return null;
+  if (!isOpen || !activeAccount) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#0B1F3A]/60">
@@ -501,11 +552,11 @@ export function AdminBulkCsvModal({
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#0A6CFF]/20 border border-[#0A6CFF]/40 text-[#60A5FA] text-[10.5px] font-extrabold uppercase tracking-wider mb-0.5">
               <Package className="w-3.5 h-3.5 text-[#0A6CFF]" />
-              <span>Admin Bulk Wholesale Dispatch</span>
+              <span>Admin Bulk Wholesale Dispatch &middot; Unlimited Capacity</span>
             </div>
             <h3 className="text-[18px] font-extrabold text-white tracking-tight flex items-center gap-2">
               <span>Upload CSV for</span>
-              <span className="text-[#38BDF8] underline decoration-dotted">{account.name}</span>
+              <span className="text-[#38BDF8] underline decoration-dotted">{activeAccount.name}</span>
             </h3>
           </div>
           <button
@@ -522,25 +573,43 @@ export function AdminBulkCsvModal({
         {/* ========================================================================= */}
         {currentStep === 1 && (
           <div className="p-6 overflow-y-auto flex-1 space-y-5">
-            {/* Account Summary Banner */}
+            {/* Account Selector / Summary Banner */}
             <div className="bg-[#F8FAFC] px-5 py-3 rounded-2xl border border-[#EAEFF6] flex flex-wrap items-center justify-between gap-3 text-[13px]">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5 text-[#0B1F3A] font-bold">
-                  <Building2 className="w-4 h-4 text-[#0A6CFF]" />
-                  <span>{account.name}</span>
-                </div>
+              <div className="flex items-center gap-4 flex-wrap">
+                {!account && allAccounts.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-[#0A6CFF] shrink-0" />
+                    <span className="text-[12.5px] font-bold text-[#0B1F3A]">Target Account:</span>
+                    <select
+                      value={activeAccount.id}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      className="px-2.5 py-1 rounded-xl border border-slate-300 bg-white text-[12px] font-bold text-[#0B1F3A] focus:outline-hidden focus:border-[#0A6CFF] cursor-pointer"
+                    >
+                      {allAccounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name || a.company_name} ({a.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-[#0B1F3A] font-bold">
+                    <Building2 className="w-4 h-4 text-[#0A6CFF]" />
+                    <span>{activeAccount.name}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5 text-[#5B6B82]">
                   <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{account.email}</span>
+                  <span>{activeAccount.email}</span>
                 </div>
                 <div className="text-[#8A9BB0]">
-                  Contact: <strong className="text-[#0B1F3A]">{account.contact_name}</strong>
+                  Contact: <strong className="text-[#0B1F3A]">{activeAccount.contact_name || activeAccount.name}</strong>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                  Tier: {account.membership_tier}
+                <span className="text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Unlimited Listings (Admin)
                 </span>
                 <a
                   href={tradeMode === 'WTS' ? '/sample-b2b-products.csv' : '/sample-b2b-wtb-requests.csv'}
@@ -820,7 +889,7 @@ export function AdminBulkCsvModal({
                   <strong className="font-bold text-emerald-950">Success!</strong>
                   <span className="ml-1">
                     Successfully published {submissionSuccess.total}{' '}
-                    {submissionSuccess.mode === 'WTS' ? 'Sell Offers' : 'Buy Requirements'} for {account.name}.
+                    {submissionSuccess.mode === 'WTS' ? 'Sell Offers' : 'Buy Requirements'} for {activeAccount.name}.
                   </span>
                 </div>
               </div>
@@ -1067,8 +1136,8 @@ export function AdminBulkCsvModal({
                     <ShieldCheck className="w-4 h-4" />
                     <span>
                       {tradeMode === 'WTS'
-                        ? `Publish All ${validRows.length} WTS Sell Offers to ${account.name}`
-                        : `Publish All ${validRows.length} WTB Buy Requirements to ${account.name}`}
+                        ? `Publish All ${validRows.length} WTS Sell Offers to ${activeAccount.name}`
+                        : `Publish All ${validRows.length} WTB Buy Requirements to ${activeAccount.name}`}
                     </span>
                   </>
                 )}
