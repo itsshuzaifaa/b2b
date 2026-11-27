@@ -84,8 +84,12 @@ export function areItemsMatching(
   const normWtbBarcode = normalizeBarcode(wtb.barcode_or_sku);
 
   // 1. Exact Barcode Match (Highest Priority)
-  if (normProdBarcode && normWtbBarcode && normProdBarcode === normWtbBarcode) {
-    return { isMatch: true, matchType: 'exact_barcode', confidence: 100 };
+  if (normProdBarcode && normWtbBarcode) {
+    if (normProdBarcode === normWtbBarcode) {
+      return { isMatch: true, matchType: 'exact_barcode', confidence: 100 };
+    }
+    // Both items have explicit, non-matching barcodes/SKUs — do not fall back to loose title matching
+    return { isMatch: false, matchType: 'exact_barcode', confidence: 0 };
   }
 
   // 2. Keyword / Title Matching
