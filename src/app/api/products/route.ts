@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { requireUser, requireApprovedUser } from '@/lib/auth/guards';
+import { fetchAllRows } from '@/lib/supabase/paginate';
+import { requireUser, requireApprovedUser, requireAdmin } from '@/lib/auth/guards';
 import type { Product } from '@/types/database';
 import { processMatchesForNewProduct } from '@/lib/matching/match-service';
 
@@ -32,6 +33,11 @@ export async function GET(req: NextRequest) {
 
     const showAll = searchParams.get('all') === 'true' || searchParams.get('admin') === 'true';
 
+    if (showAll) {
+      const adminAuth = await requireAdmin();
+      if (adminAuth.errorResponse) return adminAuth.errorResponse;
+    }
+
     if (productId) {
       dbQuery = dbQuery.eq('id', productId);
     }
@@ -41,11 +47,39 @@ export async function GET(req: NextRequest) {
       dbQuery = dbQuery.eq('status', 'active');
     }
 
-    const { data: rows, error } = await dbQuery;
+    const pageParam = searchParams.get('page');
+    const limitParam = searchParams.get('limit');
+    const parsedLimit = limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10) || 50), 200) : 0;
+    const parsedPage = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
 
-    if (error) {
-      console.error('[GET PRODUCTS ERROR]', error.message);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    let rows: any[] = [];
+    if (parsedLimit > 0) {
+      const from = (parsedPage - 1) * parsedLimit;
+      const to = from + parsedLimit - 1;
+      const { data, error } = await dbQuery.range(from, to);
+      if (error) {
+        console.error('[GET PRODUCTS ERROR]', error.message);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      rows = data || [];
+    } else {
+      rows = await fetchAllRows<any>((from, to) => {
+        let pageQ = admin
+          .from('products')
+          .select(`
+            *,
+            company:companies(id, company_name, tier, niches, created_at),
+            category:categories(id, name, slug)
+          `)
+          .neq('id', '00000000-0000-4000-a000-000000000001')
+          .order('created_at', { ascending: false });
+
+        if (productId) pageQ = pageQ.eq('id', productId);
+        if (companyId) pageQ = pageQ.eq('company_id', companyId);
+        else if (!productId && !showAll) pageQ = pageQ.eq('status', 'active');
+
+        return pageQ.range(from, to);
+      });
     }
 
     const products: Product[] = (rows || []).map((row: any) => ({

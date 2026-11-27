@@ -1992,6 +1992,67 @@ export function accountDeletedConfirmationEmail(
   };
 }
 
+export interface StaffInviteEmailProps {
+  recipientEmail: string;
+  invitedByEmail: string;
+  permissionLabels: string[];
+  actionUrl: string;
+}
+
+export function staffInviteEmail(props: StaffInviteEmailProps): { subject: string; html: string } {
+  const subject = 'You have been invited to join the B2B LINK Admin Team';
+  const safeInviter = escapeHtml(props.invitedByEmail || 'Platform Administrator');
+  const safeActionUrl = escapeHtml(props.actionUrl);
+
+  const permsHtml =
+    props.permissionLabels.length > 0
+      ? props.permissionLabels
+          .slice(0, 12)
+          .map(
+            (label) =>
+              `<li style="margin-bottom: 4px;">${escapeHtml(label)}</li>`
+          )
+          .join('')
+      : '<li>Assigned Admin Desk Access</li>';
+
+  const content = `
+    <h1 style="font-size: 22px; font-weight: 800; color: #0B1F3A; margin: 0 0 16px 0; letter-spacing: -0.02em;">
+      Welcome to the B2B LINK Admin Team
+    </h1>
+    <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 16px 0;">
+      <strong>${safeInviter}</strong> has invited you (<strong>${escapeHtml(props.recipientEmail)}</strong>) to join the B2B LINK Administration Portal as a staff member.
+    </p>
+    <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 18px 0;">
+      Click the button below to complete your staff profile (full name, profile photo, and login password) and activate your access.
+    </p>
+
+    <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 16px 20px; margin-bottom: 22px;">
+      <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #0A6CFF; margin-bottom: 8px;">
+        GRANTED PERMISSIONS (${props.permissionLabels.length})
+      </div>
+      <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: #334155;">
+        ${permsHtml}
+      </ul>
+    </div>
+
+    <p style="font-size: 12.5px; line-height: 1.5; color: #64748B; margin: 0;">
+      This invitation link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: emailWrapper(
+      'Staff Team Invitation',
+      'ADMIN INVITE',
+      content,
+      safeActionUrl,
+      'Complete Staff Account Setup'
+    ),
+  };
+}
+
+
 
 
 

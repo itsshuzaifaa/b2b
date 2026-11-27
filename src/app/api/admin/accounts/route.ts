@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { fetchAllRows, listAllAuthUsers } from '@/lib/supabase/paginate';
 import { requireAdmin } from '@/lib/auth/guards';
 import {
   sendAccountApprovalEmail,
@@ -35,20 +36,16 @@ export async function GET() {
     const companies = [...companiesRes.data];
     const authUsers: any[] = [];
 
-    // 2. Fetch products & WTB requests in parallel for listing counts (with 1.2s timeout guard)
+    // 2. Fetch products & WTB requests in parallel (paginated past 1,000-row cap)
     let productsData: any[] = [];
     let wtbsData: any[] = [];
     try {
-      const countsPromise = Promise.all([
-        admin.from('products').select('company_id'),
-        admin.from('wtb_requests').select('buyer_user_id, buyer_email'),
+      const [pRows, wRows] = await Promise.all([
+        fetchAllRows<any>((from, to) => admin.from('products').select('company_id').range(from, to)),
+        fetchAllRows<any>((from, to) => admin.from('wtb_requests').select('buyer_user_id, buyer_email').range(from, to)),
       ]);
-      const timeoutPromise = new Promise<any[]>((resolve) =>
-        setTimeout(() => resolve([{ data: [] }, { data: [] }]), 1200)
-      );
-      const [pRes, wRes] = await Promise.race([countsPromise, timeoutPromise]);
-      productsData = pRes?.data || [];
-      wtbsData = wRes?.data || [];
+      productsData = pRows;
+      wtbsData = wRows;
     } catch (countErr) {
       console.warn('[ACCOUNTS LISTINGS COUNT NOTICE]', countErr);
     }
@@ -298,7 +295,7 @@ export async function POST(req: Request) {
             const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
               setTimeout(() => resolve({ data: null }), 2000)
             );
-            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
             const raceResult = await Promise.race([listPromise, timeoutPromise]);
             const usersData = (raceResult as any)?.data?.users || [];
             const targetAuthUser = usersData.find(
@@ -461,7 +458,7 @@ export async function POST(req: Request) {
             const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
               setTimeout(() => resolve({ data: null }), 2000)
             );
-            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+            const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
             const raceResult = await Promise.race([listPromise, timeoutPromise]);
             const usersList = (raceResult as any)?.data?.users || [];
             const targetUser = usersList.find(
@@ -665,7 +662,7 @@ export async function POST(req: Request) {
           const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
             setTimeout(() => resolve({ data: null }), 2000)
           );
-          const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+          const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
           const raceResult = await Promise.race([listPromise, timeoutPromise]);
           const usersList = (raceResult as any)?.data?.users || [];
           const targetUser = usersList.find(
@@ -893,7 +890,7 @@ async function executeAccountDelete(companyId: string) {
 }
 
 export async function DELETE(req: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('users.suspend_delete');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {

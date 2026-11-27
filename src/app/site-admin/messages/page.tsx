@@ -16,6 +16,7 @@ import {
   type ChatMessage,
 } from '@/lib/messaging/messaging-store';
 import { MessageTime } from '@/components/admin/MessageTime';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 import {
   MessageSquare,
   Radio,
@@ -46,6 +47,7 @@ function SiteAdminMessagesContent() {
   const searchParams = useSearchParams();
   const targetId = searchParams.get('id') || searchParams.get('to');
   const { company } = useAuth();
+  const { requirePermission } = useAdminPermissions();
 
   const [conversations, setConversations] = useState<InquiryConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(targetId || '');
@@ -341,7 +343,10 @@ function SiteAdminMessagesContent() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 w-full sm:w-auto">
           <button
             type="button"
-            onClick={handleOpenDirectSellerModal}
+            onClick={() => {
+              if (!requirePermission('messages.send', 'Send Private Seller Message')) return;
+              handleOpenDirectSellerModal();
+            }}
             className="w-full sm:w-auto justify-center bg-[#0B1F3A] hover:bg-[#132A4C] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
           >
             <PlusCircle className="w-4 h-4 text-[#00E5FF]" />
@@ -350,7 +355,10 @@ function SiteAdminMessagesContent() {
 
           <button
             type="button"
-            onClick={() => setShowBroadcastModal(true)}
+            onClick={() => {
+              if (!requirePermission('messages.send', 'Send Member Broadcast')) return;
+              setShowBroadcastModal(true);
+            }}
             className="w-full sm:w-auto justify-center bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-black text-xs px-4 py-2.5 rounded-full shadow-xs flex items-center gap-2 cursor-pointer transition"
           >
             <Radio className="w-4 h-4" />

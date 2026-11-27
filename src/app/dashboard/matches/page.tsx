@@ -41,6 +41,10 @@ import {
   FileText,
   AlertCircle,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  Target,
 } from 'lucide-react';
 
 interface ListingItem {
@@ -71,6 +75,30 @@ function MatchingStockContent() {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'wtb' | 'wts' | 'unlocked' | 'quoted'>('all');
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+
+  // Distinct Counterparty Analytics State
+  const [distinctPairs, setDistinctPairs] = useState<Array<{
+    pairKey: string;
+    buyerCompanyName: string;
+    buyerEmail: string;
+    sellerCompanyName: string;
+    sellerEmail: string;
+    sellerCompanyId: string;
+    buyerCompanyId?: string | null;
+    totalMatches: number;
+    exactBarcodeMatches: number;
+    specMatches: number;
+  }>>([]);
+  const [exactBarcodeCount, setExactBarcodeCount] = useState<number>(0);
+  const [specMatchCount, setSpecMatchCount] = useState<number>(0);
+
+  // Precision & Counterparty Pair Filters
+  const [selectedPairKey, setSelectedPairKey] = useState<string>('all');
+  const [matchTypeFilter, setMatchTypeFilter] = useState<'all' | 'exact_barcode' | 'title_keyword'>('all');
+
+  // High-Performance DOM Pagination (Prevents Browser Timeouts)
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Contact Unlocks tracking
   const [unlockTrigger, setUnlockTrigger] = useState(0);
@@ -119,6 +147,15 @@ function MatchingStockContent() {
           const data = await res.json();
           if (data.success && Array.isArray(data.matches)) {
             serverMatches = data.matches;
+            if (Array.isArray(data.distinctPairs)) {
+              setDistinctPairs(data.distinctPairs);
+            }
+            if (typeof data.exactBarcodeCount === 'number') {
+              setExactBarcodeCount(data.exactBarcodeCount);
+            }
+            if (typeof data.specMatchCount === 'number') {
+              setSpecMatchCount(data.specMatchCount);
+            }
           }
         }
       } catch (err) {
@@ -132,74 +169,108 @@ function MatchingStockContent() {
       serverMatches.forEach((m) => matchMap.set(m.id, m));
       localMatches.forEach((m) => matchMap.set(m.id, m));
 
-      // Also dynamically synthesize matches from user's active listings in localStorage
-      // against the active WTB demand board (400 items)
-      try {
-        const rawListings = localStorage.getItem('b2b_seller_listings_v3');
-        const userListings: ListingItem[] = rawListings ? JSON.parse(rawListings) : [];
+      // Fast path: if server matches were found, skip heavy client-side quadratic loop.
+      // Only synthesize matches locally when server returns 0 matches (e.g. offline / demo).
+      if (serverMatches.length === 0) {
+        try {
+          const rawListings = localStorage.getItem('b2b_seller_listings_v3');
+          const userListings: ListingItem[] = rawListings ? JSON.parse(rawListings) : [];
 
-        const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
-        const userWtbs = rawWtb ? JSON.parse(rawWtb) : [];
-        const combinedWtbPool = [...ALL_TRADING_BOARD_ITEMS, ...userWtbs];
+          const rawWtb = localStorage.getItem('b2b_user_wtb_requests_v2');
+          const userWtbs = rawWtb ? JSON.parse(rawWtb) : [];
+          const combinedWtbPool = [...ALL_TRADING_BOARD_ITEMS, ...userWtbs];
 
-        for (const lst of userListings) {
-          if (lst.status === 'Unpublished') continue;
-          const lstTitleNorm = lst.title.toLowerCase().trim();
-          const lstBrandNorm = (lst.brand || '').toLowerCase().trim();
-          const lstEanNorm = lst.ean && lst.ean !== 'n/a' ? lst.ean.trim() : '';
+          for (const lst of userListings) {
+            if (lst.status === 'Unpublished') continue;
+            const lstTitleNorm = lst.title.toLowerCase().trim();
+            const lstBrandNorm = (lst.brand || '').toLowerCase().trim();
+            const lstEanNorm = lst.ean && lst.ean !== 'n/a' ? lst.ean.trim() : '';
 
-          for (const item of combinedWtbPool) {
-            if (item.type !== 'BUY') continue;
-            const wtbDescNorm = (item.description || '').toLowerCase().trim();
-            const wtbBrandNorm = (item.brand || '').toLowerCase().trim();
-            const wtbEanNorm = item.ean && item.ean !== 'n/a' ? item.ean.trim() : '';
+            for (const item of combinedWtbPool) {
+              if (item.type !== 'BUY') continue;
+              const wtbDescNorm = (item.description || '').toLowerCase().trim();
+              const wtbBrandNorm = (item.brand || '').toLowerCase().trim();
+              const wtbEanNorm = item.ean && item.ean !== 'n/a' ? item.ean.trim() : '';
 
-            const isExactBarcode = Boolean(lstEanNorm && wtbEanNorm && lstEanNorm === wtbEanNorm);
-            const isTitleMatch =
-              (lstBrandNorm && wtbBrandNorm && lstBrandNorm === wtbBrandNorm && (wtbDescNorm.includes(lstTitleNorm) || lstTitleNorm.includes(wtbDescNorm))) ||
-              (lstTitleNorm.length > 5 && wtbDescNorm.length > 5 && (wtbDescNorm.includes(lstTitleNorm) || lstTitleNorm.includes(wtbDescNorm)));
+              const isExactBarcode = Boolean(lstEanNorm && wtbEanNorm && lstEanNorm === wtbEanNorm);
+              const isTitleMatch =
+                (lstBrandNorm && wtbBrandNorm && lstBrandNorm === wtbBrandNorm && (wtbDescNorm.includes(lstTitleNorm) || lstTitleNorm.includes(wtbDescNorm))) ||
+                (lstTitleNorm.length > 5 && wtbDescNorm.length > 5 && (wtbDescNorm.includes(lstTitleNorm) || lstTitleNorm.includes(wtbDescNorm)));
 
-            if (isExactBarcode || isTitleMatch) {
-              const synthId = `match-cat-${lst.id}-${item.id}`;
-              if (!matchMap.has(synthId)) {
-                matchMap.set(synthId, {
-                  id: synthId,
-                  matchType: isExactBarcode ? 'exact_barcode' : 'title_keyword',
-                  triggerDirection: 'wts_created',
-                  confidence: isExactBarcode ? 100 : 94,
-                  createdAt: lst.createdAt || new Date().toISOString(),
+              if (isExactBarcode || isTitleMatch) {
+                const synthId = `match-cat-${lst.id}-${item.id}`;
+                if (!matchMap.has(synthId)) {
+                  matchMap.set(synthId, {
+                    id: synthId,
+                    matchType: isExactBarcode ? 'exact_barcode' : 'title_keyword',
+                    triggerDirection: 'wts_created',
+                    confidence: isExactBarcode ? 100 : 94,
+                    createdAt: lst.createdAt || new Date().toISOString(),
 
-                  wtbId: item.id,
-                  wtbProductName: item.description,
-                  wtbBarcode: item.ean || lst.ean,
-                  wtbTargetPrice: item.price,
-                  wtbTargetQuantity: item.qty,
-                  buyerCompanyId: `buyer-comp-${item.id}`,
-                  buyerCompanyName: item.companyName || 'Verified Procurement Partner',
-                  buyerEmail: item.contactEmail || 'purchasing@euro-trade.eu',
-                  buyerPhone: item.contactPhone || '+49 69 9482 1039',
+                    wtbId: item.id,
+                    wtbProductName: item.description,
+                    wtbBarcode: item.ean || lst.ean,
+                    wtbTargetPrice: item.price,
+                    wtbTargetQuantity: item.qty,
+                    buyerCompanyId: `buyer-comp-${item.id}`,
+                    buyerCompanyName: item.companyName || 'Verified Procurement Partner',
+                    buyerEmail: item.contactEmail || 'purchasing@euro-trade.eu',
+                    buyerPhone: item.contactPhone || '+49 69 9482 1039',
 
-                  wtsProductId: lst.id,
-                  wtsTitle: lst.title,
-                  wtsBarcode: lst.ean,
-                  wtsUnitPrice: lst.unitPrice,
-                  wtsQuantityAvailable: lst.available,
-                  wtsCondition: lst.condition || 'New',
-                  wtsLocation: lst.location || 'DE',
-                  sellerCompanyId: companyId,
-                  sellerCompanyName: company?.name || 'Your Company',
-                  sellerEmail: userEmail,
-                  sellerPhone: company?.phone || null,
-                });
+                    wtsProductId: lst.id,
+                    wtsTitle: lst.title,
+                    wtsBarcode: lst.ean,
+                    wtsUnitPrice: lst.unitPrice,
+                    wtsQuantityAvailable: lst.available,
+                    wtsCondition: lst.condition || 'New',
+                    wtsLocation: lst.location || 'DE',
+                    sellerCompanyId: companyId,
+                    sellerCompanyName: company?.name || 'Your Company',
+                    sellerEmail: userEmail,
+                    sellerPhone: company?.phone || null,
+                  });
+                }
               }
             }
           }
+        } catch (synthErr) {
+          console.warn('[MATCH SYNTHESIS NOTICE]', synthErr);
         }
-      } catch (synthErr) {
-        console.warn('[MATCH SYNTHESIS NOTICE]', synthErr);
       }
 
-      setMatches(Array.from(matchMap.values()));
+      const allMatches = Array.from(matchMap.values());
+      setMatches(allMatches);
+
+      // If distinctPairs was not set from server response, derive it from local matches
+      if (serverMatches.length === 0) {
+        let exactCount = 0;
+        let specCount = 0;
+        const pMap = new Map<string, any>();
+        for (const m of allMatches) {
+          if (m.matchType === 'exact_barcode') exactCount++;
+          else specCount++;
+          const pKey = `${m.buyerCompanyName} <-> ${m.sellerCompanyName}`;
+          const cur = pMap.get(pKey) || {
+            pairKey: pKey,
+            buyerCompanyName: m.buyerCompanyName,
+            buyerEmail: m.buyerEmail,
+            sellerCompanyName: m.sellerCompanyName,
+            sellerEmail: m.sellerEmail,
+            sellerCompanyId: m.sellerCompanyId,
+            buyerCompanyId: m.buyerCompanyId,
+            totalMatches: 0,
+            exactBarcodeMatches: 0,
+            specMatches: 0,
+          };
+          cur.totalMatches++;
+          if (m.matchType === 'exact_barcode') cur.exactBarcodeMatches++;
+          else cur.specMatches++;
+          pMap.set(pKey, cur);
+        }
+        setDistinctPairs(Array.from(pMap.values()));
+        setExactBarcodeCount(exactCount);
+        setSpecMatchCount(specCount);
+      }
     } catch (err) {
       console.warn('[LOAD MATCHES ERROR]', err);
     } finally {
@@ -388,6 +459,17 @@ function MatchingStockContent() {
   // Filtered matches
   const filteredMatches = useMemo(() => {
     return matches.filter((m) => {
+      // 0. Distinct Counterparty Pair Filter
+      if (selectedPairKey !== 'all') {
+        const pairKey = `${m.buyerCompanyName} <-> ${m.sellerCompanyName}`;
+        if (pairKey !== selectedPairKey) return false;
+      }
+
+      // 0b. Match Precision Filter (exact barcode vs spec/keyword)
+      if (matchTypeFilter !== 'all' && m.matchType !== matchTypeFilter) {
+        return false;
+      }
+
       // 1. Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -424,7 +506,20 @@ function MatchingStockContent() {
 
       return true;
     });
-  }, [matches, searchQuery, activeProductFilter, selectedFilter, companyId, userEmail, unlockedLeadIds, unlockTrigger]);
+  }, [matches, searchQuery, activeProductFilter, selectedFilter, selectedPairKey, matchTypeFilter, companyId, userEmail, unlockedLeadIds, unlockTrigger]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, activeProductFilter, selectedFilter, selectedPairKey, matchTypeFilter, pageSize]);
+
+  // High-Performance Pagination Calculation
+  const totalPages = Math.max(1, Math.ceil(filteredMatches.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedMatches = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredMatches.slice(start, start + pageSize);
+  }, [filteredMatches, safeCurrentPage, pageSize]);
 
   const wtbMatchesCount = matches.filter((m) => (companyId && m.sellerCompanyId === companyId) || (userEmail && m.sellerEmail?.toLowerCase() === userEmail)).length;
   const wtsMatchesCount = matches.filter((m) => (companyId && m.buyerCompanyId === companyId) || (userEmail && m.buyerEmail?.toLowerCase() === userEmail)).length;
@@ -522,6 +617,115 @@ function MatchingStockContent() {
           </button>
         </div>
       )}
+
+      {/* Distinct Trading Pairs & Match Precision Analytics */}
+      <div className="bg-gradient-to-r from-slate-900 via-[#0B1F3A] to-slate-900 rounded-[28px] p-5 sm:p-6 text-white border border-slate-800 shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="bg-[#00E5FF]/20 text-[#00E5FF] text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border border-[#00E5FF]/30 flex items-center gap-1">
+                <Users className="w-3.5 h-3.5" />
+                <span>Counterparty Pair Intelligence</span>
+              </span>
+              <span className="text-white/40 text-xs">&bull;</span>
+              <span className="text-slate-300 text-xs font-semibold">
+                {distinctPairs.length} Active Counterparty {distinctPairs.length === 1 ? 'Pair' : 'Pairs'} Identified
+              </span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Trading Pair Breakdown &amp; Precision Verification
+            </h2>
+          </div>
+
+          {/* Quick Counter Badges */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="bg-white/5 border border-white/10 rounded-2xl px-3.5 py-2 text-center">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Exact Barcode</div>
+              <div className="text-lg font-black text-emerald-400 flex items-center justify-center gap-1">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <AnimatedNumber value={exactBarcodeCount} />
+              </div>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-2xl px-3.5 py-2 text-center">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Spec / Keyword</div>
+              <div className="text-lg font-black text-sky-400 flex items-center justify-center gap-1">
+                <Zap className="w-4 h-4 text-sky-400" />
+                <AnimatedNumber value={specMatchCount} />
+              </div>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-2xl px-3.5 py-2 text-center">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Matches</div>
+              <div className="text-lg font-black text-white">
+                <AnimatedNumber value={matches.length} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pair Selector Dropdown and Precision Filter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Pair Selector */}
+          <div className="flex items-center gap-2 flex-1 max-w-xl">
+            <span className="text-xs font-bold text-slate-300 shrink-0">Counterparty:</span>
+            <div className="relative flex-1">
+              <select
+                value={selectedPairKey}
+                onChange={(e) => setSelectedPairKey(e.target.value)}
+                className="w-full bg-white/10 hover:bg-white/15 border border-white/20 text-white text-[13px] rounded-xl px-3 py-2 font-medium focus:outline-none focus:ring-2 focus:ring-[#0A6CFF] transition appearance-none cursor-pointer pr-8"
+              >
+                <option value="all" className="bg-slate-900 text-white">
+                  All Counterparties ({distinctPairs.length} {distinctPairs.length === 1 ? 'Pair' : 'Pairs'}) &bull; {matches.length} Total Matches
+                </option>
+                {distinctPairs.map((p) => (
+                  <option key={p.pairKey} value={p.pairKey} className="bg-slate-900 text-white">
+                    {p.buyerCompanyName} (Buyer) ↔ {p.sellerCompanyName} (Seller) — {p.exactBarcodeMatches} Barcode, {p.totalMatches} Total
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-white/50 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Match Precision Filter */}
+          <div className="flex items-center gap-1.5 shrink-0 bg-white/5 p-1 rounded-2xl border border-white/10">
+            <button
+              type="button"
+              onClick={() => setMatchTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                matchTypeFilter === 'all'
+                  ? 'bg-white text-[#0B1F3A] shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              All Matches
+            </button>
+            <button
+              type="button"
+              onClick={() => setMatchTypeFilter('exact_barcode')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                matchTypeFilter === 'exact_barcode'
+                  ? 'bg-emerald-500 text-white shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>Exact Barcode (100%)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMatchTypeFilter('title_keyword')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                matchTypeFilter === 'title_keyword'
+                  ? 'bg-[#0A6CFF] text-white shadow-xs'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Spec &amp; Keyword</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Top Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
@@ -639,7 +843,7 @@ function MatchingStockContent() {
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredMatches.map((match) => {
+          {paginatedMatches.map((match) => {
             const isUnlocked = checkIsUnlocked(match);
             const isQuoted = checkIsQuoted(match);
             const isBarcodeMatch = match.matchType === 'exact_barcode';
@@ -850,6 +1054,87 @@ function MatchingStockContent() {
               </div>
             );
           })}
+
+          {/* High-Performance Pagination Controls */}
+          {filteredMatches.length > 0 && (
+            <div className="mt-6 p-4 bg-white rounded-2xl border border-[#EAEFF6] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-center gap-3 text-[13px] text-[#5B6B82]">
+                <span>
+                  Showing <strong className="text-[#0B1F3A]">{(safeCurrentPage - 1) * pageSize + 1}</strong> to{' '}
+                  <strong className="text-[#0B1F3A]">{Math.min(safeCurrentPage * pageSize, filteredMatches.length)}</strong> of{' '}
+                  <strong className="text-[#0B1F3A]">{filteredMatches.length}</strong> matches
+                </span>
+                <span className="text-slate-300">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">Per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="bg-slate-50 border border-[#CBD5E1] rounded-lg px-2 py-1 text-xs font-bold text-[#0B1F3A] focus:outline-none focus:border-[#0A6CFF] cursor-pointer"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safeCurrentPage <= 1}
+                  className="p-2 rounded-xl border border-[#EAEFF6] hover:bg-slate-50 text-[#0B1F3A] disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (safeCurrentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (safeCurrentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = safeCurrentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          safeCurrentPage === pageNum
+                            ? 'bg-[#0A6CFF] text-white shadow-xs'
+                            : 'border border-[#EAEFF6] hover:bg-slate-50 text-[#5B6B82]'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  {totalPages > 5 && safeCurrentPage < totalPages - 2 && (
+                    <span className="text-slate-400 text-xs px-1">...</span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                  className="p-2 rounded-xl border border-[#EAEFF6] hover:bg-slate-50 text-[#0B1F3A] disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

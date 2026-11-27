@@ -3,7 +3,7 @@ import { getCampaignLeadsFromDatabase, recordNewCampaignLead } from '@/lib/campa
 import { requireAdmin } from '@/lib/auth/guards';
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('campaigns.view');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {
@@ -44,7 +44,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('campaigns.send');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {

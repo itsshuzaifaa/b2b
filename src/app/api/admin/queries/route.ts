@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('queries.reply');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {

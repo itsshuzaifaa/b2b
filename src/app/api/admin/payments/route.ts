@@ -81,7 +81,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('payments.manage');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {
@@ -180,7 +180,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('payments.manage');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {

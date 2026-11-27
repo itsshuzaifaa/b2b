@@ -1,11 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getUnreadInquiriesCountForAdmin } from '@/lib/messaging/messaging-store';
+import {
+  hasAdminPermission,
+  getRequiredPermissionForPath,
+  getFirstPermittedAdminRoute,
+  type AdminPermission,
+  type AdminRole,
+} from '@/lib/admin/permissions';
 import {
   LayoutGrid,
   Users,
@@ -21,14 +28,46 @@ import {
   HelpCircle,
   Menu,
   X,
+  Shield,
 } from 'lucide-react';
+
+interface AdminPermissionsContextValue {
+  role: AdminRole;
+  permissions: AdminPermission[];
+  can: (perm: AdminPermission) => boolean;
+  requirePermission: (perm: AdminPermission, actionLabel?: string) => boolean;
+  showPermissionDenied: (actionLabel?: string) => void;
+}
+
+const AdminPermissionsContext = createContext<AdminPermissionsContextValue>({
+  role: 'super_admin',
+  permissions: [],
+  can: () => true,
+  requirePermission: () => true,
+  showPermissionDenied: () => {},
+});
+
+export function useAdminPermissions() {
+  return useContext(AdminPermissionsContext);
+}
 
 interface SiteAdminClientShellProps {
   children: React.ReactNode;
   userEmail: string;
+  adminRole?: AdminRole;
+  adminPermissions?: AdminPermission[];
+  adminName?: string | null;
+  adminAvatarUrl?: string | null;
 }
 
-export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShellProps) {
+export function SiteAdminClientShell({
+  children,
+  userEmail,
+  adminRole = 'super_admin',
+  adminPermissions = [],
+  adminName,
+  adminAvatarUrl,
+}: SiteAdminClientShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut, switchDemoRole } = useAuth();
@@ -37,6 +76,7 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
   const [unreadAdminCount, setUnreadAdminCount] = useState<number>(0);
+  const [deniedActionLabel, setDeniedActionLabel] = useState<string | null>(null);
 
   // Sync unread admin messages
   useEffect(() => {
@@ -90,16 +130,44 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
     return pathname.startsWith(href);
   };
 
-  const navItems = [
-    { label: 'Overview', href: '/site-admin', icon: LayoutGrid },
-    { label: 'Accounts (Buyers & Sellers)', href: '/site-admin/users', icon: Users },
-    { label: 'Payment records', href: '/site-admin/payments', icon: CreditCard },
-    { label: 'Campaign leads (Email & WA)', href: '/site-admin/campaigns', icon: Share2 },
-    { label: 'Customer Queries', href: '/site-admin/queries', icon: HelpCircle },
-    { label: 'Listing moderation', href: '/site-admin/listings', icon: ShieldAlert },
-    { label: 'Seller messaging', href: '/site-admin/messages', icon: MessageSquare },
-    { label: 'Edit profile', href: '/site-admin/profile', icon: UserCheck },
+  const can = (perm: AdminPermission) => hasAdminPermission(adminRole, adminPermissions, perm);
+
+  const showPermissionDenied = (actionLabel?: string) => {
+    setDeniedActionLabel(actionLabel || 'this action');
+  };
+
+  const requirePermission = (perm: AdminPermission, actionLabel?: string) => {
+    if (can(perm)) return true;
+    showPermissionDenied(actionLabel);
+    return false;
+  };
+
+  const allNavItems: Array<{
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    requiredPermission: AdminPermission | null;
+  }> = [
+    { label: 'Overview', href: '/site-admin', icon: LayoutGrid, requiredPermission: 'overview.view' },
+    { label: 'Accounts (Buyers & Sellers)', href: '/site-admin/users', icon: Users, requiredPermission: 'users.view' },
+    { label: 'Payment records', href: '/site-admin/payments', icon: CreditCard, requiredPermission: 'payments.view' },
+    { label: 'Campaign leads (Email & WA)', href: '/site-admin/campaigns', icon: Share2, requiredPermission: 'campaigns.view' },
+    { label: 'Customer Queries', href: '/site-admin/queries', icon: HelpCircle, requiredPermission: 'queries.view' },
+    { label: 'Listing moderation', href: '/site-admin/listings', icon: ShieldAlert, requiredPermission: 'listings.view' },
+    { label: 'Seller messaging', href: '/site-admin/messages', icon: MessageSquare, requiredPermission: 'messages.view' },
+    { label: 'Staff & Permissions', href: '/site-admin/staff', icon: Shield, requiredPermission: 'staff.view' },
+    { label: 'Edit profile', href: '/site-admin/profile', icon: UserCheck, requiredPermission: null },
   ];
+
+  const navItems = allNavItems.filter(
+    (item) => !item.requiredPermission || can(item.requiredPermission)
+  );
+
+  const requiredPathPermission = getRequiredPermissionForPath(pathname);
+  const isPathPermitted = !requiredPathPermission || can(requiredPathPermission);
+  const firstPermittedRoute = getFirstPermittedAdminRoute(adminRole, adminPermissions);
+  const displayName = adminName || (adminRole === 'super_admin' ? 'Platform Administrator' : 'Admin Staff');
+  const roleBadgeLabel = adminRole === 'super_admin' ? 'ROOT DESK' : 'STAFF DESK';
 
   const handleExitAdmin = async () => {
     try {
@@ -123,7 +191,10 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
   })();
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
+    <AdminPermissionsContext.Provider
+      value={{ role: adminRole, permissions: adminPermissions, can, requirePermission, showPermissionDenied }}
+    >
+      <div className="h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#050E1D] text-white flex flex-col md:flex-row p-2 sm:p-4 lg:p-5 gap-2 sm:gap-6 font-sans">
       {/* ========================================================= */}
       {/* MOBILE TOP BAR (< md)                                     */}
       {/* ========================================================= */}
@@ -230,11 +301,15 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
             {/* Bottom info & Actions */}
             <div className="pt-4 border-t border-slate-800 mt-4 space-y-3">
               <div className="flex items-center gap-2.5 px-1">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[12px] flex items-center justify-center shrink-0">
-                  {initials}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[12px] flex items-center justify-center shrink-0 overflow-hidden">
+                  {adminAvatarUrl ? (
+                    <img src={adminAvatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    initials
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-bold text-white truncate">Platform Administrator</div>
+                  <div className="text-[12px] font-bold text-white truncate">{displayName}</div>
                   <div className="text-[10.5px] text-slate-400 truncate">{userEmail}</div>
                 </div>
               </div>
@@ -328,7 +403,7 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
                 ADMIN CONTROL
               </span>
               <span className="bg-[#0A6CFF]/20 text-[#00E5FF] text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-[#0A6CFF]/30">
-                ROOT DESK
+                {roleBadgeLabel}
               </span>
             </div>
           ) : (
@@ -388,12 +463,16 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
           {!isCollapsed ? (
             <div>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[13px] flex items-center justify-center shrink-0 shadow-xs">
-                  {initials}
+                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#0A6CFF] to-[#00E5FF] text-[#050E1D] font-black text-[13px] flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                  {adminAvatarUrl ? (
+                    <img src={adminAvatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    initials
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="text-[13px] font-bold text-white leading-tight truncate">
-                    Platform Administrator
+                    {displayName}
                   </div>
                   <div className="text-[11px] text-[#00E5FF] font-semibold leading-tight truncate mt-0.5">
                     {userEmail}
@@ -454,8 +533,65 @@ export function SiteAdminClientShell({ children, userEmail }: SiteAdminClientShe
       {/* MAIN WHITE CANVAS CONTENT                                */}
       {/* ========================================================= */}
       <main className="flex-1 w-full min-h-0 h-full max-h-[calc(100dvh-4.5rem)] md:max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2.5rem)] bg-white rounded-[22px] sm:rounded-[32px] md:rounded-[36px] p-4 sm:p-6 md:p-8 lg:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-[#0B1F3A] overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
-        {children}
+        {isPathPermitted ? (
+          children
+        ) : (
+          <div className="min-h-[420px] flex flex-col items-center justify-center text-center p-6">
+            <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center mb-4">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <span className="text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 mb-2">
+              403 Permission Restricted
+            </span>
+            <h2 className="text-[22px] font-extrabold text-[#0B1F3A]">
+              You do not have access to this section
+            </h2>
+            <p className="text-[14px] text-[#5B6B82] max-w-md mt-1.5 mb-6">
+              Your staff account does not include permission to view this admin page. Contact the Super Admin if you need access.
+            </p>
+            <Link
+              href={firstPermittedRoute}
+              className="px-6 py-2.5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13px] transition"
+            >
+              Go to Permitted Section
+            </Link>
+          </div>
+        )}
       </main>
+
+      {/* Global Permission Denied Popup */}
+      {deniedActionLabel && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/55"
+          onClick={() => setDeniedActionLabel(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-[26px] border border-[#EAEFF6] p-7 text-center shadow-2xl text-[#0B1F3A]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto mb-4">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <span className="inline-block text-[10.5px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 mb-2">
+              Permission Required
+            </span>
+            <h3 className="text-[20px] font-extrabold text-[#0B1F3A] leading-snug">
+              You don&apos;t have permission to perform this action
+            </h3>
+            <p className="text-[13.5px] text-[#5B6B82] mt-2 leading-relaxed">
+              Your staff account is not authorized for <strong className="text-[#0B1F3A]">{deniedActionLabel}</strong>. Please contact your Super Admin if you need this permission enabled.
+            </p>
+            <button
+              type="button"
+              onClick={() => setDeniedActionLabel(null)}
+              className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#0A6CFF] hover:bg-[#0857CF] text-white font-bold text-[13.5px] transition cursor-pointer"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+    </AdminPermissionsContext.Provider>
   );
 }

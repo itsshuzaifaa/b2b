@@ -23,8 +23,10 @@ function ResetPasswordContent() {
   const searchParams = useSearchParams();
   const emailParam = searchParams.get('email') || '';
 
-  // Mode: 'code' (email verification code) | 'old_password' (current password)
-  const [mode, setMode] = useState<'code' | 'old_password'>('code');
+  const verifiedParam = searchParams.get('verified') === '1';
+
+  // Mode: 'code' (email verification code) | 'old_password' (current password) | 'recovery_link' (verified via email link)
+  const [mode, setMode] = useState<'code' | 'old_password' | 'recovery_link'>('code');
 
   // Common inputs
   const [email, setEmail] = useState(emailParam);
@@ -64,16 +66,33 @@ function ResetPasswordContent() {
     }
   }, [countdown]);
 
-  // Check if user came from a Supabase direct recovery magic link
+  // Check if user came from a Supabase direct recovery magic link (/auth/callback?type=recovery or #type=recovery)
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) {
+    const isHashRecovery =
+      typeof window !== 'undefined' &&
+      (window.location.hash.includes('type=recovery') || window.location.hash.includes('access_token='));
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && session?.user?.email) {
         setEmail(session.user.email);
-        setCodeSent(true);
+        setMode('recovery_link');
+        setInfoMsg('Email link verified! Enter your new password below.');
       }
     });
-  }, []);
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email && (verifiedParam || isHashRecovery)) {
+        setEmail(session.user.email);
+        setMode('recovery_link');
+        setInfoMsg('Email link verified! Enter your new password below.');
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [verifiedParam]);
 
   // Handler: Send 6-digit OTP code to registered email
   const handleSendCode = async () => {
@@ -141,7 +160,21 @@ function ResetPasswordContent() {
     setLoading(true);
 
     try {
-      if (mode === 'code') {
+      if (mode === 'recovery_link') {
+        const supabase = createClient();
+        const { error: updateErr } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+        if (updateErr) {
+          setErrorMsg(updateErr.message || 'Failed to update password. Please request a new reset link.');
+        } else {
+          await supabase.auth.signOut().catch(() => {});
+          setSuccess(true);
+          setTimeout(() => {
+            router.push('/login');
+          }, 2500);
+        }
+      } else if (mode === 'code') {
         if (!code.trim()) {
           setErrorMsg('Please enter the 6-digit verification code sent to your email.');
           setLoading(false);
@@ -256,42 +289,49 @@ function ResetPasswordContent() {
               Choose your preferred verification method to securely set a new password.
             </p>
 
-            {/* Method Tabs */}
-            <div className="flex rounded-2xl bg-[#F3F6FB] p-1 mb-6 border border-[#EAEFF6]">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('code');
-                  setErrorMsg(null);
-                  setInfoMsg(null);
-                }}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-[13px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                  mode === 'code'
-                    ? 'bg-white text-[#0B1F3A] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0B1F3A]'
-                }`}
-              >
-                <Mail className="w-4 h-4" />
-                <span>Email Code</span>
-              </button>
+            {/* Method Tabs (hidden when user already verified via recovery link) */}
+            {mode !== 'recovery_link' ? (
+              <div className="flex rounded-2xl bg-[#F3F6FB] p-1 mb-6 border border-[#EAEFF6]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('code');
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                  }}
+                  className={`flex-1 py-2.5 px-3 rounded-xl text-[13px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                    mode === 'code'
+                      ? 'bg-white text-[#0B1F3A] shadow-xs'
+                      : 'text-[#64748B] hover:text-[#0B1F3A]'
+                  }`}
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Email Code</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('old_password');
-                  setErrorMsg(null);
-                  setInfoMsg(null);
-                }}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-[13px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                  mode === 'old_password'
-                    ? 'bg-white text-[#0B1F3A] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0B1F3A]'
-                }`}
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>Old Password</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('old_password');
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                  }}
+                  className={`flex-1 py-2.5 px-3 rounded-xl text-[13px] font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                    mode === 'old_password'
+                      ? 'bg-white text-[#0B1F3A] shadow-xs'
+                      : 'text-[#64748B] hover:text-[#0B1F3A]'
+                  }`}
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Old Password</span>
+                </button>
+              </div>
+            ) : (
+              <div className="mb-6 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[12.5px] font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Verified recovery session for {email}</span>
+              </div>
+            )}
 
             {/* Messages */}
             {errorMsg && (
@@ -324,6 +364,66 @@ function ResetPasswordContent() {
                   className="w-full px-4 py-2.5 text-[14.5px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
                 />
               </div>
+
+              {/* MODE 0: VERIFIED RECOVERY LINK */}
+              {mode === 'recovery_link' && (
+                <>
+                  <div>
+                    <label className="block text-[13.5px] font-bold text-[#0B1F3A] mb-1.5">
+                      New password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Minimum 6 characters"
+                        className="w-full px-4 py-2.5 pr-11 text-[14.5px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[13.5px] font-bold text-[#0B1F3A] mb-1.5">
+                      Confirm new password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Re-enter new password"
+                        className="w-full px-4 py-2.5 pr-11 text-[14.5px] bg-white border border-[#E3E9F2] rounded-2xl text-[#0B1F3A] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0A6CFF] transition font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full min-h-[48px] rounded-full bg-[#0A6CFF] hover:bg-[#0857cf] text-white font-bold text-[15px] flex items-center justify-center gap-2 transition shadow-xs disabled:opacity-60 cursor-pointer"
+                  >
+                    <span>{loading ? 'Updating Password...' : 'Set New Password'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
 
               {/* MODE 1: EMAIL VERIFICATION CODE */}
               {mode === 'code' && (

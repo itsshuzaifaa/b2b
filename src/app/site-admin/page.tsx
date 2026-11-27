@@ -28,9 +28,11 @@ import {
   Building2,
   Check,
 } from 'lucide-react';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 
 export default function SiteAdminOverviewPage() {
   const router = useRouter();
+  const { requirePermission } = useAdminPermissions();
   const [mounted, setMounted] = useState(false);
   const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
@@ -223,7 +225,10 @@ export default function SiteAdminOverviewPage() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setShowBroadcastModal(true)}
+            onClick={() => {
+              if (!requirePermission('overview.broadcast_sellers', 'Send Platform Broadcast')) return;
+              setShowBroadcastModal(true);
+            }}
             className="bg-[#050E1D] hover:bg-[#0B1F3A] text-white font-bold text-[13px] px-5 py-2.5 rounded-full flex items-center gap-2 transition cursor-pointer shadow-xs"
           >
             <Send className="w-3.5 h-3.5 text-[#00E5FF]" />

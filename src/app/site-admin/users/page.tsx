@@ -40,9 +40,11 @@ import {
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
 import { InactiveBadge } from '@/components/admin/InactiveBadge';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 
 export default function SiteAdminUsersPage() {
   const router = useRouter();
+  const { requirePermission } = useAdminPermissions();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<AdminClientAccount[]>([]);
@@ -867,7 +869,10 @@ export default function SiteAdminUsersPage() {
                             <>
                               <button
                                 type="button"
-                                onClick={() => handleVerifyAccount(acc)}
+                                onClick={() => {
+                                  if (!requirePermission('users.approve_reject', 'Verify Account')) return;
+                                  handleVerifyAccount(acc);
+                                }}
                                 title="Verify wholesale documents & activate account"
                                 className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition shadow-xs cursor-pointer mr-1"
                               >
@@ -877,6 +882,7 @@ export default function SiteAdminUsersPage() {
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (!requirePermission('users.approve_reject', 'Decline Account')) return;
                                   const reason = window.prompt(`Enter rejection reason for ${acc.name}:`, 'Application did not meet business verification criteria.');
                                   if (reason !== null) {
                                     handleRejectAccount(acc, reason);
@@ -894,7 +900,10 @@ export default function SiteAdminUsersPage() {
                           {acc.approval_status === 'rejected' && (
                             <button
                               type="button"
-                              onClick={() => handleVerifyAccount(acc)}
+                              onClick={() => {
+                                if (!requirePermission('users.approve_reject', 'Re-Approve Account')) return;
+                                handleVerifyAccount(acc);
+                              }}
                               title="Re-approve wholesale account"
                               className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[11px] flex items-center gap-1 transition shadow-2xs cursor-pointer mr-1"
                             >
@@ -908,6 +917,7 @@ export default function SiteAdminUsersPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                if (!requirePermission('listings.bulk_upload', 'Upload WTS CSV')) return;
                                 setBulkCsvMode('WTS');
                                 setBulkCsvAccount(acc);
                               }}
@@ -920,6 +930,7 @@ export default function SiteAdminUsersPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                if (!requirePermission('listings.bulk_upload', 'Upload WTB CSV')) return;
                                 setBulkCsvMode('WTB');
                                 setBulkCsvAccount(acc);
                               }}
@@ -1003,6 +1014,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('listings.bulk_upload', 'Upload WTS CSV')) return;
                 setBulkCsvMode('WTS');
                 setBulkCsvAccount(acc);
               }}
@@ -1019,6 +1031,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('listings.bulk_upload', 'Upload WTB CSV')) return;
                 setBulkCsvMode('WTB');
                 setBulkCsvAccount(acc);
               }}
@@ -1035,6 +1048,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('users.edit_tier', 'Change Membership Tier')) return;
                 setEditingTierAccount(acc);
                 setSelectedTier(acc.membership_tier);
               }}
@@ -1051,6 +1065,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('users.edit_tier', 'Edit Member Information')) return;
                 handleOpenEditInfo(acc);
               }}
               className="w-full px-3.5 py-2 text-[12px] font-bold text-[#0B1F3A] hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
@@ -1067,6 +1082,7 @@ export default function SiteAdminUsersPage() {
                   setActiveMenuAccount(null);
                   setMenuCoords(null);
                   setOpenMenuId(null);
+                  if (!requirePermission('listings.moderate', 'Clear Member Lots')) return;
                   setClearLotsConfirmAccount(acc);
                 }}
                 className="w-full px-3.5 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2 transition cursor-pointer"
@@ -1085,6 +1101,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('users.suspend_delete', 'Suspend / Reactivate Account')) return;
                 handleToggleSuspend(acc);
               }}
               className={`w-full px-3.5 py-2 text-[12px] font-bold flex items-center gap-2 transition cursor-pointer ${
@@ -1106,6 +1123,7 @@ export default function SiteAdminUsersPage() {
                 setActiveMenuAccount(null);
                 setMenuCoords(null);
                 setOpenMenuId(null);
+                if (!requirePermission('users.suspend_delete', 'Delete Account')) return;
                 setDeleteConfirmAccount(acc);
               }}
               className="w-full px-3.5 py-2 text-[12px] font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"

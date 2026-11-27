@@ -51,14 +51,19 @@ export async function POST(request: NextRequest) {
     }
 
     const rawActionLink = data?.properties?.action_link;
-    if (!rawActionLink) {
+    const hashedToken = data?.properties?.hashed_token;
+    if (!rawActionLink && !hashedToken) {
       return NextResponse.json(
         { error: 'Failed to generate reset link. Please try again.' },
         { status: 500 }
       );
     }
 
-    const actionLink = sanitizeActionUrl(rawActionLink, appUrl);
+    // Prefer our domain-safe /auth/callback?token_hash=...&type=recovery URL so it works
+    // on localhost, temporary .vercel.app preview URLs, and production without Supabase allowlist issues.
+    const actionLink = hashedToken
+      ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=recovery`
+      : sanitizeActionUrl(rawActionLink || '', appUrl);
 
     // 2. Dispatch branded email via Resend
     const emailResult = await sendPasswordResetEmail(rawEmail, {

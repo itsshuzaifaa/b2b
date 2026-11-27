@@ -301,23 +301,31 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    // Build company lookup to resolve real member company names and IDs
-    const { data: allCompanies } = await supabase
-      .from('companies')
-      .select('id, user_id, contact_email, company_name, contact_name');
+    // Build scoped company lookup only for companies/emails referenced by the fetched inquiries
+    const inquiryRows = (rows || []) as unknown as RawInquiryRow[];
+    const referencedEmails = Array.from(
+      new Set(inquiryRows.map((r) => r.buyer_email?.toLowerCase().trim()).filter(Boolean))
+    );
 
     const byEmail = new Map<string, any>();
     const byId = new Map<string, any>();
-    if (allCompanies) {
-      for (const comp of allCompanies) {
-        if (comp.contact_email) byEmail.set(comp.contact_email.toLowerCase().trim(), comp);
-        if (comp.id) byId.set(comp.id, comp);
-        if (comp.user_id) byId.set(comp.user_id, comp);
+    if (referencedEmails.length > 0) {
+      const { data: scopedCompanies } = await supabase
+        .from('companies')
+        .select('id, user_id, contact_email, company_name, contact_name')
+        .in('contact_email', referencedEmails);
+
+      if (scopedCompanies) {
+        for (const comp of scopedCompanies) {
+          if (comp.contact_email) byEmail.set(comp.contact_email.toLowerCase().trim(), comp);
+          if (comp.id) byId.set(comp.id, comp);
+          if (comp.user_id) byId.set(comp.user_id, comp);
+        }
       }
     }
 
     const companyLookup = { byEmail, byId };
-    let conversations = (rows as unknown as RawInquiryRow[]).map((r) => rowToConversation(r, companyLookup));
+    let conversations = inquiryRows.map((r) => rowToConversation(r, companyLookup));
 
     // Admin has full oversight: admin desk, broadcasts, and marketplace trade chats for mediation
     if (isAdmin) {

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
   processBatchMatchesForProducts,
@@ -7,7 +7,7 @@ import {
 import { requireAdmin } from '@/lib/auth/guards';
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin('listings.bulk_upload');
   if (auth.errorResponse) return auth.errorResponse;
 
   try {
@@ -211,22 +211,23 @@ export async function POST(req: NextRequest) {
         insertedSellCount += inserted ? inserted.length : chunk.length;
       }
 
-      // Trigger automatic batch matching with open WTB requests (consolidated emails)
-      try {
-        void processBatchMatchesForProducts(
-          preparedRows.map((row) => ({
-            company_id: row.company_id,
-            title: row.title,
-            barcode_or_sku: row.barcode_or_sku,
-            unit_price: row.unit_price,
-            quantity_available: row.quantity_available,
-            condition: 'New',
-            description: row.description,
-          }))
-        );
-      } catch (mErr) {
-        console.warn('[ADMIN BULK MATCH SELL NOTICE]', mErr);
-      }
+      // Trigger automatic batch matching with open WTB requests using after() so serverless doesn't kill it
+      const matchPayload = preparedRows.map((row) => ({
+        company_id: row.company_id,
+        title: row.title,
+        barcode_or_sku: row.barcode_or_sku,
+        unit_price: row.unit_price,
+        quantity_available: row.quantity_available,
+        condition: 'New',
+        description: row.description,
+      }));
+      after(async () => {
+        try {
+          await processBatchMatchesForProducts(matchPayload);
+        } catch (mErr) {
+          console.warn('[ADMIN BULK MATCH SELL NOTICE]', mErr);
+        }
+      });
     }
 
     // 7. Insert BUY requirements if any
@@ -297,25 +298,26 @@ export async function POST(req: NextRequest) {
         insertedBuyCount += insertResult.data ? insertResult.data.length : chunk.length;
       }
 
-      // Trigger automatic batch matching with active WTS inventory (consolidated emails)
-      try {
-        void processBatchMatchesForWtbs(
-          preparedWtbRows.map((row) => ({
-            buyer_user_id: row.buyer_user_id,
-            buyer_company: row.buyer_company,
-            buyer_name: row.buyer_name,
-            buyer_email: row.buyer_email,
-            buyer_phone: row.buyer_phone,
-            product_name: row.product_name,
-            target_quantity: row.target_quantity,
-            target_price: row.target_price,
-            barcode_or_sku: row.barcode_or_sku,
-            notes: row.notes,
-          }))
-        );
-      } catch (mErr) {
-        console.warn('[ADMIN BULK MATCH BUY NOTICE]', mErr);
-      }
+      // Trigger automatic batch matching with active WTS inventory using after()
+      const wtbMatchPayload = preparedWtbRows.map((row) => ({
+        buyer_user_id: row.buyer_user_id,
+        buyer_company: row.buyer_company,
+        buyer_name: row.buyer_name,
+        buyer_email: row.buyer_email,
+        buyer_phone: row.buyer_phone,
+        product_name: row.product_name,
+        target_quantity: row.target_quantity,
+        target_price: row.target_price,
+        barcode_or_sku: row.barcode_or_sku,
+        notes: row.notes,
+      }));
+      after(async () => {
+        try {
+          await processBatchMatchesForWtbs(wtbMatchPayload);
+        } catch (mErr) {
+          console.warn('[ADMIN BULK MATCH BUY NOTICE]', mErr);
+        }
+      });
     }
 
     return NextResponse.json({

@@ -34,8 +34,10 @@ import {
   ArrowDownLeft,
 } from 'lucide-react';
 import { AdminBulkCsvModal } from '@/components/admin/AdminBulkCsvModal';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 
 export default function SiteAdminListingsPage() {
+  const { requirePermission } = useAdminPermissions();
   const [listings, setListings] = useState<AdminModeratedListing[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [tabFilter, setTabFilter] = useState<'all' | 'sell' | 'buy' | 'suspended'>('all');
@@ -314,6 +316,7 @@ export default function SiteAdminListingsPage() {
           <button
             type="button"
             onClick={() => {
+              if (!requirePermission('listings.bulk_upload', 'Upload WTS CSV')) return;
               setBulkCsvMode('WTS');
               setIsBulkCsvOpen(true);
             }}
@@ -325,6 +328,7 @@ export default function SiteAdminListingsPage() {
           <button
             type="button"
             onClick={() => {
+              if (!requirePermission('listings.bulk_upload', 'Upload WTB CSV')) return;
               setBulkCsvMode('WTB');
               setIsBulkCsvOpen(true);
             }}
@@ -519,7 +523,10 @@ export default function SiteAdminListingsPage() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
               type="button"
-              onClick={() => setBulkSuspendOpen(true)}
+              onClick={() => {
+                if (!requirePermission('listings.moderate', 'Bulk Suspend Listings')) return;
+                setBulkSuspendOpen(true);
+              }}
               className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[13px] flex items-center gap-2 transition cursor-pointer shadow-xs"
             >
               <Ban className="w-4 h-4" />
@@ -528,7 +535,10 @@ export default function SiteAdminListingsPage() {
 
             <button
               type="button"
-              onClick={() => setBulkDeleteOpen(true)}
+              onClick={() => {
+                if (!requirePermission('listings.moderate', 'Bulk Delete Listings')) return;
+                setBulkDeleteOpen(true);
+              }}
               className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-[13px] flex items-center gap-2 transition cursor-pointer shadow-xs"
             >
               <Trash2 className="w-4 h-4" />
@@ -739,7 +749,10 @@ export default function SiteAdminListingsPage() {
                           {isSuspended ? (
                             <button
                               type="button"
-                              onClick={() => handleReinstate(item.id, item.title)}
+                              onClick={() => {
+                                if (!requirePermission('listings.moderate', 'Reinstate Listing')) return;
+                                handleReinstate(item.id, item.title);
+                              }}
                               title="Reinstate listing to live board"
                               className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition cursor-pointer"
                             >
@@ -748,7 +761,10 @@ export default function SiteAdminListingsPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setSuspendTargetProduct(item)}
+                              onClick={() => {
+                                if (!requirePermission('listings.moderate', 'Suspend Listing')) return;
+                                setSuspendTargetProduct(item);
+                              }}
                               title="Suspend this listing"
                               className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 transition cursor-pointer"
                             >
@@ -759,7 +775,10 @@ export default function SiteAdminListingsPage() {
                           {/* Delete */}
                           <button
                             type="button"
-                            onClick={() => setDeleteConfirmProduct(item)}
+                            onClick={() => {
+                              if (!requirePermission('listings.moderate', 'Delete Listing')) return;
+                              setDeleteConfirmProduct(item);
+                            }}
                             title="Delete listing permanently"
                             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
                           >

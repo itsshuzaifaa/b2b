@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     });
     if (!error) {
       if (type === 'recovery') {
-        return NextResponse.redirect(`${appUrl}/reset-password`);
+        return NextResponse.redirect(`${appUrl}/reset-password?verified=1`);
       }
       if (data?.user?.email) {
         try {

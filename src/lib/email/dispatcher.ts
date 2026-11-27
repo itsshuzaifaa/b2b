@@ -44,6 +44,8 @@ import {
   type EmailChangeActivationNewEmailProps,
   accountDeletedConfirmationEmail,
   type AccountDeletedConfirmationEmailProps,
+  staffInviteEmail,
+  type StaffInviteEmailProps,
 } from '@/lib/email/templates';
 import type { WtbNotificationQueue, WtbRequest, Company } from '@/types/database';
 import { getDynamicAppUrl, sanitizeActionUrl } from '@/lib/utils/app-url';
@@ -752,7 +754,7 @@ export async function processInactivityReminders(
       const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
         setTimeout(() => resolve({ data: null }), 2000)
       );
-      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const raceResult = await Promise.race([listPromise, timeoutPromise]);
       const usersData = (raceResult as any)?.data?.users || [];
       authUsers = usersData;
@@ -1028,6 +1030,21 @@ export async function sendAccountDeletionConfirmationEmail(
     actionUrl,
   });
 
+  return sendEmail({
+    to: toEmail,
+    subject,
+    html,
+  });
+}
+
+/**
+ * Dispatches an admin staff invitation email with a domain-safe /staff-setup?token=... link.
+ */
+export async function sendStaffInviteEmail(
+  toEmail: string,
+  props: StaffInviteEmailProps
+): Promise<SendEmailResult> {
+  const { subject, html } = staffInviteEmail(props);
   return sendEmail({
     to: toEmail,
     subject,

@@ -28,8 +28,10 @@ import {
   Zap,
 } from 'lucide-react';
 import type { CampaignLead } from '@/lib/campaigns/campaign-store';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 
 export default function SiteAdminCampaignsPage() {
+  const { requirePermission } = useAdminPermissions();
   const [leads, setLeads] = useState<CampaignLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -767,7 +769,10 @@ export default function SiteAdminCampaignsPage() {
               </div>
               <button
                 type="button"
-                onClick={() => runInactivityCheck(true)}
+                onClick={() => {
+                  if (!requirePermission('campaigns.send', 'Dispatch Inactivity Reminder Emails')) return;
+                  runInactivityCheck(true);
+                }}
                 disabled={inactivityScanning}
                 className="text-[11px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
               >

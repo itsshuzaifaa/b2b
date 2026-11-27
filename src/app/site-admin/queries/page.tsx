@@ -21,8 +21,10 @@ import {
   Sparkles,
   ExternalLink,
 } from 'lucide-react';
+import { useAdminPermissions } from '@/app/site-admin/SiteAdminClientShell';
 
 export default function SiteAdminCustomerQueriesPage() {
+  const { requirePermission } = useAdminPermissions();
   const [queries, setQueries] = useState<CustomerQuery[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'replied'>('all');
@@ -379,6 +381,7 @@ export default function SiteAdminCustomerQueriesPage() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (isNew && !requirePermission('queries.reply', 'Reply to Customer Query')) return;
                               handleOpenQuery(q);
                             }}
                             className="bg-[#0A6CFF] hover:bg-[#0857cf] text-white text-[12px] font-bold px-3.5 py-1.5 rounded-full transition cursor-pointer shadow-xs"
@@ -387,7 +390,11 @@ export default function SiteAdminCustomerQueriesPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleDelete(q.id, e)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!requirePermission('queries.reply', 'Delete Customer Query')) return;
+                              handleDelete(q.id, e);
+                            }}
                             className="p-1.5 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
                             title="Delete query"
                           >

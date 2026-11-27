@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       const timeoutPromise = new Promise<{ data: { users: any[] } | null }>((resolve) =>
         setTimeout(() => resolve({ data: null }), 1500)
       );
-      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const raceResult = await Promise.race([listPromise, timeoutPromise]);
       const existingUsers = (raceResult as any)?.data?.users || [];
       for (const u of existingUsers) {

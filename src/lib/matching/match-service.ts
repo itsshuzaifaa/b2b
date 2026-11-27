@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 import {
   sendConsolidatedMatchEmail,
 } from '@/lib/email/dispatcher';
@@ -116,13 +117,13 @@ export async function processMatchesForNewProduct(newProduct: {
     if (!sellerEmail && newProduct.company_id) {
       const { data: comp } = await admin
         .from('companies')
-        .select('name, contact_name, email, phone')
+        .select('company_name, contact_name, contact_email, phone')
         .eq('id', newProduct.company_id)
         .maybeSingle();
 
       if (comp) {
-        sellerName = comp.name || comp.contact_name || sellerName;
-        sellerEmail = comp.email || sellerEmail;
+        sellerName = comp.company_name || comp.contact_name || sellerName;
+        sellerEmail = comp.contact_email || sellerEmail;
         sellerPhone = comp.phone || sellerPhone;
       }
     }
@@ -495,13 +496,12 @@ export async function processBatchMatchesForProducts(
   try {
     const admin = createAdminClient();
 
-    // 1. Fetch all open WTB requests ONCE for the entire batch
-    const { data: openWtbs, error: wtbErr } = await admin
-      .from('wtb_requests')
-      .select('*')
-      .eq('status', 'open');
+    // 1. Fetch all open WTB requests ONCE (paginated past 1,000-row cap)
+    const openWtbs = await fetchAllRows<any>((from, to) =>
+      admin.from('wtb_requests').select('*').eq('status', 'open').range(from, to)
+    );
 
-    if (wtbErr || !openWtbs || openWtbs.length === 0) {
+    if (!openWtbs || openWtbs.length === 0) {
       return [];
     }
 
@@ -512,13 +512,13 @@ export async function processBatchMatchesForProducts(
     if (companyIds.length > 0) {
       const { data: companies } = await admin
         .from('companies')
-        .select('id, name, company_name, contact_name, email, phone')
+        .select('id, company_name, contact_name, contact_email, phone')
         .in('id', companyIds);
 
       (companies || []).forEach((c) => {
         companyMap.set(c.id, {
-          name: c.company_name || c.name || c.contact_name || 'Verified Supplier',
-          email: c.email || '',
+          name: c.company_name || c.contact_name || 'Verified Supplier',
+          email: c.contact_email || '',
           phone: c.phone || null,
         });
       });
@@ -596,7 +596,7 @@ export async function processBatchMatchesForProducts(
           // Group by buyer email
           if (wtb.buyer_email) {
             const bEmail = wtb.buyer_email.toLowerCase().trim();
-            const existing = buyerMatchesMap.get(bEmail) || {
+            const existing: { buyerName: string; items: MatchedStockItem[] } = buyerMatchesMap.get(bEmail) || {
               buyerName: wtb.buyer_name || wtb.buyer_company || 'Wholesale Buyer',
               items: [],
             };
@@ -660,10 +660,12 @@ export async function processBatchMatchesForProducts(
       }
     }
 
-    // 4. Batch insert inquiries into database
+    // 4. Batch insert inquiries into database in safe chunks of 100
     if (inquiriesToInsert.length > 0) {
       try {
-        await admin.from('product_inquiries').insert(inquiriesToInsert);
+        for (let i = 0; i < inquiriesToInsert.length; i += 100) {
+          await admin.from('product_inquiries').insert(inquiriesToInsert.slice(i, i + 100));
+        }
       } catch (dbErr) {
         console.warn('[BATCH INSERT MATCH INQUIRIES NOTICE]', dbErr);
       }
@@ -678,6 +680,9 @@ export async function processBatchMatchesForProducts(
     for (const [sellerEmail, { sellerName, items }] of sellerMatchesMap) {
       queueConsolidatedMatchEmail(sellerEmail, 'seller', sellerName, items);
     }
+
+    // Flush immediately so serverless after() tasks complete email dispatch before exit
+    await flushAllPendingMatchEmails();
 
     return allMatches;
   } catch (err) {
@@ -713,13 +718,12 @@ export async function processBatchMatchesForWtbs(
   try {
     const admin = createAdminClient();
 
-    // 1. Fetch all active products ONCE
-    const { data: activeProducts, error: prodErr } = await admin
-      .from('products')
-      .select('*, company:companies(*)')
-      .eq('status', 'active');
+    // 1. Fetch all active products ONCE (paginated past 1,000-row cap)
+    const activeProducts = await fetchAllRows<any>((from, to) =>
+      admin.from('products').select('*, company:companies(*)').eq('status', 'active').range(from, to)
+    );
 
-    if (prodErr || !activeProducts || activeProducts.length === 0) {
+    if (!activeProducts || activeProducts.length === 0) {
       return [];
     }
 
@@ -812,7 +816,7 @@ export async function processBatchMatchesForWtbs(
 
           // Group by seller
           if (sellerEmail) {
-            const existing = sellerMatchesMap.get(sellerEmail) || {
+            const existing: { sellerName: string; items: MatchedStockItem[] } = sellerMatchesMap.get(sellerEmail) || {
               sellerName: prod.company?.contact_name || sellerName,
               items: [],
             };
@@ -858,7 +862,9 @@ export async function processBatchMatchesForWtbs(
 
     if (inquiriesToInsert.length > 0) {
       try {
-        await admin.from('product_inquiries').insert(inquiriesToInsert);
+        for (let i = 0; i < inquiriesToInsert.length; i += 100) {
+          await admin.from('product_inquiries').insert(inquiriesToInsert.slice(i, i + 100));
+        }
       } catch (dbErr) {
         console.warn('[BATCH INSERT WTB MATCH INQUIRIES NOTICE]', dbErr);
       }
@@ -871,6 +877,9 @@ export async function processBatchMatchesForWtbs(
     for (const [sEmail, { sellerName, items }] of sellerMatchesMap) {
       queueConsolidatedMatchEmail(sEmail, 'seller', sellerName, items);
     }
+
+    // Flush immediately so serverless after() tasks complete email dispatch before exit
+    await flushAllPendingMatchEmails();
 
     return allMatches;
   } catch (err) {

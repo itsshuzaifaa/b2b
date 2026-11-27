@@ -9,8 +9,8 @@ export const TIER_MONTHLY_PRICES: Record<MembershipTier, number> = {
 
 /**
  * Returns whether payment operations are currently running in Sandbox mode.
- * Default is TRUE since no live payment gateway credentials are connected yet.
- * Can be explicitly toggled via PAYMENT_SANDBOX_MODE="false" in production.
+ * Default is TRUE while the platform is in testing phase (test card 4242 4242 4242 4242 enabled).
+ * Set PAYMENT_SANDBOX_MODE="false" before connecting a live payment provider and going live.
  */
 export function isPaymentSandboxMode(): boolean {
   if (process.env.PAYMENT_SANDBOX_MODE === 'false') {

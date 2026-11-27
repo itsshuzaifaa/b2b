@@ -3,6 +3,12 @@ import crypto from 'crypto';
 import type { User } from '@supabase/supabase-js';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import type { Company } from '@/types/database';
+import type { AdminPermission } from '@/lib/admin/permissions';
+import {
+  resolveActiveAdminContext,
+  adminHasPermission,
+  type AdminStaffRecord,
+} from '@/lib/admin/staff-store';
 
 export class AuthError extends Error {
   status: 401 | 403;
@@ -44,33 +50,12 @@ export type AuthResult = AuthSuccessResult | AuthFailureResult;
  * The `companies.role = 'admin'` path is completely removed.
  */
 export async function isUserAdmin(user: User | null): Promise<boolean> {
-  if (!user) return false;
+  const ctx = await resolveActiveAdminContext(user);
+  return ctx !== null;
+}
 
-  // 1. Check tamper-proof app_metadata claims
-  const appRole = (user.app_metadata?.role as string | undefined)?.toLowerCase();
-  const isAppAdmin = user.app_metadata?.is_admin === true;
-  if (appRole === 'admin' || isAppAdmin) {
-    return true;
-  }
-
-  // 2. Check public.admins table strictly by user_id via Service Role client
-  try {
-    const admin = createAdminClient();
-    const { data: adminRecord, error: adminErr } = await admin
-      .from('admins')
-      .select('id')
-      .eq('user_id', user.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (!adminErr && adminRecord) {
-      return true;
-    }
-  } catch {
-    // admins table might not exist yet before migration
-  }
-
-  return false;
+export async function getAdminContext(user: User | null): Promise<AdminStaffRecord | null> {
+  return resolveActiveAdminContext(user);
 }
 
 /**
@@ -265,9 +250,9 @@ export async function assertApprovedUser(): Promise<{ user: User; company: Compa
  * Returns 403 if the authenticated user is not an administrator.
  * Returns `{ user, company, isAdmin: true, errorResponse: null }` on success.
  */
-export async function requireAdmin(): Promise<
-  | { user: User; company: Company | null; isAdmin: true; errorResponse: null }
-  | { user: User | null; company: null; isAdmin: false; errorResponse: NextResponse }
+export async function requireAdmin(requiredPermission?: AdminPermission): Promise<
+  | { user: User; company: Company | null; isAdmin: true; adminContext: AdminStaffRecord; errorResponse: null }
+  | { user: User | null; company: null; isAdmin: false; adminContext: null; errorResponse: NextResponse }
 > {
   const userResult = await requireUser();
 
@@ -277,6 +262,7 @@ export async function requireAdmin(): Promise<
       user: null,
       company: null,
       isAdmin: false,
+      adminContext: null,
       errorResponse:
         userResult.errorResponse ||
         NextResponse.json(
@@ -286,14 +272,31 @@ export async function requireAdmin(): Promise<
     };
   }
 
-  // 2. Logged in but not an admin -> 403 Forbidden
-  if (!userResult.isAdmin) {
+  const adminContext = await resolveActiveAdminContext(userResult.user);
+
+  // 2. Logged in but not an active admin/staff -> 403 Forbidden
+  if (!adminContext) {
     return {
       user: userResult.user,
       company: null,
       isAdmin: false,
+      adminContext: null,
       errorResponse: NextResponse.json(
         { error: 'Forbidden: Administrator privileges required.' },
+        { status: 403 }
+      ),
+    };
+  }
+
+  // 3. Check granular staff permission if specified
+  if (requiredPermission && !adminHasPermission(adminContext, requiredPermission)) {
+    return {
+      user: userResult.user,
+      company: null,
+      isAdmin: false,
+      adminContext: null,
+      errorResponse: NextResponse.json(
+        { error: `Forbidden: Missing required permission (${requiredPermission}).`, code: 'PERMISSION_DENIED' },
         { status: 403 }
       ),
     };
@@ -303,6 +306,7 @@ export async function requireAdmin(): Promise<
     user: userResult.user,
     company: userResult.company,
     isAdmin: true,
+    adminContext,
     errorResponse: null,
   };
 }

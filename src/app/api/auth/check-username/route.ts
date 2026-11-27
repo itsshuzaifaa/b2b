@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
       const timeoutPromise = new Promise<{ data: { users: ListedUser[] } | null }>((resolve) =>
         setTimeout(() => resolve({ data: null }), 1500)
       );
-      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 100 });
+      const listPromise = admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const raceResult = await Promise.race([listPromise, timeoutPromise]);
       const users: ListedUser[] = (raceResult as { data?: { users?: ListedUser[] } })?.data?.users || [];
 

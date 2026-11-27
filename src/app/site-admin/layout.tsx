@@ -65,9 +65,15 @@ export default async function SiteAdminLayout({
     );
   }
 
-  // 3. Authenticated Admin -> Render Interactive Site Admin Shell
+  // 3. Authenticated Admin / Staff -> Render Interactive Site Admin Shell with granular permissions
   return (
-    <SiteAdminClientShell userEmail={auth.user.email || 'admin@b2blink.eu'}>
+    <SiteAdminClientShell
+      userEmail={auth.adminContext.email || auth.user.email || 'admin@b2blink.eu'}
+      adminRole={auth.adminContext.role}
+      adminPermissions={auth.adminContext.permissions}
+      adminName={auth.adminContext.full_name}
+      adminAvatarUrl={auth.adminContext.avatar_url}
+    >
       <Suspense fallback={<TableSkeleton rows={8} variant="table" />}>
         {children}
       </Suspense>
